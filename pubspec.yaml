@@ -1,7 +1,6 @@
 name: twilio_voice
 description: A new flutter plugin project.
 version: 0.0.1
-author: Diego Garcia<diego_gr_94@hotmail.com>
 homepage: https://github.com/diegogarciar/twilio_voice
 
 environment:
