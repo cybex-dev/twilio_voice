@@ -109,7 +109,7 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
 
     final partnerId = "alicesId";
     TwilioVoice.instance.registerClient(partnerId, "Alice");
-    _controller = TextEditingController(text: "");
+    _controller = TextEditingController(text: "p32GLAC6CEfBz3mOJHQJdqR3ReE2");
   }
 
   checkActiveCall() async {

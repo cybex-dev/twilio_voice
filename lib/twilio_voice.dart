@@ -21,11 +21,6 @@ class TwilioVoice {
 
   late final Call call;
 
-  static Future<String> get platformVersion async {
-    final String version = await _channel.invokeMethod('getPlatformVersion');
-    return version;
-  }
-
   Stream<CallEvent>? _callEventsListener;
 
   /// Sends call events
