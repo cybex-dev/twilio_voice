@@ -1,0 +1,58 @@
+group 'com.twilio.twilio_voice'
+version '1.0'
+
+buildscript {
+    repositories {
+        google()
+        jcenter()
+    }
+
+    dependencies {
+        classpath 'com.android.tools.build:gradle:4.1.0'
+    }
+}
+
+rootProject.allprojects {
+    repositories {
+        google()
+        jcenter()
+    }
+}
+
+apply plugin: 'com.android.library'
+
+android {
+    compileSdkVersion 30
+
+    compileOptions {
+        sourceCompatibility 1.8
+        targetCompatibility 1.8
+    }
+    defaultConfig {
+        minSdkVersion 16
+    }
+    buildTypes {
+        release {
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+dependencies {
+    implementation platform('com.google.firebase:firebase-bom:26.0.0')
+    implementation 'com.twilio:voice-android:5.6.1'
+    implementation 'com.google.firebase:firebase-messaging'
+    // implementation 'androidx.legacy:legacy-support-v4:1.0.0'
+    implementation 'androidx.lifecycle:lifecycle-extensions:2.1.0'
+    // implementation 'com.google.android.material:material:1.0.0'
+    // implementation 'androidx.vectordrawable:vectordrawable-animated:1.0.0'
+    // implementation 'androidx.media:media:1.0.0'
+    // androidTestImplementation 'androidx.test.ext:junit:1.1.1'
+    // androidTestImplementation 'androidx.test.espresso:espresso-core:3.1.0'
+    // implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
+    // implementation 'tw.geothings.rekotlin:rekotlin:0.1.0-SNAPSHOT'
+    // implementation 'io.reactivex.rxjava2:rxkotlin:2.4.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.0.1'
+}
+

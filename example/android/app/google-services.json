@@ -1,0 +1,151 @@
+{
+  "project_info": {
+    "project_number": "78322563452",
+    "firebase_url": "https://multitask-dev.firebaseio.com",
+    "project_id": "multitask-dev",
+    "storage_bucket": "multitask-dev.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:78322563452:android:7f45ba1009768890f10cf9",
+        "android_client_info": {
+          "package_name": "com.twilio.twilio_voice_example"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "78322563452-n9n3a9feo02l872auebrh2j08t17ij26.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC2FMmPaZ2OAKKtA2FU8kREHbTBbehIfJA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "78322563452-n9n3a9feo02l872auebrh2j08t17ij26.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "78322563452-3f1e8g0o2i1et8kgpols30skk2h66vep.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "mx.mtask.hometaskProvider"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:78322563452:android:e21a3cf7c464f0b6f10cf9",
+        "android_client_info": {
+          "package_name": "mx.mtask.hometask_provider.dev"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "78322563452-btk3m4qovk5tqllqteqd3dhrp9v3vcie.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "mx.mtask.hometask_provider.dev",
+            "certificate_hash": "58e977a13ce5374b9138d55f785963b3a5b95f3f"
+          }
+        },
+        {
+          "client_id": "78322563452-cr1dfb352rnkatdgfvijqud70gu269ap.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "mx.mtask.hometask_provider.dev",
+            "certificate_hash": "30acdcea3fb6984546e7d482236eb8857b3eaf32"
+          }
+        },
+        {
+          "client_id": "78322563452-n9n3a9feo02l872auebrh2j08t17ij26.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC2FMmPaZ2OAKKtA2FU8kREHbTBbehIfJA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "78322563452-n9n3a9feo02l872auebrh2j08t17ij26.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "78322563452-3f1e8g0o2i1et8kgpols30skk2h66vep.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "mx.mtask.hometaskProvider"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:78322563452:android:d6eb219f9a6fad69f10cf9",
+        "android_client_info": {
+          "package_name": "mx.mtask.hometask_user.dev"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "78322563452-il988h0de0gq8aedi77psb6kcb1u6gon.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "mx.mtask.hometask_user.dev",
+            "certificate_hash": "30acdcea3fb6984546e7d482236eb8857b3eaf32"
+          }
+        },
+        {
+          "client_id": "78322563452-q1ala23fnlraqicgj4tgas17124ggio8.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "mx.mtask.hometask_user.dev",
+            "certificate_hash": "58e977a13ce5374b9138d55f785963b3a5b95f3f"
+          }
+        },
+        {
+          "client_id": "78322563452-n9n3a9feo02l872auebrh2j08t17ij26.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC2FMmPaZ2OAKKtA2FU8kREHbTBbehIfJA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "78322563452-n9n3a9feo02l872auebrh2j08t17ij26.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "78322563452-3f1e8g0o2i1et8kgpols30skk2h66vep.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "mx.mtask.hometaskProvider"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

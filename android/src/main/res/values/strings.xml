@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="answer">Answer</string>
+    <string name="decline">Decline</string>
+    <string name="new_call">Call from %s</string>
+    <string name="incoming_call_title">Incomming call...</string>
+    <string name="unknown_caller">Unknown caller</string>
+</resources>

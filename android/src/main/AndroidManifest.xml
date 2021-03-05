@@ -1,0 +1,24 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.twilio.twilio_voice">
+
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.DISABLE_KEYGUARD" />
+  <uses-permission android:name="android.permission.RECORD_AUDIO" />
+  <uses-permission android:name="android.permission.VIBRATE" />
+  <uses-permission android:name="android.permission.WAKE_LOCK" />
+  <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+  <application>
+
+    <activity android:name=".AnswerJavaActivity" android:turnScreenOn="true" android:showWhenLocked="true" android:showOnLockScreen="true" android:theme="@style/Theme.AppCompat" />
+
+    <activity android:name=".BackgroundCallJavaActivity" android:turnScreenOn="true" android:showWhenLocked="true" android:showOnLockScreen="true" android:theme="@style/Theme.AppCompat" />
+
+    <service android:enabled="true" android:name=".IncomingCallNotificationService">
+      <intent-filter>
+        <action android:name="ACTION_ACCEPT" />
+        <action android:name="ACTION_REJECT" />
+      </intent-filter>
+    </service>
+    <meta-data android:name="flutterEmbedding" android:value="2" />
+  </application>
+
+</manifest>

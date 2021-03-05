@@ -1,0 +1,254 @@
+library twilio_voice;
+
+import 'dart:async';
+import 'package:flutter/services.dart';
+
+part 'models/active_call.dart';
+part 'models/call_event.dart';
+
+typedef OnDeviceTokenChanged = Function(String token);
+
+class TwilioVoice {
+  static const MethodChannel _channel =
+      const MethodChannel('twilio_voice/messages');
+
+  static const EventChannel _eventChannel = EventChannel('twilio_voice/events');
+
+  TwilioVoice._() : call = Call(_channel);
+
+  static final TwilioVoice _instance = TwilioVoice._();
+  static TwilioVoice get instance => _instance;
+
+  late final Call call;
+
+  static Future<String> get platformVersion async {
+    final String version = await _channel.invokeMethod('getPlatformVersion');
+    return version;
+  }
+
+  Stream<CallEvent>? _callEventsListener;
+
+  /// Sends call events
+  Stream<CallEvent> get callEventsListener {
+    if (_callEventsListener == null) {
+      _callEventsListener = _eventChannel
+          .receiveBroadcastStream()
+          .map((dynamic event) => _parseCallEvent(event));
+    }
+    return _callEventsListener!;
+  }
+
+  OnDeviceTokenChanged? deviceTokenChanged;
+  void setOnDeviceTokenChanged(OnDeviceTokenChanged deviceTokenChanged) {
+    deviceTokenChanged = deviceTokenChanged;
+  }
+
+  /// register fcm token, and device token for android
+  ///
+  /// ios device token is obtained internally
+  Future<bool?> setTokens({required String accessToken, String? deviceToken}) {
+    return _channel.invokeMethod('tokens', <String, dynamic>{
+      "accessToken": accessToken,
+      "deviceToken": deviceToken
+    });
+  }
+
+  /// Unregisters from Twilio
+  ///
+  /// If no accesToken is provided, previously registered accesToken will be used
+  Future<bool?> unregister({String? accessToken}) {
+    return _channel.invokeMethod(
+        'unregister', <String, dynamic>{"accessToken": accessToken});
+  }
+
+  /// Checks if device needs background permission
+  ///
+  /// Android only, xiamoi devices need special permission to show background call UI
+  Future<bool?> requiresBackgroundPermissions() {
+    return _channel.invokeMethod('requiresBackgroundPermissions', {});
+  }
+
+  /// Requests background permission
+  ///
+  /// Android only, takes user to android settings to accept background permissions
+  Future<bool?> requestBackgroundPermissions() {
+    return _channel.invokeMethod('requestBackgroundPermissions', {});
+  }
+
+  /// Checks if device has microphone permission
+  Future<bool> hasMicAccess() {
+    return _channel.invokeMethod<bool?>(
+        'hasMicPermission', {}).then<bool>((bool? value) => value ?? false);
+  }
+
+  /// Request microphone permission
+  Future<bool?> requestMicAccess() {
+    return _channel.invokeMethod('requestMicPermission', {});
+  }
+
+  /// Register clientId for background calls
+  ///
+  /// Register the client name for incomming calls while calling using ids
+  Future<bool?> registerClient(String clientId, String clientName) {
+    return _channel.invokeMethod('registerClient',
+        <String, dynamic>{"id": clientId, "name": clientName});
+  }
+
+  /// Unegister clientId for background calls
+  Future<bool?> unregisterClient(String clientId) {
+    return _channel
+        .invokeMethod('unregisterClient', <String, dynamic>{"id": clientId});
+  }
+
+  /// Set default caller name for no registered clients
+  ///
+  /// This caller name will be shown for incomming calls
+  Future<bool?> setDefaultCallerName(String callerName) {
+    return _channel.invokeMethod(
+        'defaultCaller', <String, dynamic>{"defaultCaller": callerName});
+  }
+
+  /// Android-only, shows background call UI
+  Future<bool?> showBackgroundCallUI() {
+    return _channel.invokeMethod("backgroundCallUI", {});
+  }
+
+  CallEvent _parseCallEvent(String state) {
+    if (state.startsWith("DEVICETOKEN|")) {
+      var token = state.split('|')[1];
+      if (deviceTokenChanged != null) {
+        deviceTokenChanged!(token);
+      }
+      return CallEvent.log;
+    } else if (state.startsWith("LOG|")) {
+      List<String> tokens = state.split('|');
+      print(tokens[1]);
+      return CallEvent.log;
+    } else if (state.startsWith("Connected|")) {
+      List<String> tokens = state.split('|');
+      call._activeCall = ActiveCall(
+        from: tokens[1],
+        to: tokens[2],
+        callDirection: ("Incoming" == tokens[3]
+            ? CallDirection.incoming
+            : CallDirection.outgoing),
+        initiated: DateTime.now(),
+      );
+
+      print(
+          'Connected - From: ${call._activeCall!.from}, To: ${call._activeCall!.to}, StartOn: ${call._activeCall!.initiated}, Direction: ${call._activeCall!.callDirection}');
+      return CallEvent.connected;
+    } else if (state.startsWith("Ringing|")) {
+      List<String> tokens = state.split('|');
+
+      call._activeCall = ActiveCall(
+        from: tokens[1],
+        to: tokens[2],
+        callDirection: CallDirection.incoming,
+      );
+
+      print(
+          'Connected - From: ${call._activeCall!.from}, To: ${call._activeCall!.to}, Direction: ${call._activeCall!.callDirection}');
+
+      return CallEvent.ringing;
+    } else if (state.startsWith("Answer")) {
+      List<String> tokens = state.split('|');
+
+      call._activeCall = ActiveCall(
+        from: tokens[1],
+        to: tokens[2],
+        callDirection: CallDirection.incoming,
+      );
+      print(
+          'Connected - From: ${call._activeCall!.from}, To: ${call._activeCall!.to}, Direction: ${call._activeCall!.callDirection}');
+
+      return CallEvent.answer;
+    }
+    switch (state) {
+      case 'Ringing':
+        return CallEvent.ringing;
+      case 'Connected':
+        return CallEvent.connected;
+      case 'Call Ended':
+        call._activeCall = null;
+        return CallEvent.callEnded;
+      case 'Unhold':
+        return CallEvent.unhold;
+      case 'Hold':
+        return CallEvent.hold;
+      case 'Unmute':
+        return CallEvent.unmute;
+      case 'Mute':
+        return CallEvent.mute;
+      case 'Speaker On':
+        return CallEvent.speakerOn;
+      case 'Speaker Off':
+        return CallEvent.speakerOff;
+      default:
+        print('$state is not a valid CallState.');
+        throw ArgumentError('$state is not a valid CallState.');
+    }
+  }
+}
+
+class Call {
+  ActiveCall? _activeCall;
+  ActiveCall? get activeCall => _activeCall;
+
+  final MethodChannel _channel;
+  Call(this._channel);
+
+  /// Places new call
+  ///
+  /// [extraOptions] will be added to the callPayload sent to your server
+  Future<bool?> place(
+      {required String from,
+      required String to,
+      Map<String, dynamic>? extraOptions}) {
+    _activeCall =
+        ActiveCall(from: from, to: to, callDirection: CallDirection.outgoing);
+
+    var options = extraOptions ?? Map<String, dynamic>();
+    options['from'] = from;
+    options['to'] = to;
+    return _channel.invokeMethod('makeCall', options);
+  }
+
+  /// Hangs active call
+  Future<bool?> hangUp() {
+    return _channel.invokeMethod('hangUp', <String, dynamic>{});
+  }
+
+  /// Checks if there is an ongoing call
+  Future<bool> isOnCall() {
+    return _channel.invokeMethod<bool?>('isOnCall',
+        <String, dynamic>{}).then<bool>((bool? value) => value ?? false);
+  }
+
+  /// Answers incoming call
+  Future<bool?> answer() {
+    return _channel.invokeMethod('answer', <String, dynamic>{});
+  }
+
+  /// Holds active call
+  Future<bool?> holdCall() {
+    return _channel.invokeMethod('holdCall', <String, dynamic>{});
+  }
+
+  /// Toogles mute state to provided value
+  Future<bool?> toggleMute(bool isMuted) {
+    return _channel
+        .invokeMethod('toggleMute', <String, dynamic>{"muted": isMuted});
+  }
+
+  /// Toogles speaker state to provided value
+  Future<bool?> toggleSpeaker(bool speakerIsOn) {
+    return _channel.invokeMethod(
+        'toggleSpeaker', <String, dynamic>{"speakerIsOn": speakerIsOn});
+  }
+
+  Future<bool?> sendDigits(String digits) {
+    return _channel
+        .invokeMethod('sendDigits', <String, dynamic>{"digits": digits});
+  }
+}
