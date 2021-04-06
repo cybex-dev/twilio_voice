@@ -59,8 +59,9 @@ class TwilioVoice {
   /// Checks if device needs background permission
   ///
   /// Android only, xiamoi devices need special permission to show background call UI
-  Future<bool?> requiresBackgroundPermissions() {
-    return _channel.invokeMethod('requiresBackgroundPermissions', {});
+  Future<bool> requiresBackgroundPermissions() {
+    return _channel.invokeMethod<bool?>('requiresBackgroundPermissions',
+        {}).then<bool>((bool? value) => value ?? false);
   }
 
   /// Requests background permission

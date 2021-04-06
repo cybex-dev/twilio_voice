@@ -13,6 +13,22 @@ This plugin was taken from the original flutter_twilio_voice, as it seems that p
 As iOS has CallKit, an Apple provided UI for answering calls, there is no default UI for android to receive calls, for this reason a default UI was made. To increase customization, the UI will use a splash_icon.png registered on your res/drawable folder. I havent found a way to customize colors, if you find one, please submit a pull request.
 
 
+### Android Setup:
+register in your `AndroidManifest.xml` the service in charge of displaying incomming call notifications:
+
+``` xml
+<Application>
+  .....
+  <service
+      android:name="com.twilio.twilio_voice.fcm.VoiceFirebaseMessagingService"
+      android:stopWithTask="false">
+      <intent-filter>
+          <action android:name="com.google.firebase.MESSAGING_EVENT" />
+      </intent-filter>
+  </service>
+```
+
+
 ### Usage
 
 The plugin was separated into two classes, the `TwilioVoice.instance` and `TwilioVoice.instance.call`, the first one is in charge of general configuration and the second one is in charge of managing calls.
