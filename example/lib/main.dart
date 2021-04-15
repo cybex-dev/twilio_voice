@@ -28,7 +28,7 @@ class DialScreen extends StatefulWidget {
 }
 
 class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
-  TextEditingController? _controller;
+  late TextEditingController _controller;
   late String userId;
 
   registerUser() {
@@ -80,6 +80,8 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
         this.userId = user.uid;
         print("registering user ${user.uid}");
         registerUser();
+
+        FirebaseMessaging.instance.requestPermission();
         // FirebaseMessaging.instance.configure(
         //     onMessage: (Map<String, dynamic> message) {
         //   print("onMessage");
@@ -109,7 +111,8 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
 
     final partnerId = "alicesId";
     TwilioVoice.instance.registerClient(partnerId, "Alice");
-    _controller = TextEditingController(text: "p32GLAC6CEfBz3mOJHQJdqR3ReE2");
+    TwilioVoice.instance.showMissedCallNotifications = false;
+    _controller = TextEditingController();
   }
 
   checkActiveCall() async {
@@ -156,6 +159,10 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
             break;
           case CallEvent.callEnded:
             hasPushedToCall = false;
+            break;
+          case CallEvent.returningCall:
+            pushToCallScreen();
+            hasPushedToCall = true;
             break;
           default:
             break;
@@ -208,8 +215,9 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
                       TwilioVoice.instance.requestMicAccess();
                       return;
                     }
+                    print("starting call to ${_controller.text}");
                     TwilioVoice.instance.call
-                        .place(to: _controller!.text, from: userId);
+                        .place(to: _controller.text, from: userId);
                     pushToCallScreen();
                   },
                 ),

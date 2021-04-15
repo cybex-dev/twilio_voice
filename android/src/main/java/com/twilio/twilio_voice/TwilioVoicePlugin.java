@@ -46,6 +46,8 @@ import io.flutter.plugin.common.MethodChannel;
 import io.flutter.plugin.common.MethodChannel.Result;
 import io.flutter.plugin.common.PluginRegistry;
 
+import static java.lang.Boolean.getBoolean;
+
 public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCallHandler, EventChannel.StreamHandler,
         ActivityAware, PluginRegistry.NewIntentListener {
 
@@ -164,6 +166,23 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
                     backgroundCallUI = false;
                     disconnect();
                     break;
+                case Constants.ACTION_RETURN_CALL:
+
+                    if(this.checkPermissionForMicrophone()){
+                        final HashMap<String, String> params = new HashMap<>();
+
+                        String to = intent.getStringExtra(Constants.CALL_FROM);
+                        String from = intent.getStringExtra(Constants.CALL_TO);
+                        Log.d(TAG, "calling: " + to);
+                        params.put("To", to.replace("client:", ""));
+                        sendPhoneCallEvents("ReturningCall|" + from + "|" + to + "|" + "Incoming");
+                        this.callOutgoing = true;
+                        final ConnectOptions connectOptions = new ConnectOptions.Builder(this.accessToken)
+                                .params(params)
+                                .build();
+                        this.activeCall = Voice.connect(this.activity, connectOptions, this.callListener);
+                    }
+                    break;
                 default:
                     break;
             }
@@ -193,6 +212,7 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
 
     private void handleCancel() {
         callOutgoing = false;
+        sendPhoneCallEvents("Missed Call");
         sendPhoneCallEvents("Call Ended");
         SoundPoolManager.getInstance(context).stopRinging();
         Intent intent = new Intent(activity, AnswerJavaActivity.class);
@@ -213,6 +233,7 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
             intentFilter.addAction(Constants.ACTION_REJECT);
             intentFilter.addAction(Constants.ACTION_END_CALL);
             intentFilter.addAction(Constants.ACTION_TOGGLE_MUTE);
+            intentFilter.addAction(Constants.ACTION_RETURN_CALL);
             LocalBroadcastManager.getInstance(this.activity).registerReceiver(
                     voiceBroadcastReceiver, intentFilter);
             isReceiverRegistered = true;
@@ -277,6 +298,7 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
                     case Constants.ACTION_ACCEPT:
                     case Constants.ACTION_TOGGLE_MUTE:
                     case Constants.ACTION_END_CALL:
+                    case Constants.ACTION_RETURN_CALL:
 
                         /*
                          * Handle the incoming or cancelled call invite
@@ -448,7 +470,14 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
                 backgroundCallUI = true;
             }
 
-
+        } else if (call.method.equals("show-notifications")) {
+            boolean show = call.argument("show");
+            boolean prefsShow = pSharedPref.getBoolean("show-notifications", true);
+            if(show != prefsShow){
+                SharedPreferences.Editor edit = pSharedPref.edit();
+                edit.putBoolean("show-notifications", show);
+                edit.apply();
+            }
         } else if (call.method.equals("requiresBackgroundPermissions")) {
             String manufacturer = "xiaomi";
             if (manufacturer.equalsIgnoreCase(android.os.Build.MANUFACTURER)) {

@@ -48,6 +48,14 @@ class TwilioVoice {
     });
   }
 
+  /// Wheter or not should the user receive a notification after a missed call, default to true.
+  ///
+  /// Setting is persisted across restarts until overriden
+  set showMissedCallNotifications(bool value) {
+    _channel
+        .invokeMethod('show-notifications', <String, dynamic>{"show": value});
+  }
+
   /// Unregisters from Twilio
   ///
   /// If no accesToken is provided, previously registered accesToken will be used
@@ -121,44 +129,33 @@ class TwilioVoice {
       print(tokens[1]);
       return CallEvent.log;
     } else if (state.startsWith("Connected|")) {
-      List<String> tokens = state.split('|');
-      call._activeCall = ActiveCall(
-        from: tokens[1],
-        to: tokens[2],
-        callDirection: ("Incoming" == tokens[3]
-            ? CallDirection.incoming
-            : CallDirection.outgoing),
-        initiated: DateTime.now(),
-      );
-
+      call._activeCall = createCallFromState(state, initiated: true);
       print(
           'Connected - From: ${call._activeCall!.from}, To: ${call._activeCall!.to}, StartOn: ${call._activeCall!.initiated}, Direction: ${call._activeCall!.callDirection}');
       return CallEvent.connected;
     } else if (state.startsWith("Ringing|")) {
-      List<String> tokens = state.split('|');
-
-      call._activeCall = ActiveCall(
-        from: tokens[1],
-        to: tokens[2],
-        callDirection: CallDirection.incoming,
-      );
+      call._activeCall =
+          createCallFromState(state, callDirection: CallDirection.outgoing);
 
       print(
-          'Connected - From: ${call._activeCall!.from}, To: ${call._activeCall!.to}, Direction: ${call._activeCall!.callDirection}');
+          'Ringing - From: ${call._activeCall!.from}, To: ${call._activeCall!.to}, Direction: ${call._activeCall!.callDirection}');
 
       return CallEvent.ringing;
     } else if (state.startsWith("Answer")) {
-      List<String> tokens = state.split('|');
-
-      call._activeCall = ActiveCall(
-        from: tokens[1],
-        to: tokens[2],
-        callDirection: CallDirection.incoming,
-      );
+      call._activeCall =
+          createCallFromState(state, callDirection: CallDirection.incoming);
       print(
-          'Connected - From: ${call._activeCall!.from}, To: ${call._activeCall!.to}, Direction: ${call._activeCall!.callDirection}');
+          'Answer - From: ${call._activeCall!.from}, To: ${call._activeCall!.to}, Direction: ${call._activeCall!.callDirection}');
 
       return CallEvent.answer;
+    } else if (state.startsWith("ReturningCall")) {
+      call._activeCall =
+          createCallFromState(state, callDirection: CallDirection.outgoing);
+
+      print(
+          'Returning Call - From: ${call._activeCall!.from}, To: ${call._activeCall!.to}, Direction: ${call._activeCall!.callDirection}');
+
+      return CallEvent.returningCall;
     }
     switch (state) {
       case 'Ringing':
@@ -168,6 +165,8 @@ class TwilioVoice {
       case 'Call Ended':
         call._activeCall = null;
         return CallEvent.callEnded;
+      case 'Missed Call':
+        return CallEvent.missedCall;
       case 'Unhold':
         return CallEvent.unhold;
       case 'Hold':
@@ -185,6 +184,20 @@ class TwilioVoice {
         throw ArgumentError('$state is not a valid CallState.');
     }
   }
+}
+
+ActiveCall createCallFromState(String state,
+    {CallDirection? callDirection, bool initiated = false}) {
+  List<String> tokens = state.split('|');
+  return ActiveCall(
+    from: tokens[1],
+    to: tokens[2],
+    initiated: initiated ? DateTime.now() : null,
+    callDirection: callDirection ??
+        ("Incoming" == tokens[3]
+            ? CallDirection.incoming
+            : CallDirection.outgoing),
+  );
 }
 
 class Call {

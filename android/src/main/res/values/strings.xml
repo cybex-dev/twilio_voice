@@ -5,4 +5,6 @@
     <string name="new_call">Call from %s</string>
     <string name="incoming_call_title">Incomming call...</string>
     <string name="unknown_caller">Unknown caller</string>
+    <string name="notification_missed_call">Missed call from %s</string>
+    <string name="twilio_call_back">Call Back</string>
 </resources>

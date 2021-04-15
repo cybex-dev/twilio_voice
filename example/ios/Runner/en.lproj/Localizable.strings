@@ -1,0 +1,14 @@
+/* 
+  Localizable.strings
+  Runner
+
+  Created by Diego Garcia Ramos on 12/04/21.
+  
+*/
+
+"mic_permission_title" = "%@ Permission";
+"mic_permission_subtitle" = "Microphone permission not granted";
+"btn_continue_no_mic" = "Continue without microphone";
+"btn_settings" = "Settings";
+"btn_cancel" = "Cancel";
+"notification_missed_call" = "Missed call from %@";

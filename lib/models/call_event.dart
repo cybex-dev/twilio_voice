@@ -11,5 +11,7 @@ enum CallEvent {
   speakerOn,
   speakerOff,
   log,
-  answer
+  answer,
+  missedCall,
+  returningCall,
 }

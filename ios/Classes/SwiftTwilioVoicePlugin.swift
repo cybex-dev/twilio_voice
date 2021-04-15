@@ -4,6 +4,7 @@ import AVFoundation
 import PushKit
 import TwilioVoice
 import CallKit
+import UserNotifications
 
 public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHandler, PKPushRegistryDelegate, NotificationDelegate, CallDelegate, AVAudioPlayerDelegate, CXProviderDelegate {
     
@@ -95,7 +96,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         let eventChannel = FlutterEventChannel(name: "twilio_voice/events", binaryMessenger: registrar.messenger())
         eventChannel.setStreamHandler(instance)
         registrar.addMethodCallDelegate(instance, channel: methodChannel)
-        
+        registrar.addApplicationDelegate(instance)
     }
     
     public func handle(_ flutterCall: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -237,6 +238,14 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             @unknown default:
                 result(false)
             }
+            return
+        } else if flutterCall.method == "show-notifications" {
+            guard let show = arguments["show"] as? Bool else{return}
+            let prefsShow = UserDefaults.standard.optionalBool(forKey: "show-notifications") ?? true
+            if show != prefsShow{
+                UserDefaults.standard.setValue(show, forKey: "show-notifications")
+            }
+            result(true)
             return
         }
         result(true)
@@ -463,8 +472,9 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     }
     
     public func cancelledCallInviteReceived(cancelledCallInvite: CancelledCallInvite, error: Error) {
+        self.sendPhoneCallEvents(description: "Missed Call", isError: false)
         self.sendPhoneCallEvents(description: "LOG|cancelledCallInviteCanceled:", isError: false)
-        
+        self.showMissedCallNotification(from: cancelledCallInvite.from, to: cancelledCallInvite.to)
         if (self.callInvite == nil) {
             self.sendPhoneCallEvents(description: "LOG|No pending call invite", isError: false)
             return
@@ -472,6 +482,42 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         
         if let ci = self.callInvite {
             performEndCallAction(uuid: ci.uuid)
+        }
+    }
+    
+    func showMissedCallNotification(from:String?, to:String?){
+        guard UserDefaults.standard.optionalBool(forKey: "show-notifications") ?? true else{return}
+        let notificationCenter = UNUserNotificationCenter.current()
+
+       
+        notificationCenter.getNotificationSettings { (settings) in
+          if settings.authorizationStatus == .authorized {
+            let content = UNMutableNotificationContent()
+            var userName:String?
+            if var from = from{
+                from = from.replacingOccurrences(of: "client:", with: "")
+                content.userInfo = ["type":"twilio-missed-call", "from":from]
+                if let to = to{
+                    content.userInfo["to"] = to
+                }
+                userName = self.clients[from]
+            }
+            
+            let title = userName ?? self.clients["defaultCaller"] ?? self.defaultCaller
+            content.title = String(format:  NSLocalizedString("notification_missed_call", comment: ""),title)
+
+            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+            let request = UNNotificationRequest(identifier: UUID().uuidString,
+                                                content: content,
+                                                trigger: trigger)
+            
+                notificationCenter.add(request) { (error) in
+                    if let error = error {
+                        print("Notification Error: ", error)
+                    }
+                }
+            
+          }
         }
     }
     
@@ -810,7 +856,30 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         }
     }
     
-    
+
+
+    public func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
+        let userInfo = response.notification.request.content.userInfo
+        
+        if let type = userInfo["type"] as? String, type == "twilio-missed-call", let user = userInfo["from"] as? String{
+            self.callTo = user
+            if let to = userInfo["to"] as? String{
+                self.identity = to
+            }
+            makeCall(to: callTo)
+            completionHandler()
+            self.sendPhoneCallEvents(description: "ReturningCall|\(identity)|\(user)|Outgoing", isError: false)
+        }
+    }
+
+    public func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        let userInfo = notification.request.content.userInfo
+        if let type = userInfo["type"] as? String, type == "twilio-missed-call"{
+            completionHandler([.alert])
+        }
+    }
     
 }
 
@@ -839,5 +908,13 @@ extension UIWindow {
         default:
             return topViewController(for: presentedViewController)
         }
+    }
+}
+extension UserDefaults {
+    public func optionalBool(forKey defaultName: String) -> Bool? {
+        if let value = value(forKey: defaultName) {
+            return value as? Bool
+        }
+        return nil
     }
 }

@@ -71,7 +71,7 @@ TwilioVoice.instance.setDefaultCallerName(String callerName)
 ```
 
 ### Call Events
-use stream `TwilioVoice.instance.callEventsListener` to receive events from the TwilioSDK such as call events and logs, it is a broadcast so you can listen to it on different parts of your app.
+use stream `TwilioVoice.instance.callEventsListener` to receive events from the TwilioSDK such as call events and logs, it is a broadcast so you can listen to it on different parts of your app. Some events might be missed when the app has not launched, please check out the example project to find the workarounds.
 
 The events sent are the following
 - ringing
@@ -85,6 +85,10 @@ The events sent are the following
 - speakerOff
 - log
 - answer
+
+## showMissedCallNotifications
+By default a local notification will be shown to the user after missing a call, clicking on the notification will call back the user. To remove this feature, set `showMissedCallNotifications` to `false`.
+
 
 
 ### Calls
@@ -139,3 +143,7 @@ You can use `TwilioVoice.instance.hasMicAccess` and `TwilioVoice.instance.reques
 #### Background calls (Android only on some devices)
 Xiami devices, and maybe others, need a spetial permission to receive background calls. use `TwilioVoice.instance.requiresBackgroundPermissions` to check if your device requires a special permission, if it does, show a rationale explaining the user why you need the permisison. Finally call 
 `TwilioVoice.instance.requestBackgroundPermissions` which will take the user to the App Settings page to enable the permission.
+
+
+### Localization
+Because some of the UI is in native code, you need to localize those strings natively in your project. You can find in the example project localization for spanish, PRs are welcome for other languages.

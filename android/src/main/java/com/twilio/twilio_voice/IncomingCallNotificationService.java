@@ -17,11 +17,13 @@ import android.os.IBinder;
 import android.util.Log;
 
 import androidx.core.app.NotificationCompat;
+import androidx.core.app.NotificationManagerCompat;
 import androidx.lifecycle.Lifecycle;
 import androidx.lifecycle.ProcessLifecycleOwner;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import com.twilio.voice.CallInvite;
+import com.twilio.voice.CancelledCallInvite;
 
 public class IncomingCallNotificationService extends Service {
 
@@ -31,7 +33,7 @@ public class IncomingCallNotificationService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         String action = intent.getAction();
-        Log.i(TAG, "onStartCommand "+ action);
+        Log.i(TAG, "onStartCommand " + action);
         if (action != null) {
             CallInvite callInvite = intent.getParcelableExtra(Constants.INCOMING_CALL_INVITE);
             int notificationId = intent.getIntExtra(Constants.INCOMING_CALL_NOTIFICATION_ID, 0);
@@ -40,7 +42,7 @@ public class IncomingCallNotificationService extends Service {
                     handleIncomingCall(callInvite, notificationId);
                     break;
                 case Constants.ACTION_ACCEPT:
-                    int origin = intent.getIntExtra(Constants.ACCEPT_CALL_ORIGIN,0);
+                    int origin = intent.getIntExtra(Constants.ACCEPT_CALL_ORIGIN, 0);
                     Log.d(TAG, "onStartCommand-ActionAccept $origin");
                     accept(callInvite, notificationId, origin);
                     break;
@@ -49,6 +51,9 @@ public class IncomingCallNotificationService extends Service {
                     break;
                 case Constants.ACTION_CANCEL_CALL:
                     handleCancelledCall(intent);
+                    break;
+                case Constants.ACTION_RETURN_CALL:
+                    returnCall(intent);
                     break;
                 default:
                     break;
@@ -79,12 +84,12 @@ public class IncomingCallNotificationService extends Service {
 
         Context context = getApplicationContext();
         SharedPreferences preferences = context.getSharedPreferences(TwilioPreferences, Context.MODE_PRIVATE);
-        Log.i(TAG, "Setting notification from, "+ callInvite.getFrom());
-        String fromId = callInvite.getFrom().replace("client:","");
+        Log.i(TAG, "Setting notification from, " + callInvite.getFrom());
+        String fromId = callInvite.getFrom().replace("client:", "");
         String caller = preferences.getString(fromId, preferences.getString("defaultCaller", "Unknown caller"));
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            return buildNotification(getApplicationName(context),getString(R.string.new_call,caller),
+            return buildNotification(getApplicationName(context), getString(R.string.new_call, caller),
                     pendingIntent,
                     extras,
                     callInvite,
@@ -95,19 +100,20 @@ public class IncomingCallNotificationService extends Service {
             return new NotificationCompat.Builder(this)
                     .setSmallIcon(R.drawable.ic_call_end_white_24dp)
                     .setContentTitle(getApplicationName(context))
-                    .setContentText(getString(R.string.new_call,caller))
+                    .setContentText(getString(R.string.new_call, caller))
                     .setAutoCancel(true)
                     .setOngoing(true)
                     .setExtras(extras)
                     .setContentIntent(pendingIntent)
-                    .setFullScreenIntent(pendingIntent,true)
-                    .setVibrate(new long[] { 1000, 1000, 1000, 1000, 1000, 1000, 1000 })
+                    .setFullScreenIntent(pendingIntent, true)
+                    .setVibrate(new long[]{1000, 1000, 1000, 1000, 1000, 1000, 1000})
                     .setLights(Color.RED, 3000, 3000)
                     .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                     .setPriority(NotificationCompat.PRIORITY_MAX)
                     .setColor(Color.rgb(20, 10, 200)).build();
         }
     }
+
     public static String getApplicationName(Context context) {
         ApplicationInfo applicationInfo = context.getApplicationInfo();
         int stringId = applicationInfo.labelRes;
@@ -206,8 +212,73 @@ public class IncomingCallNotificationService extends Service {
     }
 
     private void handleCancelledCall(Intent intent) {
+        CancelledCallInvite cancelledCallInvite = intent.getParcelableExtra(Constants.CANCELLED_CALL_INVITE);
+        SharedPreferences preferences = getApplicationContext().getSharedPreferences(TwilioPreferences, Context.MODE_PRIVATE);
+        boolean prefsShow = preferences.getBoolean("show-notifications", true);
+        if (prefsShow) {
+            buildMissedCallNotification(cancelledCallInvite.getFrom(), cancelledCallInvite.getTo());
+        }
         endForeground();
         LocalBroadcastManager.getInstance(this).sendBroadcast(intent);
+    }
+
+    private void returnCall(Intent intent) {
+        endForeground();
+        Log.i(TAG, "returning call!!!!");
+        LocalBroadcastManager.getInstance(this).sendBroadcast(intent);
+        NotificationManagerCompat notificationManager = NotificationManagerCompat.from(this);
+        notificationManager.cancel(100);
+    }
+
+
+    private void buildMissedCallNotification(String callerId, String to) {
+
+        String fromId = callerId.replace("client:", "");
+        Context context = getApplicationContext();
+        SharedPreferences preferences = context.getSharedPreferences(TwilioPreferences, Context.MODE_PRIVATE);
+        String callerName = preferences.getString(fromId, preferences.getString("defaultCaller", "Unknown caller"));
+        String title = getString(R.string.notification_missed_call, callerName);
+
+
+        Intent returnCallIntent = new Intent(getApplicationContext(), IncomingCallNotificationService.class);
+        returnCallIntent.setAction(Constants.ACTION_RETURN_CALL);
+        returnCallIntent.putExtra(Constants.CALL_TO, to);
+        returnCallIntent.putExtra(Constants.CALL_FROM, callerId);
+        PendingIntent piReturnCallIntent = PendingIntent.getService(getApplicationContext(), 0, returnCallIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+
+
+        Notification notification;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+
+            NotificationCompat.Builder builder =
+                    new NotificationCompat.Builder(this, createChannel(NotificationManager.IMPORTANCE_HIGH))
+
+
+                            .setSmallIcon(R.drawable.ic_call_end_white_24dp)
+                            .setContentTitle(title)
+                            .setCategory(Notification.CATEGORY_CALL)
+                            .setAutoCancel(true)
+                            .addAction(android.R.drawable.ic_menu_call, getString(R.string.twilio_call_back), piReturnCallIntent)
+                            .setPriority(NotificationCompat.PRIORITY_HIGH)
+                            .setContentTitle(getApplicationName(context))
+                            .setContentText(title)
+                            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC);
+
+            notification = builder.build();
+        } else {
+            notification = new NotificationCompat.Builder(this)
+                    .setSmallIcon(R.drawable.ic_call_end_white_24dp)
+                    .setContentTitle(getApplicationName(context))
+                    .setContentText(title)
+                    .setAutoCancel(true)
+                    .setOngoing(true)
+                    .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                    .setPriority(NotificationCompat.PRIORITY_MAX)
+                    .addAction(android.R.drawable.ic_menu_call, getString(R.string.decline), piReturnCallIntent)
+                    .setColor(Color.rgb(20, 10, 200)).build();
+        }
+        NotificationManagerCompat notificationManager = NotificationManagerCompat.from(this);
+        notificationManager.notify(100, notification);
     }
 
     private void handleIncomingCall(CallInvite callInvite, int notificationId) {

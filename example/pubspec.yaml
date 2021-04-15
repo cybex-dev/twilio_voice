@@ -12,10 +12,10 @@ dependencies:
   flutter:
     sdk: flutter
 
-  firebase_core: ^1.0.0
-  firebase_messaging: ^9.0.0
-  cloud_functions: ^1.0.0
-  firebase_auth: ^1.0.0
+  firebase_core: ^1.0.3
+  firebase_messaging: ^9.1.1
+  cloud_functions: ^1.0.3
+  firebase_auth: ^1.1.0
 
   twilio_voice:
     # When depending on this package from a real application you should use:
