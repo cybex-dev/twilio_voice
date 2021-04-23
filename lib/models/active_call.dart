@@ -3,19 +3,21 @@ part of twilio_voice;
 enum CallDirection { incoming, outgoing }
 
 class ActiveCall {
-  String to;
-  late String toFormatted;
-  String from;
-  late String fromFormatted;
-  DateTime? initiated;
-  CallDirection callDirection;
+  final String to;
+  final String toFormatted;
+  final String from;
+  final String fromFormatted;
+  final DateTime? initiated;
+  final CallDirection callDirection;
 
   ActiveCall({
-    required this.from,
-    required this.to,
+    required String from,
+    required String to,
     this.initiated,
     required this.callDirection,
-  })   : toFormatted = _prettyPrintNumber(to),
+  })   : this.to = to.replaceAll("client:", ""),
+        this.from = from.replaceAll("client:", ""),
+        toFormatted = _prettyPrintNumber(to),
         fromFormatted = _prettyPrintNumber(from);
 
   static String _prettyPrintNumber(String phoneNumber) {

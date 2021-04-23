@@ -111,7 +111,6 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
 
     final partnerId = "alicesId";
     TwilioVoice.instance.registerClient(partnerId, "Alice");
-    TwilioVoice.instance.showMissedCallNotifications = false;
     _controller = TextEditingController();
   }
 
