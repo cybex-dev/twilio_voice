@@ -302,15 +302,15 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     
     func checkRecordPermission(completion: @escaping (_ permissionGranted: Bool) -> Void) {
         switch AVAudioSession.sharedInstance().recordPermission {
-        case AVAudioSessionRecordPermission.granted:
+        case .granted:
             // Record permission already granted.
             completion(true)
             break
-        case AVAudioSessionRecordPermission.denied:
+        case .denied:
             // Record permission denied.
             completion(false)
             break
-        case AVAudioSessionRecordPermission.undetermined:
+        case .undetermined:
             // Requesting record permission.
             // Optional: pop up app dialog to let the users know if they want to request.
             AVAudioSession.sharedInstance().requestRecordPermission({ (granted) in
