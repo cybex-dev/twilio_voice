@@ -1,3 +1,7 @@
+## 0.0.5
+* Updated Twilio SDK versions
+* Added example proguard-rules.pro for android
+
 ## 0.0.4
 * Fixes deprecation error with Xcode 12.5
 * removed "client" from ids

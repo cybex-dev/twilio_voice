@@ -81,11 +81,15 @@ public class VoiceFirebaseMessagingService extends FirebaseMessagingService {
             });
 
             if (!valid) {
-               Log.e(TAG, "The message was not a valid Twilio Voice SDK payload: " +
+                Log.e(TAG, "The message was not a valid Twilio Voice SDK payload: " +
                  remoteMessage.getData());
+                 notificationReceived(remoteMessage);
             }
         }
+        
     }
+    // Override if you also receive notifications from other plugins
+    public void notificationReceived(final RemoteMessage remoteMessage){ }
 
     private void handleInvite(CallInvite callInvite, int notificationId) {
         Intent intent = new Intent(this, IncomingCallNotificationService.class);
