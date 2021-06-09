@@ -13,6 +13,7 @@ import com.twilio.voice.Voice;
 import com.twilio.twilio_voice.AnswerJavaActivity;
 
 import java.util.HashMap;
+import java.util.Map;
 
 import android.Manifest;
 import android.app.Activity;
@@ -414,15 +415,19 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
         } else if (call.method.equals("makeCall")) {
             Log.d(TAG, "Making new call");
             sendPhoneCallEvents("LOG|Making new call");
+            Map<String, Object> args = call.arguments();
             final HashMap<String, String> params = new HashMap<>();
-            Log.d(TAG, "calling");
-            Log.d(TAG, call.argument("to").toString());
-            params.put("To", call.argument("to").toString());
-//             params.put("From", call.argument("from").toString());
+            for (Map.Entry<String, Object> entry : args.entrySet()) {
+                String key = entry.getKey();
+                Object value = entry.getValue();
+                Log.d(TAG, key + "|" + value);
+                params.put(key, (value != null ? value.toString() : null));
+            }
             this.callOutgoing = true;
             final ConnectOptions connectOptions = new ConnectOptions.Builder(this.accessToken)
                     .params(params)
                     .build();
+            Log.d(TAG, "calling");
             this.activeCall = Voice.connect(this.activity, connectOptions, this.callListener);
             result.success(true);
         } else if (call.method.equals("registerClient")) {
