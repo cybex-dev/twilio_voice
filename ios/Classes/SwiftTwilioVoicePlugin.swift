@@ -119,8 +119,8 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                 }
             }
         } else if flutterCall.method == "makeCall" {
-            guard let callTo = arguments["to"] as? String else {return}
-            guard let callFrom = arguments["from"] as? String else {return}
+            guard let callTo = arguments["To"] as? String else {return}
+            guard let callFrom = arguments["From"] as? String else {return}
             self.callArgs = arguments
             self.callOutgoing = true
             if let accessToken = arguments["accessToken"] as? String{
@@ -496,9 +496,9 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             var userName:String?
             if var from = from{
                 from = from.replacingOccurrences(of: "client:", with: "")
-                content.userInfo = ["type":"twilio-missed-call", "from":from]
+                content.userInfo = ["type":"twilio-missed-call", "From":from]
                 if let to = to{
-                    content.userInfo["to"] = to
+                    content.userInfo["To"] = to
                 }
                 userName = self.clients[from]
             }
@@ -785,9 +785,8 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         }
         
         let connectOptions: ConnectOptions = ConnectOptions(accessToken: token) { (builder) in
-            builder.params = ["To": self.callTo]
             for (key, value) in self.callArgs {
-                if (key != "to" && key != "from") {
+                if (key != "From") {
                     builder.params[key] = "\(value)"
                 }
             }
@@ -861,9 +860,9 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     public func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
         let userInfo = response.notification.request.content.userInfo
         
-        if let type = userInfo["type"] as? String, type == "twilio-missed-call", let user = userInfo["from"] as? String{
+        if let type = userInfo["type"] as? String, type == "twilio-missed-call", let user = userInfo["From"] as? String{
             self.callTo = user
-            if let to = userInfo["to"] as? String{
+            if let to = userInfo["To"] as? String{
                 self.identity = to
             }
             makeCall(to: callTo)
