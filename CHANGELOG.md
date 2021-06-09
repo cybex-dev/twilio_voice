@@ -1,3 +1,6 @@
+## 0.0.6
+* Added android extra call params
+
 ## 0.0.5
 * Updated Twilio SDK versions
 * Added example proguard-rules.pro for android
