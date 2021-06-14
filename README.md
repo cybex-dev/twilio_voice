@@ -99,7 +99,7 @@ By default a local notification will be shown to the user after missing a call, 
 `to` the id you want to call
 use `extraOptions` to pass additional variables to your server callback function.
 ```
- await TwilioVoice.instance.calls.place(from:myId, to: clientId, extraOptions)
+ await TwilioVoice.instance.call.place(from:myId, to: clientId, extraOptions)
                    ;
 
 ```
@@ -107,28 +107,28 @@ use `extraOptions` to pass additional variables to your server callback function
 #### Mute a Call
 
 ```
- TwilioVoice.instance.calls.toggleMute(isMuted: true);
+ TwilioVoice.instance.call.toggleMute(isMuted: true);
 
 ```
 
 #### Toggle Speaker
 
 ```
- TwilioVoice.instance.calls.toggleSpeaker(speakerIsOn: true);
+ TwilioVoice.instance.call.toggleSpeaker(speakerIsOn: true);
 
 ```
 
 #### Hang Up
 
 ```
- TwilioVoice.instance.calls.hangUp();
+ TwilioVoice.instance.call.hangUp();
 
 ```
 
 #### Send Digits
 
 ```
- TwilioVoice.instance.calls.sendDigits(String digits);
+ TwilioVoice.instance.call.sendDigits(String digits);
 
 ```
 
