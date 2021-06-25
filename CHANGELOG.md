@@ -1,3 +1,6 @@
+## 0.0.7
+* Fixed from param on android
+
 ## 0.0.6
 * Added android extra call params
 
