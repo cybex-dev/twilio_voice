@@ -420,7 +420,7 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
             for (Map.Entry<String, Object> entry : args.entrySet()) {
                 String key = entry.getKey();
                 Object value = entry.getValue();
-                if(key != "From" &&  value != null){
+                if(!key.equals("From") && value != null){
                     params.put(key, value.toString());
                 }
             }
