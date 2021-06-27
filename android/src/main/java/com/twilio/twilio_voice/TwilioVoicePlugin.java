@@ -420,7 +420,7 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
             for (Map.Entry<String, Object> entry : args.entrySet()) {
                 String key = entry.getKey();
                 Object value = entry.getValue();
-                if(key != "From" &&  value != null){
+                if(!key.equals("From") && value != null){
                     params.put(key, value.toString());
                 }
             }
@@ -665,14 +665,14 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
         if (activeCall != null) {
             boolean hold = activeCall.isOnHold();
             activeCall.hold(!hold);
-            eventSink.success(hold ? "Unhold" : "Hold");
+            sendPhoneCallEvents(hold ? "Unhold" : "Hold");
         }
     }
 
     private void mute(boolean muted) {
         if (activeCall != null) {
             activeCall.mute(muted);
-            eventSink.success(muted ?  "Mute":"Unmute");
+            sendPhoneCallEvents(muted ? "Mute" : "Unmute");
         }
     }
 
@@ -723,15 +723,15 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
     }
 
     private boolean checkPermissionForMicrophone() {
-        eventSink.success("LOG|checkPermissionForMicrophone");
+        sendPhoneCallEvents("LOG|checkPermissionForMicrophone");
         int resultMic = ContextCompat.checkSelfPermission(this.context, Manifest.permission.RECORD_AUDIO);
         return resultMic == PackageManager.PERMISSION_GRANTED;
     }
 
     private boolean requestPermissionForMicrophone() {
-        eventSink.success("LOG|requestPermissionForMicrophone");
+        sendPhoneCallEvents("LOG|requestPermissionForMicrophone");
         if (ActivityCompat.shouldShowRequestPermissionRationale(this.activity, Manifest.permission.RECORD_AUDIO)) {
-            eventSink.success("RequestMicrophoneAccess");
+            sendPhoneCallEvents("RequestMicrophoneAccess");
             return false;
         } else {
             ActivityCompat.requestPermissions(this.activity,
