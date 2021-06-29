@@ -12,6 +12,12 @@ This plugin was taken from the original flutter_twilio_voice, as it seems that p
 
 As iOS has CallKit, an Apple provided UI for answering calls, there is no default UI for android to receive calls, for this reason a default UI was made. To increase customization, the UI will use a splash_icon.png registered on your res/drawable folder. I havent found a way to customize colors, if you find one, please submit a pull request.
 
+### Setup
+Please follow Twilio's quickstart setup for each platform, you dont need to write the native code but it will help you undestand the basic functionality of setting up your server, registering your iOS app for VOIP, etc.
+
+### iOS Setup
+
+To customize the icon displayed on a CallKit call, Open XCode and add a png icon named 'callkit_icon' to your assets.xassets folder
 
 ### Android Setup:
 register in your `AndroidManifest.xml` the service in charge of displaying incomming call notifications:

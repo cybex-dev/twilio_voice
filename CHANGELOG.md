@@ -1,3 +1,7 @@
+## 0.0.8
+* Renamed callkit logo
+* Merge-Android: Fixed null pointer exception for eventSink occurs in mute call. @GKPK
+
 ## 0.0.7
 * Fixed from param on android
 
