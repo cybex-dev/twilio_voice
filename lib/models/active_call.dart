@@ -9,12 +9,14 @@ class ActiveCall {
   final String fromFormatted;
   final DateTime? initiated;
   final CallDirection callDirection;
+  final Map<String, dynamic>? customData;
 
   ActiveCall({
     required String from,
     required String to,
     this.initiated,
     required this.callDirection,
+    this.customData
   })   : this.to = to.replaceAll("client:", ""),
         this.from = from.replaceAll("client:", ""),
         toFormatted = _prettyPrintNumber(to),

@@ -1,6 +1,7 @@
 library twilio_voice;
 
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/services.dart';
 
 part 'models/active_call.dart';
@@ -197,7 +198,18 @@ ActiveCall createCallFromState(String state,
         ("Incoming" == tokens[3]
             ? CallDirection.incoming
             : CallDirection.outgoing),
+    customData: customData(tokens)
   );
+}
+
+Map<String, dynamic>? customData(List<String> tokens) {
+  try {
+    String customData = tokens.last.replaceAll("[", "{").replaceAll("]", "}");
+    Map<String, dynamic> customValue = jsonDecode(customData);
+    return customValue;
+  } catch (error) {
+    return null;
+  }
 }
 
 class Call {

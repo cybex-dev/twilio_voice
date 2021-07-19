@@ -37,6 +37,8 @@ import androidx.lifecycle.Lifecycle;
 import androidx.lifecycle.ProcessLifecycleOwner;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
+import org.json.JSONObject;
+
 import io.flutter.embedding.engine.plugins.FlutterPlugin;
 import io.flutter.embedding.engine.plugins.activity.ActivityAware;
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding;
@@ -201,7 +203,13 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
     }
 
     private void handleIncomingCall(String from, String to) {
-        sendPhoneCallEvents("Ringing|" + from + "|" + to + "|" + "Incoming");
+        String description = "Ringing|" + from + "|" + to + "|" + "Incoming";
+        Map<String, String> customParameters = activeCallInvite.getCustomParameters();
+        if (!customParameters.isEmpty()) {
+            JSONObject json = new JSONObject(customParameters);
+            description += "|"+json;
+        }
+        sendPhoneCallEvents(description);
         SoundPoolManager.getInstance(context).playRinging();
     }
 
