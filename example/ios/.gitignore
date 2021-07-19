@@ -26,7 +26,7 @@ ServiceDefinitions.json
 Runner/GeneratedPluginRegistrant.*
 Runner/GoogleService-Info.plist
 **/GoogleService-Info.plist
-
+Podfile.lock
 # Exceptions to above rules.
 !default.mode1v3
 !default.mode2v3

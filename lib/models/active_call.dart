@@ -9,12 +9,15 @@ class ActiveCall {
   final String fromFormatted;
   final DateTime? initiated;
   final CallDirection callDirection;
+  // Only available after Ringing and Answer events
+  final Map<String, dynamic>? customParams;
 
   ActiveCall({
     required String from,
     required String to,
     this.initiated,
     required this.callDirection,
+    this.customParams
   })   : this.to = to.replaceAll("client:", ""),
         this.from = from.replaceAll("client:", ""),
         toFormatted = _prettyPrintNumber(to),

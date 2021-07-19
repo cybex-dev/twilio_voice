@@ -144,6 +144,15 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
               hasPushedToCall = true;
             }
             break;
+          case CallEvent.ringing:
+            final activeCall = TwilioVoice.instance.call.activeCall;
+            if (activeCall != null) {
+              final customData = activeCall.customParams;
+              if (customData != null) {
+                print("voip-customData $customData");
+              }
+            }
+            break;
           case CallEvent.connected:
             if (Platform.isAndroid &&
                 TwilioVoice.instance.call.activeCall!.callDirection ==
