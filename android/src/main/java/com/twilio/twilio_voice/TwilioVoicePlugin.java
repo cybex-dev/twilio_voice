@@ -203,14 +203,16 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
     }
 
     private void handleIncomingCall(String from, String to) {
-        String description = "Ringing|" + from + "|" + to + "|" + "Incoming";
-        Map<String, String> customParameters = activeCallInvite.getCustomParameters();
+        sendPhoneCallEvents("Ringing|" + from + "|" + to + "|" + "Incoming" + formatCustomParams(activeCallInvite.getCustomParameters()););
+        SoundPoolManager.getInstance(context).playRinging();
+    }
+
+    private String formatCustomParams(Map<String,String> customParameters){
         if (!customParameters.isEmpty()) {
             JSONObject json = new JSONObject(customParameters);
-            description += "|"+json;
+            return "|"+json.toString();
         }
-        sendPhoneCallEvents(description);
-        SoundPoolManager.getInstance(context).playRinging();
+        return "";
     }
 
     private void handleReject() {
@@ -522,7 +524,7 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
         SoundPoolManager.getInstance(context).stopRinging();
 
         activeCallInvite.accept(this.activity, callListener);
-        sendPhoneCallEvents("Answer|" + activeCallInvite.getFrom() + "|" + activeCallInvite.getTo());
+        sendPhoneCallEvents("Answer|" + activeCallInvite.getFrom() + "|" + activeCallInvite.getTo() + formatCustomParams(activeCallInvite.getCustomParameters()));
         notificationManager.cancel(activeCallNotificationId);
     }
 

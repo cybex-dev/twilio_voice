@@ -465,15 +465,23 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         
         var from:String = callInvite.from ?? defaultCaller
         from = from.replacingOccurrences(of: "client:", with: "")
-        var description:String = "Ringing|\(from)|\(callInvite.to)|Incoming"
-
-        if let customParameters = callInvite.customParameters {
-            description += "|\(customParameters)"
-        }
-
-        self.sendPhoneCallEvents(description: description, isError: false)
+        
+        self.sendPhoneCallEvents(description: "Ringing|\(from)|\(callInvite.to)|Incoming\(formatCustomParams(params: callInvite.customParameters))", isError: false)
         reportIncomingCall(from: from, uuid: callInvite.uuid)
         self.callInvite = callInvite
+    }
+    
+    func formatCustomParams(params: [String:Any]?)->String{
+        guard let customParameters = params else{return ""}
+        do{
+            let jsonData = try JSONSerialization.data(withJSONObject: customParameters)
+            if let jsonStr = String(data: jsonData, encoding: .utf8){
+                return "|\(jsonStr )"
+            }
+        }catch{
+            print("unable to send custom parameters")
+        }
+        return ""
     }
     
     public func cancelledCallInviteReceived(cancelledCallInvite: CancelledCallInvite, error: Error) {
@@ -809,7 +817,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             }
             self.sendPhoneCallEvents(description: "LOG|performAnswerVoiceCall: answering call", isError: false)
             let theCall = ci.accept(options: acceptOptions, delegate: self)
-            eventSink?("Answer|\(theCall.from!)|\(theCall.to!)")
+            self.sendPhoneCallEvents(description: "Answer|\(theCall.from!)|\(theCall.to!)\(formatCustomParams(params: ci.customParameters))", isError:false)
             self.call = theCall
             self.callKitCompletionCallback = completionHandler
             self.callInvite = nil

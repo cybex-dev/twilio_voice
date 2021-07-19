@@ -191,21 +191,20 @@ ActiveCall createCallFromState(String state,
     {CallDirection? callDirection, bool initiated = false}) {
   List<String> tokens = state.split('|');
   return ActiveCall(
-    from: tokens[1],
-    to: tokens[2],
-    initiated: initiated ? DateTime.now() : null,
-    callDirection: callDirection ??
-        ("Incoming" == tokens[3]
-            ? CallDirection.incoming
-            : CallDirection.outgoing),
-    customData: customData(tokens)
-  );
+      from: tokens[1],
+      to: tokens[2],
+      initiated: initiated ? DateTime.now() : null,
+      callDirection: callDirection ??
+          ("Incoming" == tokens[3]
+              ? CallDirection.incoming
+              : CallDirection.outgoing),
+      customParams: parseCustomParams(tokens));
 }
 
-Map<String, dynamic>? customData(List<String> tokens) {
+Map<String, dynamic>? parseCustomParams(List<String> tokens) {
+  if (tokens.length != 5) return null;
   try {
-    String customData = tokens.last.replaceAll("[", "{").replaceAll("]", "}");
-    Map<String, dynamic> customValue = jsonDecode(customData);
+    Map<String, dynamic> customValue = jsonDecode(tokens[4]);
     return customValue;
   } catch (error) {
     return null;
