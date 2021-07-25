@@ -1,3 +1,6 @@
+## 0.0.9
+* Feat: forwarded callInvite custom parameters to flutter
+
 ## 0.0.8
 * Renamed callkit logo
 * Merge-Android: Fixed null pointer exception for eventSink occurs in mute call. @GKPK
