@@ -58,6 +58,7 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
     private static final String TAG = "TwilioVoicePlugin";
     public static final String TwilioPreferences = "com.twilio.twilio_voicePreferences";
     private static final int MIC_PERMISSION_REQUEST_CODE = 1;
+    static boolean hasStarted = false;
 
     private String accessToken;
     private AudioManager audioManager;
@@ -69,7 +70,6 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
 
 
     private NotificationManager notificationManager;
-    //private SoundPoolManager soundPoolManager;
     private CallInvite activeCallInvite;
     private Call activeCall;
     private int activeCallNotificationId;
@@ -91,6 +91,7 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
     @Override
     public void onAttachedToEngine(@NonNull FlutterPluginBinding flutterPluginBinding) {
         register(flutterPluginBinding.getBinaryMessenger(), this, flutterPluginBinding.getApplicationContext());
+        hasStarted = true
     }
 
     private static void register(BinaryMessenger messenger, TwilioVoicePlugin plugin, Context context) {
@@ -102,8 +103,6 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
         plugin.eventChannel.setStreamHandler(plugin);
 
         plugin.context = context;
-        SoundPoolManager.getInstance(context);
-        //plugin.soundPoolManager = SoundPoolManager.getInstance(context);
 
         plugin.notificationManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         plugin.voiceBroadcastReceiver = new VoiceBroadcastReceiver(plugin);
@@ -204,7 +203,7 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
 
     private void handleIncomingCall(String from, String to) {
         sendPhoneCallEvents("Ringing|" + from + "|" + to + "|" + "Incoming" + formatCustomParams(activeCallInvite.getCustomParameters()));
-        SoundPoolManager.getInstance(context).playRinging();
+
     }
 
     private String formatCustomParams(Map<String,String> customParameters){
@@ -217,15 +216,14 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
 
     private void handleReject() {
         sendPhoneCallEvents("LOG|Call Rejected");
-        SoundPoolManager.getInstance(context).stopRinging();
-        SoundPoolManager.getInstance(context).playDisconnect();
+
     }
 
     private void handleCancel() {
         callOutgoing = false;
         sendPhoneCallEvents("Missed Call");
         sendPhoneCallEvents("Call Ended");
-        SoundPoolManager.getInstance(context).stopRinging();
+
         Intent intent = new Intent(activity, AnswerJavaActivity.class);
         intent.setAction(Constants.ACTION_CANCEL_CALL);
         intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
@@ -521,7 +519,6 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
      */
     private void answer() {
         Log.d(TAG, "Answering call");
-        SoundPoolManager.getInstance(context).stopRinging();
 
         activeCallInvite.accept(this.activity, callListener);
         sendPhoneCallEvents("Answer|" + activeCallInvite.getFrom() + "|" + activeCallInvite.getTo() + formatCustomParams(activeCallInvite.getCustomParameters()));
@@ -573,7 +570,7 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
         this.activity = null;
     }
 
-    private Call.Listener callListener() {
+    Call.Listener callListener() {
         return new Call.Listener() {
             /*
              * This callback is emitted once before the Call.Listener.onConnected() callback when

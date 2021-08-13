@@ -2,10 +2,14 @@ package com.twilio.twilio_voice;
 
 import android.Manifest;
 import android.app.KeyguardManager;
+import android.app.NotificationManager;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.content.SharedPreferences;
+import android.nfc.Tag;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.PowerManager;
@@ -20,8 +24,10 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import com.twilio.voice.Call;
+import com.twilio.voice.CallException;
 import com.twilio.voice.CallInvite;
 
 
@@ -29,6 +35,12 @@ public class AnswerJavaActivity extends AppCompatActivity {
 
     private static String TAG = "AnswerActivity";
     public static final String TwilioPreferences = "mx.TwilioPreferences";
+
+    private NotificationManager notificationManager;
+    private boolean isReceiverRegistered = false;
+    private VoiceBroadcastReceiver voiceBroadcastReceiver;
+
+    private boolean initiatedDisconnect = false;
 
     private CallInvite activeCallInvite;
     private int activeCallNotificationId;
@@ -38,6 +50,7 @@ public class AnswerJavaActivity extends AppCompatActivity {
     private TextView tvCallStatus;
     private ImageView btnAnswer;
     private ImageView btnReject;
+    Call.Listener callListener = callListener();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -51,6 +64,10 @@ public class AnswerJavaActivity extends AppCompatActivity {
 
         KeyguardManager kgm = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
         boolean isKeyguardUp = kgm.inKeyguardRestrictedInputMode();
+
+        notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        voiceBroadcastReceiver = new VoiceBroadcastReceiver();
+        registerReceiver();
 
         Log.d(TAG, "isKeyguardUp $isKeyguardUp");
         if (isKeyguardUp) {
@@ -93,12 +110,19 @@ public class AnswerJavaActivity extends AppCompatActivity {
                 case Constants.ACTION_CANCEL_CALL:
                     newCancelCallClickListener();
                     break;
-               case Constants.ACTION_ACCEPT:
-                   checkPermissionsAndAccept();
-                   break;
-//                case Constants.ACTION_REJECT:
-//                    newCancelCallClickListener();
-//                    break;
+                case Constants.ACTION_ACCEPT:
+                    checkPermissionsAndAccept();
+                    break;
+                case Constants.ACTION_END_CALL:
+                    Log.d(TAG, "ending call" + activeCall != null ? "TRue" : "False");
+                    activeCall.disconnect();
+                    initiatedDisconnect = true;
+                    finish();
+                    break;
+                case Constants.ACTION_TOGGLE_MUTE:
+                    boolean muted = activeCall.isMuted();
+                    activeCall.mute(!muted);
+                    break;
                 default: {
                 }
             }
@@ -148,7 +172,7 @@ public class AnswerJavaActivity extends AppCompatActivity {
         }
     }
 
-    private void checkPermissionsAndAccept(){
+    private void checkPermissionsAndAccept() {
         Log.d(TAG, "Clicked accept");
         if (!checkPermissionForMicrophone()) {
             Log.d(TAG, "configCallUI-requestAudioPermissions");
@@ -169,8 +193,144 @@ public class AnswerJavaActivity extends AppCompatActivity {
         acceptIntent.putExtra(Constants.INCOMING_CALL_NOTIFICATION_ID, activeCallNotificationId);
         Log.d(TAG, "Clicked accept startService");
         startService(acceptIntent);
-        finish();
+        if (TwilioVoicePlugin.hasStarted) {
+            finish();
+        } else {
+            Log.d(TAG, "Answering call");
+
+            activeCallInvite.accept(this, callListener);
+            notificationManager.cancel(activeCallNotificationId);
+
+        }
     }
+
+    private void startAnswerActivity(Call call) {
+        Intent intent = new Intent(this, BackgroundCallJavaActivity.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        intent.putExtra(Constants.CALL_FROM, call.getFrom());
+        startActivity(intent);
+        Log.d(TAG, "Connected");
+    }
+
+    private void endCall() {
+
+        if (!initiatedDisconnect) {
+            Intent intent = new Intent(this, BackgroundCallJavaActivity.class);
+            intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            intent.setAction(Constants.ACTION_CANCEL_CALL);
+
+            this.startActivity(intent);
+            finish();
+        }
+
+    }
+
+    Call activeCall;
+
+    private Call.Listener callListener() {
+        return new Call.Listener() {
+
+
+            @Override
+            public void onConnectFailure(@NonNull Call call, @NonNull CallException error) {
+                Log.d(TAG, "Connect failure");
+                Log.e(TAG, "Call Error: %d, %s" + error.getErrorCode() + error.getMessage());
+            }
+
+            @Override
+            public void onRinging(@NonNull Call call) {
+
+            }
+
+            @Override
+            public void onConnected(@NonNull Call call) {
+                activeCall = call;
+                startAnswerActivity(call);
+            }
+
+            @Override
+            public void onReconnecting(@NonNull Call call, @NonNull CallException callException) {
+                Log.d(TAG, "onReconnecting");
+            }
+
+            @Override
+            public void onReconnected(@NonNull Call call) {
+                Log.d(TAG, "onReconnected");
+            }
+
+            @Override
+            public void onDisconnected(@NonNull Call call, CallException error) {
+                Log.d(TAG, "Disconnected");
+                endCall();
+            }
+
+        };
+    }
+
+    private class VoiceBroadcastReceiver extends BroadcastReceiver {
+
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+            Log.d(TAG, "Received broadcast for action " + action);
+
+            if (action != null)
+                switch (action) {
+                    case Constants.ACTION_INCOMING_CALL:
+                    case Constants.ACTION_CANCEL_CALL:
+                    case Constants.ACTION_TOGGLE_MUTE:
+                    case Constants.ACTION_END_CALL:
+                        /*
+                         * Handle the incoming or cancelled call invite
+                         */
+                        Log.d(TAG, "received intent to answerActivity");
+                        handleIncomingCallIntent(intent);
+                        break;
+                    default:
+                        Log.d(TAG, "Received broadcast for other action " + action);
+                        break;
+
+                }
+        }
+    }
+
+    private void registerReceiver() {
+        Log.d(TAG, "Registering receiver");
+        if (!isReceiverRegistered) {
+            IntentFilter intentFilter = new IntentFilter();
+            intentFilter.addAction(Constants.ACTION_TOGGLE_MUTE);
+            intentFilter.addAction(Constants.ACTION_CANCEL_CALL);
+            intentFilter.addAction(Constants.ACTION_END_CALL);
+            LocalBroadcastManager.getInstance(this).registerReceiver(
+                    voiceBroadcastReceiver, intentFilter);
+            isReceiverRegistered = true;
+        }
+    }
+
+    private void unregisterReceiver() {
+        Log.d(TAG, "Unregistering receiver");
+        if (isReceiverRegistered) {
+            LocalBroadcastManager.getInstance(this).unregisterReceiver(voiceBroadcastReceiver);
+            isReceiverRegistered = false;
+        }
+    }
+
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        registerReceiver();
+    }
+
+    // We still want to listen messages from backgroundCallJavaActivity
+//    @Override
+//    protected void onPause() {
+//        super.onPause();
+//        unregisterReceiver();
+//    }
 
     private void newCancelCallClickListener() {
         finish();
@@ -223,6 +383,8 @@ public class AnswerJavaActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
+        Log.d(TAG, "AnserJAvaActivity ondestroy");
+//        unregisterReceiver();
         super.onDestroy();
         if (wakeLock != null) {
             wakeLock.release();

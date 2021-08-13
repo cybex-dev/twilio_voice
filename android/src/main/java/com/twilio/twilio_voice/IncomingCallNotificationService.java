@@ -190,6 +190,7 @@ public class IncomingCallNotificationService extends Service {
     private void accept(CallInvite callInvite, int notificationId, int origin) {
         endForeground();
         Log.i(TAG, "accept call invite!");
+        SoundPoolManager.getInstance(this).stopRinging();
         Intent activeCallIntent = new Intent();
         activeCallIntent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
         activeCallIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -201,17 +202,20 @@ public class IncomingCallNotificationService extends Service {
     }
 
     private void reject(CallInvite callInvite) {
-        endForeground();
         callInvite.reject(getApplicationContext());
+        SoundPoolManager.getInstance(this).stopRinging();
+        SoundPoolManager.getInstance(this).playDisconnect();
         Intent rejectCallIntent = new Intent();
         rejectCallIntent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
         rejectCallIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         rejectCallIntent.putExtra(Constants.INCOMING_CALL_INVITE, callInvite);
         rejectCallIntent.setAction(Constants.ACTION_REJECT);
         LocalBroadcastManager.getInstance(this).sendBroadcast(rejectCallIntent);
+        endForeground();
     }
 
     private void handleCancelledCall(Intent intent) {
+        SoundPoolManager.getInstance(this).stopRinging();
         CancelledCallInvite cancelledCallInvite = intent.getParcelableExtra(Constants.CANCELLED_CALL_INVITE);
         SharedPreferences preferences = getApplicationContext().getSharedPreferences(TwilioPreferences, Context.MODE_PRIVATE);
         boolean prefsShow = preferences.getBoolean("show-notifications", true);
@@ -283,6 +287,7 @@ public class IncomingCallNotificationService extends Service {
 
     private void handleIncomingCall(CallInvite callInvite, int notificationId) {
         Log.i(TAG, "handle incomming call");
+        SoundPoolManager.getInstance(this).playRinging();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             setCallInProgressNotification(callInvite, notificationId);
         }
@@ -308,14 +313,29 @@ public class IncomingCallNotificationService extends Service {
      * Send the CallInvite to the VoiceActivity. Start the activity if it is not running already.
      */
     private void sendCallInviteToActivity(CallInvite callInvite, int notificationId) {
-//        if (Build.VERSION.SDK_INT >= 29 && !isAppVisible()) {
-//            return;
-//        }
+
+
+        Log.i(TAG, "sendCallInviteToActivity.");
+
         Intent pluginIntent = new Intent();
         pluginIntent.setAction(Constants.ACTION_INCOMING_CALL);
         pluginIntent.putExtra(Constants.INCOMING_CALL_NOTIFICATION_ID, notificationId);
         pluginIntent.putExtra(Constants.INCOMING_CALL_INVITE, callInvite);
         LocalBroadcastManager.getInstance(this).sendBroadcast(pluginIntent);
+        if (TwilioVoicePlugin.hasStarted || (Build.VERSION.SDK_INT >= 29 && !isAppVisible())) {
+            return;
+        }
+        startAnswerActivity(callInvite, notificationId);
+    }
+
+    private void startAnswerActivity(CallInvite callInvite, int notificationId) {
+        Intent intent = new Intent(this, AnswerJavaActivity.class);
+        intent.setAction(Constants.ACTION_INCOMING_CALL);
+        intent.putExtra(Constants.INCOMING_CALL_NOTIFICATION_ID, notificationId);
+        intent.putExtra(Constants.INCOMING_CALL_INVITE, callInvite);
+        intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        startActivity(intent);
     }
 
     private boolean isAppVisible() {
