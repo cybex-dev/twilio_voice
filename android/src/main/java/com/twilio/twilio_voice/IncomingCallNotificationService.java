@@ -43,7 +43,7 @@ public class IncomingCallNotificationService extends Service {
                     break;
                 case Constants.ACTION_ACCEPT:
                     int origin = intent.getIntExtra(Constants.ACCEPT_CALL_ORIGIN, 0);
-                    Log.d(TAG, "onStartCommand-ActionAccept $origin");
+                    Log.d(TAG, "onStartCommand-ActionAccept" + origin);
                     accept(callInvite, notificationId, origin);
                     break;
                 case Constants.ACTION_REJECT:
@@ -89,6 +89,7 @@ public class IncomingCallNotificationService extends Service {
         String caller = preferences.getString(fromId, preferences.getString("defaultCaller", "Unknown caller"));
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Log.i(TAG, "building notification for new phones");
             return buildNotification(getApplicationName(context), getString(R.string.new_call, caller),
                     pendingIntent,
                     extras,
@@ -96,6 +97,7 @@ public class IncomingCallNotificationService extends Service {
                     notificationId,
                     createChannel(channelImportance));
         } else {
+            Log.i(TAG, "building notification for older phones");
 
             return new NotificationCompat.Builder(this)
                     .setSmallIcon(R.drawable.ic_call_end_white_24dp)
@@ -191,14 +193,29 @@ public class IncomingCallNotificationService extends Service {
         endForeground();
         Log.i(TAG, "accept call invite!");
         SoundPoolManager.getInstance(this).stopRinging();
-        Intent activeCallIntent = new Intent();
+
+        Intent activeCallIntent;
+        if (origin == 0 && !isAppVisible()) {
+            Log.i(TAG, "Creating answerJavaActivity intent");
+            activeCallIntent = new Intent(this, AnswerJavaActivity.class);
+        } else {
+            Log.i(TAG, "Creating answer broadcast intent");
+            activeCallIntent = new Intent();
+        }
+
         activeCallIntent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
         activeCallIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         activeCallIntent.putExtra(Constants.INCOMING_CALL_INVITE, callInvite);
         activeCallIntent.putExtra(Constants.INCOMING_CALL_NOTIFICATION_ID, notificationId);
         activeCallIntent.putExtra(Constants.ACCEPT_CALL_ORIGIN, origin);
         activeCallIntent.setAction(Constants.ACTION_ACCEPT);
-        LocalBroadcastManager.getInstance(this).sendBroadcast(activeCallIntent);
+        if (origin == 0 && !isAppVisible()) {
+            startActivity(activeCallIntent);
+            Log.i(TAG, "starting activity");
+        } else {
+            LocalBroadcastManager.getInstance(this).sendBroadcast(activeCallIntent);
+            Log.i(TAG, "sending broadcast intent");
+        }
     }
 
     private void reject(CallInvite callInvite) {
