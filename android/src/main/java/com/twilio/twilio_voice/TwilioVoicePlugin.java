@@ -455,7 +455,7 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
             String id = call.argument("id");
             boolean added = false;
             if (id != null) {
-                sendPhoneCallEvents("LOG|Unegistering" + id);
+                sendPhoneCallEvents("LOG|Unregistering" + id);
                 SharedPreferences.Editor edit = pSharedPref.edit();
                 edit.remove(id);
                 edit.apply();
