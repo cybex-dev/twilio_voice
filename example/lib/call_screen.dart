@@ -33,6 +33,12 @@ class _CallScreenState extends State<CallScreen> {
             mute = true;
           });
           break;
+        case CallEvent.connected:
+          print("received mute");
+          setState(() {
+            message = "Connected!";
+          });
+          break;
         case CallEvent.unmute:
           print("received unmute");
           setState(() {
@@ -52,11 +58,13 @@ class _CallScreenState extends State<CallScreen> {
           });
           break;
         case CallEvent.ringing:
+          print("ringing");
           setState(() {
             message = "Calling...";
           });
           break;
         case CallEvent.answer:
+          print("call answered");
           setState(() {
             message = null;
           });
