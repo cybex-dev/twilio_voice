@@ -153,6 +153,16 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
               }
             }
             break;
+          case CallEvent.declined:
+            final activeCall = TwilioVoice.instance.call.activeCall;
+            if(activeCall != null) {
+              TwilioVoice.instance.call.hangUp().then((value) {
+                hasPushedToCall = false;
+              });
+            } else {
+              hasPushedToCall = false;
+            }
+            break;
           case CallEvent.connected:
             if (Platform.isAndroid &&
                 TwilioVoice.instance.call.activeCall!.callDirection ==
