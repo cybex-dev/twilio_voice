@@ -49,7 +49,7 @@ class TwilioVoice {
     });
   }
 
-  /// Wheter or not should the user receive a notification after a missed call, default to true.
+  /// Whether or not should the user receive a notification after a missed call, default to true.
   ///
   /// Setting is persisted across restarts until overriden
   set showMissedCallNotifications(bool value) {
