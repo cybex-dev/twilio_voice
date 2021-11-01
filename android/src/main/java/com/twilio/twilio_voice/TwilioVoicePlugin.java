@@ -405,6 +405,8 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
             Log.d(TAG, "Muting call");
             this.mute(muted);
             result.success(true);
+        } else if (call.method.equals("call-sid")) {
+            return result.success(activeCall.getSid());
         } else if (call.method.equals("isOnCall")) {
             Log.d(TAG, "Is on call invoked");
             result.success(this.activeCall != null);
@@ -442,28 +444,37 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
         } else if (call.method.equals("registerClient")) {
             String id = call.argument("id");
             String name = call.argument("name");
+            boolean added = false;
             if (id != null && name != null && !pSharedPref.contains(id)) {
                 sendPhoneCallEvents("LOG|Registering client " + id + ":" + name);
                 SharedPreferences.Editor edit = pSharedPref.edit();
                 edit.putString(id, name);
                 edit.apply();
+                added = true;
             }
+            result.success(added);
         } else if (call.method.equals("unregisterClient")) {
             String id = call.argument("id");
+            boolean added = false;
             if (id != null) {
-                sendPhoneCallEvents("LOG|Unegistering" + id);
+                sendPhoneCallEvents("LOG|Unregistering" + id);
                 SharedPreferences.Editor edit = pSharedPref.edit();
                 edit.remove(id);
                 edit.apply();
+                added = true;
             }
+            result.success(added);
         } else if (call.method.equals("defaultCaller")) {
             String caller = call.argument("defaultCaller");
+            boolean added = false;
             if (caller != null) {
                 sendPhoneCallEvents("LOG|defaultCaller is " + caller);
                 SharedPreferences.Editor edit = pSharedPref.edit();
                 edit.putString("defaultCaller", caller);
                 edit.apply();
+                added = true;
             }
+            result.success(added);
         } else if (call.method.equals("hasMicPermission")) {
             result.success(this.checkPermissionForMicrophone());
         } else if (call.method.equals("requestMicPermission")) {
