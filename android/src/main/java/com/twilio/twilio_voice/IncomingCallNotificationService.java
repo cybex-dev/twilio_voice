@@ -236,8 +236,9 @@ public class IncomingCallNotificationService extends Service {
         CancelledCallInvite cancelledCallInvite = intent.getParcelableExtra(Constants.CANCELLED_CALL_INVITE);
         SharedPreferences preferences = getApplicationContext().getSharedPreferences(TwilioPreferences, Context.MODE_PRIVATE);
         boolean prefsShow = preferences.getBoolean("show-notifications", true);
+        boolean allowReturnCalls = preferences.getBoolean("show-return-call-option", true);
         if (prefsShow) {
-            buildMissedCallNotification(cancelledCallInvite.getFrom(), cancelledCallInvite.getTo());
+            buildMissedCallNotification(cancelledCallInvite.getFrom(), cancelledCallInvite.getTo(), allowReturnCalls);
         }
         endForeground();
         LocalBroadcastManager.getInstance(this).sendBroadcast(intent);
@@ -252,7 +253,7 @@ public class IncomingCallNotificationService extends Service {
     }
 
 
-    private void buildMissedCallNotification(String callerId, String to) {
+    private void buildMissedCallNotification(String callerId, String to, boolean showReturnCallOption) {
 
         String fromId = callerId.replace("client:", "");
         Context context = getApplicationContext();

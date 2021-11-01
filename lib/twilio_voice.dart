@@ -57,6 +57,14 @@ class TwilioVoice {
         .invokeMethod('show-notifications', <String, dynamic>{"show": value});
   }
 
+  /// Whether or not should the user can click return call option from missed call notification, default to true.
+  ///
+  /// Setting is persisted across restarts until overriden
+  set showReturnCallOptionInNotifications(bool value) {
+    _channel
+        .invokeMethod('show-return-call-option', <String, dynamic>{"show": value});
+  }
+
   /// Unregisters from Twilio
   ///
   /// If no accesToken is provided, previously registered accesToken will be used

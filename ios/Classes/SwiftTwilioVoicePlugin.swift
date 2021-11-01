@@ -247,6 +247,14 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             }
             result(true)
             return
+        } else if flutterCall.method == "show-return-call-option" {
+            guard let show = arguments["show"] as? Bool else{return}
+            let prefsShow = UserDefaults.standard.optionalBool(forKey: "show-return-call-option") ?? true
+            if show != prefsShow{
+                UserDefaults.standard.setValue(show, forKey: "show-return-call-option")
+            }
+            result(true)
+            return
         }
         result(true)
     }
@@ -874,6 +882,9 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         let userInfo = response.notification.request.content.userInfo
         
         if let type = userInfo["type"] as? String, type == "twilio-missed-call", let user = userInfo["From"] as? String{
+            // check if we should return call
+            guard UserDefaults.standard.optionalBool(forKey: "show-return-call-option") ?? true else{return}
+
             self.callTo = user
             if let to = userInfo["To"] as? String{
                 self.identity = to
