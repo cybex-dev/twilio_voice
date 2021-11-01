@@ -464,12 +464,15 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
             result.success(added);
         } else if (call.method.equals("defaultCaller")) {
             String caller = call.argument("defaultCaller");
+            boolean added = false;
             if (caller != null) {
                 sendPhoneCallEvents("LOG|defaultCaller is " + caller);
                 SharedPreferences.Editor edit = pSharedPref.edit();
                 edit.putString("defaultCaller", caller);
                 edit.apply();
+                added = true;
             }
+            result.success(added);
         } else if (call.method.equals("hasMicPermission")) {
             result.success(this.checkPermissionForMicrophone());
         } else if (call.method.equals("requestMicPermission")) {
