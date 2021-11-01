@@ -501,7 +501,7 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
                 edit.putBoolean("show-return-call-option", show);
                 edit.apply();
             }
-            return result.success(true);
+            result.success(true);
         } else if (call.method.equals("requiresBackgroundPermissions")) {
             String manufacturer = "xiaomi";
             if (manufacturer.equalsIgnoreCase(android.os.Build.MANUFACTURER)) {
