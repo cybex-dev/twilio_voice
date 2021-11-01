@@ -49,12 +49,20 @@ class TwilioVoice {
     });
   }
 
-  /// Wheter or not should the user receive a notification after a missed call, default to true.
+  /// Whether or not should the user receive a notification after a missed call, default to true.
   ///
   /// Setting is persisted across restarts until overriden
   set showMissedCallNotifications(bool value) {
     _channel
         .invokeMethod('show-notifications', <String, dynamic>{"show": value});
+  }
+
+  /// Whether or not should the user can click return call option from missed call notification, default to true.
+  ///
+  /// Setting is persisted across restarts until overriden
+  set showReturnCallOptionInNotifications(bool value) {
+    _channel
+        .invokeMethod('show-return-call-option', <String, dynamic>{"show": value});
   }
 
   /// Unregisters from Twilio
