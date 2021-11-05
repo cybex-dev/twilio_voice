@@ -34,7 +34,7 @@ class _CallScreenState extends State<CallScreen> {
           });
           break;
         case CallEvent.connected:
-          print("received mute");
+          print("call connected");
           setState(() {
             message = "Connected!";
           });
