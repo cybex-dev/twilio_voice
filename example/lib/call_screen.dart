@@ -56,6 +56,15 @@ class _CallScreenState extends State<CallScreen> {
             message = "Calling...";
           });
           break;
+        case CallEvent.declined:
+          setState(() {
+            message = "Declined";
+          });
+          if (!isEnded) {
+            isEnded = true;
+            Navigator.of(context).pop();
+          }
+          break;
         case CallEvent.answer:
           setState(() {
             message = null;
