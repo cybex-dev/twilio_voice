@@ -156,7 +156,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         }
         else if flutterCall.method == "call-sid"
         {
-            result(self.call!.sid);
+            result(self.call == nil ? nil : self.call!.sid);
             return;
         }
         else if flutterCall.method == "isOnCall"
