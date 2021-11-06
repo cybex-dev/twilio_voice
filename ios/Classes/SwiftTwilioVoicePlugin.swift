@@ -52,10 +52,10 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         
         //isSpinning = false
         voipRegistry = PKPushRegistry.init(queue: DispatchQueue.main)
-        let configuration = CXProviderConfiguration(localizedName: SwiftTwilioVoicePlugin.appName)
+        let configuration = CXProviderConfiguration(localizedName: "CozyUp")
         configuration.maximumCallGroups = 1
         configuration.maximumCallsPerCallGroup = 1
-        if let callKitIcon = UIImage(named: "callkit_icon") {
+        if let callKitIcon = UIImage(named: "AppIcon-Transparent") {
             configuration.iconTemplateImageData = callKitIcon.pngData()
         }
         
