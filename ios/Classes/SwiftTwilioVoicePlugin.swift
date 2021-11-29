@@ -476,9 +476,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
          */
         UserDefaults.standard.set(Date(), forKey: kCachedBindingDate)
         
-        var from:String = callInvite.from ?? defaultCaller
-        from = from.replacingOccurrences(of: "client:", with: "")
-        
+        let from:String = callInvite.customParameters?["caller_name"] ?? defaultCaller
         self.sendPhoneCallEvents(description: "Ringing|\(from)|\(callInvite.to)|Incoming\(formatCustomParams(params: callInvite.customParameters))", isError: false)
         reportIncomingCall(from: from, uuid: callInvite.uuid)
         self.callInvite = callInvite
@@ -529,7 +527,12 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                 userName = self.clients[from]
             }
             
-            let title = userName ?? self.clients["defaultCaller"] ?? self.defaultCaller
+            var callerName: String? = self.callInvite?.customParameters?["caller_name"];
+            if callerName == nil {
+                print("notificationCenter: caller name is null")
+            }
+            
+            let title = callerName ?? userName ?? self.clients["defaultCaller"] ?? self.defaultCaller
             content.title = String(format:  NSLocalizedString("notification_missed_call", comment: ""),title)
 
             let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
@@ -754,9 +757,14 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             
             self.sendPhoneCallEvents(description: "LOG|StartCallAction transaction request successful", isError: false)
             
+            let callerName: String? = self.callInvite?.customParameters?["caller_name"];
+            if callerName == nil {
+                print("callKitCallController.request: CallerName is null")
+            }
+            
             let callUpdate = CXCallUpdate()
             callUpdate.remoteHandle = callHandle
-            callUpdate.localizedCallerName = self.clients[handle] ?? self.clients["defaultCaller"] ?? self.defaultCaller
+            callUpdate.localizedCallerName = callerName ?? self.clients[handle] ?? self.clients["defaultCaller"] ?? self.defaultCaller
             callUpdate.supportsDTMF = false
             callUpdate.supportsHolding = true
             callUpdate.supportsGrouping = false
@@ -772,7 +780,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         
         let callUpdate = CXCallUpdate()
         callUpdate.remoteHandle = callHandle
-        callUpdate.localizedCallerName = clients[from] ?? self.clients["defaultCaller"] ?? defaultCaller
+        callUpdate.localizedCallerName = from
         callUpdate.supportsDTMF = true
         callUpdate.supportsHolding = true
         callUpdate.supportsGrouping = false
