@@ -192,12 +192,18 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         }
         else if flutterCall.method == "unregister" {
             guard let deviceToken = deviceToken else {
+                result(false);
                 return
             }
             if let token = arguments["accessToken"] as? String{
                 self.unregisterTokens(token: token, deviceToken: deviceToken)
+                result(true);
             }else if let token = accessToken{
                 self.unregisterTokens(token: token, deviceToken: deviceToken)
+                result(true);
+            } else {
+                print("did not unregister Twilio access token")
+                result(false);
             }
             
         }else if flutterCall.method == "hangUp"{
