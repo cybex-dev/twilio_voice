@@ -85,8 +85,11 @@ public class IncomingCallNotificationService extends Service {
         Context context = getApplicationContext();
         SharedPreferences preferences = context.getSharedPreferences(TwilioPreferences, Context.MODE_PRIVATE);
         Log.i(TAG, "Setting notification from, " + callInvite.getFrom());
-        String fromId = callInvite.getFrom().replace("client:", "");
-        String caller = preferences.getString(fromId, preferences.getString("defaultCaller", "Unknown caller"));
+
+        String caller = callInvite.getCustomParameters().get("caller_name");
+        if(caller == null) {
+            caller = getString(R.string.unknown_caller);
+        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Log.i(TAG, "building notification for new phones");
@@ -237,7 +240,7 @@ public class IncomingCallNotificationService extends Service {
         SharedPreferences preferences = getApplicationContext().getSharedPreferences(TwilioPreferences, Context.MODE_PRIVATE);
         boolean prefsShow = preferences.getBoolean("show-notifications", true);
         boolean allowReturnCalls = preferences.getBoolean("show-return-call-option", true);
-        if (prefsShow) {
+        if (prefsShow && allowReturnCalls) {
             buildMissedCallNotification(cancelledCallInvite.getFrom(), cancelledCallInvite.getTo(), allowReturnCalls);
         }
         endForeground();
