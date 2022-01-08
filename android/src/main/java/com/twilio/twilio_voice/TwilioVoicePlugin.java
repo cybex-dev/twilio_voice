@@ -340,13 +340,20 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
         }
     }
 
-    private void unregisterForCallInvites(String accessToken) {
-        if(this.fcmToken == null){return;}
+    private boolean unregisterForCallInvites(String accessToken) {
+        if(this.fcmToken == null){
+            return false;
+        }
         Log.i(TAG, "Un-registering with FCM");
         if (accessToken != null) {
             Voice.unregister(accessToken, Voice.RegistrationChannel.FCM, this.fcmToken, unregistrationListener);
+            return true;
         }else if (this.accessToken != null) {
             Voice.unregister(this.accessToken, Voice.RegistrationChannel.FCM, this.fcmToken, unregistrationListener);
+            return true;
+        } else {
+            Log.d(TAG, "unregisterForCallInvites: did not unregister accessToken");
+            return false;
         }
     }
 
@@ -420,8 +427,8 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
             result.success(true);
         } else if (call.method.equals("unregister")) {
             String accessToken = call.argument("accessToken");
-            this.unregisterForCallInvites(accessToken);
-            result.success(true);
+            boolean res = this.unregisterForCallInvites(accessToken);
+            result.success(res);
         } else if (call.method.equals("makeCall")) {
             Log.d(TAG, "Making new call");
             sendPhoneCallEvents("LOG|Making new call");
