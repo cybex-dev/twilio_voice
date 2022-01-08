@@ -351,7 +351,10 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             return
         }
         
-        guard registrationRequired() || deviceToken != credentials.token else { return }
+//        guard registrationRequired() || deviceToken != credentials.token else {
+//            print("device token the same as credentials token");
+//            return;
+//        }
 
         let deviceToken = credentials.token
         
