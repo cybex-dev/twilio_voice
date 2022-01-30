@@ -52,10 +52,10 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         
         //isSpinning = false
         voipRegistry = PKPushRegistry.init(queue: DispatchQueue.main)
-        let configuration = CXProviderConfiguration(localizedName: SwiftTwilioVoicePlugin.appName)
+        let configuration = CXProviderConfiguration(localizedName: "CozyUp")
         configuration.maximumCallGroups = 1
         configuration.maximumCallsPerCallGroup = 1
-        if let callKitIcon = UIImage(named: "callkit_icon") {
+        if let callKitIcon = UIImage(named: "AppIcon-Transparent") {
             configuration.iconTemplateImageData = callKitIcon.pngData()
         }
         
@@ -539,7 +539,12 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                 userName = self.clients[from]
             }
             
-            let title = userName ?? self.clients["defaultCaller"] ?? self.defaultCaller
+            var callerName: String? = self.callInvite?.customParameters?["caller_name"];
+            if callerName == nil {
+                print("notificationCenter: caller name is null")
+            }
+            
+            let title = callerName ?? userName ?? self.clients["defaultCaller"] ?? self.defaultCaller
             content.title = String(format:  NSLocalizedString("notification_missed_call", comment: ""),title)
 
             let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
@@ -764,9 +769,14 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             
             self.sendPhoneCallEvents(description: "LOG|StartCallAction transaction request successful", isError: false)
             
+            let callerName: String? = self.callInvite?.customParameters?["caller_name"];
+            if callerName == nil {
+                print("callKitCallController.request: CallerName is null")
+            }
+            
             let callUpdate = CXCallUpdate()
             callUpdate.remoteHandle = callHandle
-            callUpdate.localizedCallerName = self.clients[handle] ?? self.clients["defaultCaller"] ?? self.defaultCaller
+            callUpdate.localizedCallerName = callerName ?? self.clients[handle] ?? self.clients["defaultCaller"] ?? self.defaultCaller
             callUpdate.supportsDTMF = false
             callUpdate.supportsHolding = true
             callUpdate.supportsGrouping = false
