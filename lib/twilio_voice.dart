@@ -144,6 +144,9 @@ class TwilioVoice {
         return CallEvent.missedCall;
       } else if(tokens[1].contains("31486")) {
         return CallEvent.declined;
+      }  else if(tokens.toString().toLowerCase().contains("busy here")) {
+        // Android call reject from string: "LOG|Call Rejected"
+        return CallEvent.declined;
       } else if(tokens.toString().toLowerCase().contains("call rejected")) {
         // Android call reject from string: "LOG|Call Rejected"
         return CallEvent.declined;
