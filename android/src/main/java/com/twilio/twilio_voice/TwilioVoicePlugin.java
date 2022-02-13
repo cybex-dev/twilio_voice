@@ -445,7 +445,7 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
             String id = call.argument("id");
             String name = call.argument("name");
             boolean added = false;
-            if (id != null && name != null && !pSharedPref.contains(id)) {
+            if (id != null && name != null) {
                 sendPhoneCallEvents("LOG|Registering client " + id + ":" + name);
                 SharedPreferences.Editor edit = pSharedPref.edit();
                 edit.putString(id, name);
