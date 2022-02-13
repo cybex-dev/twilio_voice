@@ -196,10 +196,10 @@ public class AnswerJavaActivity extends AppCompatActivity {
         if (TwilioVoicePlugin.hasStarted) {
             finish();
         } else {
+            Log.d(TAG, "Answering call");
+            activeCallInvite.accept(this, callListener);
             notificationManager.cancel(activeCallNotificationId);
         }
-        Log.d(TAG, "Answering call");
-        activeCallInvite.accept(this, callListener);
     }
 
     private void startAnswerActivity(Call call) {
