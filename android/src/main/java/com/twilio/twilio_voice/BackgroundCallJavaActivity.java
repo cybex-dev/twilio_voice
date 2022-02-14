@@ -216,11 +216,8 @@ public class BackgroundCallJavaActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
-        deactivateSensor();
         super.onDestroy();
-        if (wakeLock != null) {
-            wakeLock.release();
-        }
+        deactivateSensor();
     }
 
 }
