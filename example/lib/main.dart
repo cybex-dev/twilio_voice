@@ -7,7 +7,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:twilio_voice/twilio_voice.dart';
 
-import 'package:twilio_voice_example/call_screen.dart';
+import 'call_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
