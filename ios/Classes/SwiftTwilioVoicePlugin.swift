@@ -107,6 +107,8 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         if flutterCall.method == "loadDeviceToken" {
             if let deviceToken = deviceToken {
                 self.sendPhoneCallEvents(description: "DEVICETOKEN|\(deviceToken.hexString)", isError: false)
+                result(true)
+                return
             }
         }
         if flutterCall.method == "tokens" {

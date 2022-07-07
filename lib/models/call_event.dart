@@ -11,6 +11,7 @@ enum CallEvent {
   speakerOn,
   speakerOff,
   log,
+  iosDeviceToken,
   declined,
   answer,
   missedCall,
