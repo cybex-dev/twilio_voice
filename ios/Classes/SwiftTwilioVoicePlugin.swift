@@ -104,6 +104,11 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         
         let arguments:Dictionary<String, AnyObject> = flutterCall.arguments as! Dictionary<String, AnyObject>;
         
+        if flutterCall.method == "loadDeviceToken" {
+            if let deviceToken = deviceToken {
+                self.sendPhoneCallEvents(description: "DEVICETOKEN|\(deviceToken.hexString)", isError: false)
+            }
+        }
         if flutterCall.method == "tokens" {
             guard let token = arguments["accessToken"] as? String else {return}
             self.accessToken = token
@@ -340,7 +345,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         guard registrationRequired() || deviceToken != credentials.token else { return }
 
         let deviceToken = credentials.token
-        
+
         self.sendPhoneCallEvents(description: "LOG|pushRegistry:attempting to register with twilio", isError: false)
         if let token = accessToken {
             TwilioVoiceSDK.register(accessToken: token, deviceToken: deviceToken) { (error) in
@@ -933,5 +938,13 @@ extension UserDefaults {
             return value as? Bool
         }
         return nil
+    }
+}
+
+
+extension Data {
+    var hexString: String {
+        let hexString = map { String(format: "%02.2hhx", $0) }.joined()
+        return hexString
     }
 }
