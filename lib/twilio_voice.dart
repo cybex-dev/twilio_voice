@@ -131,7 +131,7 @@ class TwilioVoice {
       if (deviceTokenChanged != null) {
         deviceTokenChanged!(token);
       }
-      return CallEvent.log;
+      return CallEvent.iosDeviceToken;
     } else if (state.startsWith("LOG|")) {
       List<String> tokens = state.split('|');
       print(tokens[1]);
