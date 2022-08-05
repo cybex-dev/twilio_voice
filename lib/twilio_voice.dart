@@ -2,6 +2,7 @@ library twilio_voice;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 
@@ -45,8 +46,11 @@ class TwilioVoice {
     return _channel.invokeMethod('loadDeviceToken', <String, dynamic>{});
   }
 
+  // Android only for TwilioVoicePlugin.java
   Future<void> setAppHasStarted({required bool appHasStarted}) async {
-    await _channel.invokeMethod('setAppHasStarted', <String, dynamic>{"appHasStarted": appHasStarted});
+    if (Platform.isAndroid) {
+      await _channel.invokeMethod('setAppHasStarted', <String, dynamic>{"appHasStarted": appHasStarted});
+    }
   }
 
   /// register fcm token, and device token for android

@@ -396,7 +396,7 @@ public class AnswerJavaActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
-        Log.d(TAG, "AnserJAvaActivity ondestroy");
+        Log.d(TAG, "AnwserJAvaActivity ondestroy");
 //        unregisterReceiver();
         super.onDestroy();
         if (wakeLock != null) {

@@ -58,7 +58,7 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
     private static final String TAG = "TwilioVoicePlugin";
     public static final String TwilioPreferences = "com.twilio.twilio_voicePreferences";
     private static final int MIC_PERMISSION_REQUEST_CODE = 1;
-    static boolean hasStarted = false;
+    // static boolean hasStarted = false;
     static boolean appHasStarted = false;
 
     private String accessToken;
@@ -92,7 +92,7 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
     @Override
     public void onAttachedToEngine(@NonNull FlutterPluginBinding flutterPluginBinding) {
         register(flutterPluginBinding.getBinaryMessenger(), this, flutterPluginBinding.getApplicationContext());
-        hasStarted = true;
+        /*hasStarted = true;*/
     }
 
     private static void register(BinaryMessenger messenger, TwilioVoicePlugin plugin, Context context) {
