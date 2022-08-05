@@ -114,7 +114,12 @@ public class AnswerJavaActivity extends AppCompatActivity {
                     checkPermissionsAndAccept();
                     break;
                 case Constants.ACTION_END_CALL:
-                    Log.d(TAG, "ending call" + activeCall != null ? "TRue" : "False");
+                    Log.d(TAG, "ending call" + activeCall != null ? "True" : "False");
+                    if (activeCall == null) {
+                        Log.d(TAG, "No active call to end. Returning");
+                        finish();
+                        break;
+                    }
                     activeCall.disconnect();
                     initiatedDisconnect = true;
                     finish();
@@ -193,13 +198,18 @@ public class AnswerJavaActivity extends AppCompatActivity {
         acceptIntent.putExtra(Constants.INCOMING_CALL_NOTIFICATION_ID, activeCallNotificationId);
         Log.d(TAG, "Clicked accept startService");
         startService(acceptIntent);
-        if (TwilioVoicePlugin.hasStarted) {
+        if (!isLocked() && TwilioVoicePlugin.appHasStarted) {
             finish();
         } else {
             Log.d(TAG, "Answering call");
             activeCallInvite.accept(this, callListener);
             notificationManager.cancel(activeCallNotificationId);
         }
+    }
+
+    private boolean isLocked() {
+        KeyguardManager myKM = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
+        return myKM.inKeyguardRestrictedInputMode();
     }
 
     private void startAnswerActivity(Call call) {
@@ -246,7 +256,10 @@ public class AnswerJavaActivity extends AppCompatActivity {
             @Override
             public void onConnected(@NonNull Call call) {
                 activeCall = call;
-                startAnswerActivity(call);
+                if (!TwilioVoicePlugin.appHasStarted) {
+                    Log.d(TAG, "Connected from BackgroundUI");
+                    startAnswerActivity(call);
+                }
             }
 
             @Override
@@ -261,8 +274,10 @@ public class AnswerJavaActivity extends AppCompatActivity {
 
             @Override
             public void onDisconnected(@NonNull Call call, CallException error) {
-                Log.d(TAG, "Disconnected");
-                endCall();
+                if (!TwilioVoicePlugin.appHasStarted) {
+                    Log.d(TAG, "Disconnected");
+                    endCall();
+                }
             }
 
         };

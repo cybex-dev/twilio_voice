@@ -59,6 +59,7 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
     public static final String TwilioPreferences = "com.twilio.twilio_voicePreferences";
     private static final int MIC_PERMISSION_REQUEST_CODE = 1;
     static boolean hasStarted = false;
+    static boolean appHasStarted = false;
 
     private String accessToken;
     private AudioManager audioManager;
@@ -359,6 +360,7 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
         methodChannel = null;
         eventChannel.setStreamHandler(null);
         eventChannel = null;
+        appHasStarted = false;
     }
 
     @Override
@@ -371,6 +373,10 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
     public void onCancel(Object o) {
         Log.i(TAG, "Removing event sink");
         this.eventSink = null;
+    }
+
+    public Boolean isAppStarted() {
+        return this.appHasStarted;
     }
 
     @Override
@@ -519,6 +525,9 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
                 localIntent.putExtra("extra_pkgname", activity.getPackageName());
                 activity.startActivity(localIntent);
             }
+            result.success(true);
+        } else if (call.method.equals("setAppHasStarted")) {
+            this.appHasStarted = call.argument("appHasStarted");
             result.success(true);
         } else {
             result.notImplemented();
