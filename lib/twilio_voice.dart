@@ -2,6 +2,7 @@ library twilio_voice;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 
@@ -43,6 +44,13 @@ class TwilioVoice {
 
   Future<bool?> loadDeviceToken() {
     return _channel.invokeMethod('loadDeviceToken', <String, dynamic>{});
+  }
+
+  // Android only for TwilioVoicePlugin.java
+  Future<void> setAppHasStarted({required bool appHasStarted}) async {
+    if (Platform.isAndroid) {
+      await _channel.invokeMethod('setAppHasStarted', <String, dynamic>{"appHasStarted": appHasStarted});
+    }
   }
 
   /// register fcm token, and device token for android
@@ -138,12 +146,12 @@ class TwilioVoice {
 
       // source: https://www.twilio.com/docs/api/errors/31603
       // The callee does not wish to participate in the call.
-      if(tokens[1].contains("31603")) {
+      if (tokens[1].contains("31603")) {
         return CallEvent.declined;
-      } else if(tokens.toString().toLowerCase().contains("call rejected")) {
+      } else if (tokens.toString().toLowerCase().contains("call rejected")) {
         // Android call reject from string: "LOG|Call Rejected"
         return CallEvent.declined;
-      } else if(tokens.toString().toLowerCase().contains("rejecting call")) {
+      } else if (tokens.toString().toLowerCase().contains("rejecting call")) {
         // iOS call reject froms tring: "LOG|provider:performEndCallAction: rejecting call"
         return CallEvent.declined;
       }
@@ -266,7 +274,8 @@ class Call {
 
   /// Gets the active call's SID. This will be null until the first Ringing event occurs
   Future<String?> getSid() {
-    return _channel.invokeMethod<String?>('call-sid', <String, dynamic>{}).then<String?>((String? value) => value);
+    return _channel.invokeMethod<String?>('call-sid',
+        <String, dynamic>{}).then<String?>((String? value) => value);
   }
 
   /// Answers incoming call
