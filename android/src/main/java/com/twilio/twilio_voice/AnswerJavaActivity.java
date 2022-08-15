@@ -117,12 +117,12 @@ public class AnswerJavaActivity extends AppCompatActivity {
                     Log.d(TAG, "ending call" + activeCall != null ? "True" : "False");
                     if (activeCall == null) {
                         Log.d(TAG, "No active call to end. Returning");
-                        finish();
+                        finishAndRemoveTask();
                         break;
                     }
                     activeCall.disconnect();
                     initiatedDisconnect = true;
-                    finish();
+                    finishAndRemoveTask();
                     break;
                 case Constants.ACTION_TOGGLE_MUTE:
                     boolean muted = activeCall.isMuted();
@@ -222,7 +222,7 @@ public class AnswerJavaActivity extends AppCompatActivity {
     }
 
     private void endCall() {
-
+        Log.d(TAG, "endCall - initiatedDisconnect: " + initiatedDisconnect);
         if (!initiatedDisconnect) {
             Intent intent = new Intent(this, BackgroundCallJavaActivity.class);
             intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
@@ -397,8 +397,8 @@ public class AnswerJavaActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         Log.d(TAG, "AnwserJAvaActivity ondestroy");
-//        unregisterReceiver();
         super.onDestroy();
+        unregisterReceiver();
         if (wakeLock != null) {
             wakeLock.release();
         }
