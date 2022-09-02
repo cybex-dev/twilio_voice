@@ -269,6 +269,15 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             }
             result(true)
             return
+        } else if flutterCall.method == "get-active-call" {
+            if (self.call == nil) {
+                result(nil);
+            }
+            else {
+                result(["from": self.call?.from,
+                        "to": self.call?.to,
+                        "direction": (self.callOutgoing ? "Outgoing" : "Incoming")]);
+            }
         }
         result(true)
     }

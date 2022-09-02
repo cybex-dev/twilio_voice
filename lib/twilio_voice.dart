@@ -302,4 +302,27 @@ class Call {
     return _channel
         .invokeMethod('sendDigits', <String, dynamic>{"digits": digits});
   }
+
+  /// In case the app was launched during an active call, the activeCall
+  /// property is not yet set. This method is called to set the value
+  Future<bool> getActiveCall(String digits) async {
+    if (activeCall != null) return true;
+    Map<String, dynamic>? result = await _channel
+        .invokeMethod('get-active-call', <String, dynamic>{});
+    if (activeCall != null) return true;
+
+    if (result == null) {
+      return false;
+    }
+    else {
+      _activeCall = ActiveCall(
+          from: result["from"] ?? "",
+          to: result["to"] ?? "",
+          initiated: DateTime.now(),
+          callDirection: ("Incoming" == result["direction"]
+                  ? CallDirection.incoming
+                  : CallDirection.outgoing));
+      return true;
+    }
+  }
 }
