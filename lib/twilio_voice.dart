@@ -305,7 +305,7 @@ class Call {
 
   /// In case the app was launched during an active call, the activeCall
   /// property is not yet set. This method is called to set the value
-  Future<bool> getActiveCall(String digits) async {
+  Future<bool> getActiveCall() async {
     if (activeCall != null) return true;
     Map<String, dynamic>? result = await _channel
         .invokeMethod('get-active-call', <String, dynamic>{});
