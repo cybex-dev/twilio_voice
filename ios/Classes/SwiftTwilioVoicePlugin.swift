@@ -498,11 +498,11 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         UserDefaults.standard.set(Date(), forKey: kCachedBindingDate)
         
         let callerName:String? = callInvite.customParameters?["caller_name"];
-        var from:String = callerName ?? callInvite.from ?? defaultCaller
+        var from:String = callInvite.from ?? defaultCaller
         from = from.replacingOccurrences(of: "client:", with: "")
         
         self.sendPhoneCallEvents(description: "Ringing|\(from)|\(callInvite.to)|Incoming\(formatCustomParams(params: callInvite.customParameters))", isError: false)
-        reportIncomingCall(from: from, uuid: callInvite.uuid)
+        reportIncomingCall(from: from, uuid: callInvite.uuid, callerName: callerName)
         self.callInvite = callInvite
     }
     
@@ -799,12 +799,12 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         }
     }
     
-    func reportIncomingCall(from: String, uuid: UUID) {
+    func reportIncomingCall(from: String, uuid: UUID, callerName: String?) {
         let callHandle = CXHandle(type: .generic, value: from)
         
         let callUpdate = CXCallUpdate()
         callUpdate.remoteHandle = callHandle
-        callUpdate.localizedCallerName = from 
+        callUpdate.localizedCallerName = callerName ?? self.clients[from] ?? from 
         callUpdate.supportsDTMF = true
         callUpdate.supportsHolding = true
         callUpdate.supportsGrouping = false
