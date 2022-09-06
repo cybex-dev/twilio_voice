@@ -497,12 +497,15 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
          */
         UserDefaults.standard.set(Date(), forKey: kCachedBindingDate)
         
-        let callerName:String? = callInvite.customParameters?["caller_name"];
+        let nickname:String? = callInvite.customParameters?["nickname"];
+        let firstName:String? = callInvite.customParameters?["firstName"];
+        let lastName:String? = callInvite.customParameters?["lastName"];
+        let formattedNumber:String? = callInvite.customParameters?["formattedNumber"];
         var from:String = callInvite.from ?? defaultCaller
         from = from.replacingOccurrences(of: "client:", with: "")
         
         self.sendPhoneCallEvents(description: "Ringing|\(from)|\(callInvite.to)|Incoming\(formatCustomParams(params: callInvite.customParameters))", isError: false)
-        reportIncomingCall(from: from, uuid: callInvite.uuid, callerName: callerName)
+        reportIncomingCall(from: from, uuid: callInvite.uuid, nickname: nickname, firstName: firstName, lastName: lastName, formattedNumber: formattedNumber)
         self.callInvite = callInvite
     }
     
@@ -799,12 +802,29 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         }
     }
     
-    func reportIncomingCall(from: String, uuid: UUID, callerName: String?) {
+    func reportIncomingCall(from: String, uuid: UUID, nickname: String?, firstName: String?, lastName: String?, formattedNumber: String?) {
         let callHandle = CXHandle(type: .generic, value: from)
+
+        let displayName: String?;
+        if (!nickname?.isEmpty ?? false) {
+            displayName = nickname;
+        }
+        else if ((!firstName?.isEmpty ?? false) && (!lastName?.isEmpty ?? false)) {
+            displayName = firstName! + " " + lastName!;
+        }
+        else if ((!firstName?.isEmpty ?? false)) {
+            displayName = firstName!;
+        }
+        else if (!formattedNumber?.isEmpty ?? false) {
+            displayName = formattedNumber!;
+        }
+        else if (!from.isEmpty) {
+            displayName = from;
+        }
         
         let callUpdate = CXCallUpdate()
         callUpdate.remoteHandle = callHandle
-        callUpdate.localizedCallerName = callerName ?? self.clients[from] ?? from 
+        callUpdate.localizedCallerName = displayName ?? self.clients[from] ?? from 
         callUpdate.supportsDTMF = true
         callUpdate.supportsHolding = true
         callUpdate.supportsGrouping = false
