@@ -805,17 +805,17 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     func reportIncomingCall(from: String, uuid: UUID, nickname: String?, firstName: String?, lastName: String?, formattedNumber: String?) {
         let callHandle = CXHandle(type: .generic, value: from)
 
-        let displayName: String?;
-        if (!nickname?.isEmpty ?? false) {
+        var displayName: String? = nil;
+        if (!(nickname?.isEmpty ?? true)) {
             displayName = nickname;
         }
-        else if ((!firstName?.isEmpty ?? false) && (!lastName?.isEmpty ?? false)) {
+        else if (!(firstName?.isEmpty ?? true) && !(lastName?.isEmpty ?? true)) {
             displayName = firstName! + " " + lastName!;
         }
-        else if ((!firstName?.isEmpty ?? false)) {
+        else if (!(firstName?.isEmpty ?? true)) {
             displayName = firstName!;
         }
-        else if (!formattedNumber?.isEmpty ?? false) {
+        else if (!(formattedNumber?.isEmpty ?? true)) {
             displayName = formattedNumber!;
         }
         else if (!from.isEmpty) {
