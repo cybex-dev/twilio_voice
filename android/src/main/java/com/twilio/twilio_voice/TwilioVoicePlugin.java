@@ -412,8 +412,16 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
             result.success(this.activeCall != null);
         } else if (call.method.equals("holdCall")) {
             Log.d(TAG, "Hold call invoked");
-            this.hold();
+            boolean shouldHold = call.argument("shouldHold");
+            this.updateHoldState(shouldHold);
             result.success(true);
+        } else if (call.method.equals("isHolding")) {
+            Log.d(TAG, "isHolding call invoked");
+            if(activeCall != null) {
+                result.success(activeCall.isOnHold());
+            } else {
+                result.success(false);
+            }
         } else if (call.method.equals("answer")) {
             Log.d(TAG, "Answering call");
             this.answer();

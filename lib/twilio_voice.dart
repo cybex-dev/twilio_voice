@@ -267,12 +267,16 @@ class Call {
     return _channel.invokeMethod('answer', <String, dynamic>{});
   }
 
-  /// Holds active call
-  Future<bool?> holdCall() {
-    return _channel.invokeMethod('holdCall', <String, dynamic>{});
+  /// Sets hold call state. true if call should be held.
+  Future<bool?> holdCall({bool shouldHold = true}) {
+    return _channel.invokeMethod('holdCall', <String, dynamic>{"shouldHold": shouldHold});
   }
 
-  /// Toogles mute state to provided value
+  /// Query's active call holding state
+  Future<bool?> isHoldingCall() {
+    return _channel.invokeMethod('isHolding', <String, dynamic>{});
+  }
+
   Future<bool?> toggleMute(bool isMuted) {
     return _channel
         .invokeMethod('toggleMute', <String, dynamic>{"muted": isMuted});

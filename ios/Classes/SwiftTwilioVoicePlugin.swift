@@ -8,7 +8,10 @@ import UserNotifications
 
 public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHandler, PKPushRegistryDelegate, NotificationDelegate, CallDelegate, AVAudioPlayerDelegate, CXProviderDelegate {
     
-
+    final let PARAMETER_CALLER_NAME = "CALLER_NAME";
+    final let PARAMETER_CALLER_ID = "CALLER_ID";
+    final let CLIENT_DEFAULT_CALLER = "defaultCaller"
+    
     var _result: FlutterResult?
     private var eventSink: FlutterEventSink?
     
@@ -44,7 +47,9 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     
     static var appName: String {
         get {
-            return (Bundle.main.infoDictionary!["CFBundleName"] as? String) ?? "Define CFBundleName"
+            return (Bundle.main.infoDictionary!["CFBundleDisplayName"] as? String) ??
+                    (Bundle.main.infoDictionary!["CFBundleName"] as? String) ??
+                        "Define CFBundleName"
         }
     }
     
@@ -177,14 +182,30 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
          self.identity = clientIdentity;
          } */
         else if flutterCall.method == "holdCall" {
+            guard let shouldHold = arguments["shouldHold"] as? Bool else {return}
+            
             if (self.call != nil) {
-                
                 let hold = self.call!.isOnHold
-                self.call!.isOnHold = !hold
-                guard let eventSink = eventSink else {
-                    return
+                if(shouldHold && !hold) {
+                    self.call!.isOnHold = true
+                    guard let eventSink = eventSink else {
+                        return
+                    }
+                    eventSink("Hold")
+                } else if(!shouldHold && hold) {
+                    self.call!.isOnHold = false
+                    guard let eventSink = eventSink else {
+                        return
+                    }
+                    eventSink("Unhold")
                 }
-                eventSink(!hold ? "Hold" : "Unhold")
+            }
+        }
+        else if flutterCall.method == "isHolding" {
+            if (self.call != nil) {
+                result(self.call!.isOnHold)
+            } else {
+                result(false)
             }
         }
         else if flutterCall.method == "answer" {
@@ -219,11 +240,11 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             clients.removeValue(forKey: clientId)
             UserDefaults.standard.set(clients, forKey: kClientList)
             
-        }else if flutterCall.method == "defaultCaller"{
-            guard let caller = arguments["defaultCaller"] as? String else {return}
+        }else if flutterCall.method == CLIENT_DEFAULT_CALLER {
+            guard let caller = arguments[CLIENT_DEFAULT_CALLER] as? String else {return}
             defaultCaller = caller
-            if(clients["defaultCaller"] == nil || clients["defaultCaller"] != defaultCaller){
-                clients["defaultCaller"] = defaultCaller
+            if(clients[CLIENT_DEFAULT_CALLER] == nil || clients[CLIENT_DEFAULT_CALLER] != defaultCaller){
+                clients[CLIENT_DEFAULT_CALLER] = defaultCaller
                 UserDefaults.standard.set(clients, forKey: kClientList)
             }
         }else if flutterCall.method == "hasMicPermission" {
@@ -468,11 +489,14 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
          */
         UserDefaults.standard.set(Date(), forKey: kCachedBindingDate)
         
-        var from:String = callInvite.from ?? defaultCaller
-        from = from.replacingOccurrences(of: "client:", with: "")
+        // present caller ID to callback
+        let callerId = callInvite.customParameters?[self.PARAMETER_CALLER_ID] ?? (callInvite.from ?? self.CLIENT_DEFAULT_CALLER).replacingOccurrences(of: "client:", with: "");
         
-        self.sendPhoneCallEvents(description: "Ringing|\(from)|\(callInvite.to)|Incoming\(formatCustomParams(params: callInvite.customParameters))", isError: false)
-        reportIncomingCall(from: from, uuid: callInvite.uuid)
+        // determine caller name from call invite
+        let callerName = self.getCallerName(callInvite: callInvite)
+        
+        self.sendPhoneCallEvents(description: "Ringing|\(callerId)|\(callInvite.to)|Incoming\(formatCustomParams(params: callInvite.customParameters))", isError: false)
+        reportIncomingCall(from: callerName, uuid: callInvite.uuid)
         self.callInvite = callInvite
     }
     
@@ -487,6 +511,16 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             print("unable to send custom parameters")
         }
         return ""
+    }
+    
+    func getCallerName(callInvite: CallInvite?)->String{
+        guard let call = callInvite else { return defaultCaller }
+        
+        let callerParamName:String? = call.customParameters?[self.PARAMETER_CALLER_NAME];
+        let callInviteOrigin: String? = call.from != nil ? call.from!.replacingOccurrences(of: "client:", with: "") : nil
+        let callerId = call.customParameters?[self.PARAMETER_CALLER_ID] ?? callInviteOrigin ?? self.CLIENT_DEFAULT_CALLER
+        
+        return  callerParamName ?? self.clients?[callerId] ?? self.defaultCaller
     }
     
     public func cancelledCallInviteReceived(cancelledCallInvite: CancelledCallInvite, error: Error) {
@@ -511,18 +545,15 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         notificationCenter.getNotificationSettings { (settings) in
           if settings.authorizationStatus == .authorized {
             let content = UNMutableNotificationContent()
-            var userName:String?
-            if var from = from{
-                from = from.replacingOccurrences(of: "client:", with: "")
-                content.userInfo = ["type":"twilio-missed-call", "From":from]
-                if let to = to{
-                    content.userInfo["To"] = to
-                }
-                userName = self.clients[from]
+            let from = self.getCallerName(callInvite: self.callInvite)
+              
+            content.userInfo = ["type":"twilio-missed-call", "From":from]
+            if let to = to{
+                content.userInfo["To"] = to
             }
+
             
-            let title = userName ?? self.clients["defaultCaller"] ?? self.defaultCaller
-            content.title = String(format:  NSLocalizedString("notification_missed_call", comment: ""),title)
+            content.title = String(format:  NSLocalizedString("notification_missed_call", comment: ""), from)
 
             let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
             let request = UNNotificationRequest(identifier: UUID().uuidString,
@@ -748,7 +779,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             
             let callUpdate = CXCallUpdate()
             callUpdate.remoteHandle = callHandle
-            callUpdate.localizedCallerName = self.clients[handle] ?? self.clients["defaultCaller"] ?? self.defaultCaller
+            callUpdate.localizedCallerName = self.getCallerName(callInvite: self.callInvite)
             callUpdate.supportsDTMF = false
             callUpdate.supportsHolding = true
             callUpdate.supportsGrouping = false
@@ -764,7 +795,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         
         let callUpdate = CXCallUpdate()
         callUpdate.remoteHandle = callHandle
-        callUpdate.localizedCallerName = clients[from] ?? self.clients["defaultCaller"] ?? defaultCaller
+        callUpdate.localizedCallerName = from 
         callUpdate.supportsDTMF = true
         callUpdate.supportsHolding = true
         callUpdate.supportsGrouping = false
