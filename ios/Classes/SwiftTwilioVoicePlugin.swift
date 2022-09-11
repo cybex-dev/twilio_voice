@@ -167,6 +167,11 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             }
             eventSink(speakerIsOn ? "Speaker On" : "Speaker Off")
         }
+        else if flutterCall.method == "isOnSpeaker"
+        {
+            let isOnSpeaker: Bool = isSpeakerOn();
+            result(isOnSpeaker);
+        }
         else if flutterCall.method == "call-sid"
         {
             result(self.call == nil ? nil : self.call!.sid);
@@ -658,6 +663,20 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         self.callOutgoing = false
         self.userInitiatedDisconnect = false
         
+    }
+    
+    func isSpeakerOn() -> Bool {
+        // Source: https://stackoverflow.com/a/51759708/4628115
+        let currentRoute = AVAudioSession.sharedInstance().currentRoute
+        for output in currentRoute.outputs {
+            switch output.portType {
+                case AVAudioSession.Port.builtInSpeaker:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+        return false;
     }
     
     

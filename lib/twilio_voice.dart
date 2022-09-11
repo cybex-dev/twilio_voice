@@ -301,6 +301,11 @@ class Call {
         'toggleSpeaker', <String, dynamic>{"speakerIsOn": speakerIsOn});
   }
 
+  /// Query's speaker output status, true if on loud speaker.
+  Future<bool?> isOnSpeaker() {
+    return _channel.invokeMethod('isOnSpeaker', <String, dynamic>{});
+  }
+
   Future<bool?> sendDigits(String digits) {
     return _channel
         .invokeMethod('sendDigits', <String, dynamic>{"digits": digits});

@@ -400,6 +400,9 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
             sendPhoneCallEvents(speakerIsOn ? "Speaker On" : "Speaker Off");
 
             result.success(true);
+        } else if (call.method.equals("isOnSpeaker")) {
+            boolean isSpeakerOn = audioManager.isSpeakerphoneOn();
+            result.success(isSpeakerOn);
         } else if (call.method.equals("toggleMute")) {
           boolean muted = call.argument("muted");
             Log.d(TAG, "Muting call");

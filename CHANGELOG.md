@@ -3,6 +3,7 @@
 * UPDATE: Hold call signature changed to `setHoldCall({bool = true})`, with query check `isHolding()`
 * ADD: Added additional catches for missed / declined calls/
 * ADD: `isMuted()` state query
+* ADD: `isSpeakerOn()` state query
 
 ## 0.0.9
 * Feat: forwarded callInvite custom parameters to flutter
