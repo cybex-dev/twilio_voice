@@ -49,9 +49,9 @@ class TwilioVoice {
     });
   }
 
-  /// Wheter or not should the user receive a notification after a missed call, default to true.
+  /// Whether or not should the user receive a notification after a missed call, default to true.
   ///
-  /// Setting is persisted across restarts until overriden
+  /// Setting is persisted across restarts until overridden
   set showMissedCallNotifications(bool value) {
     _channel
         .invokeMethod('show-notifications', <String, dynamic>{"show": value});
@@ -59,7 +59,7 @@ class TwilioVoice {
 
   /// Unregisters from Twilio
   ///
-  /// If no accesToken is provided, previously registered accesToken will be used
+  /// If no accessToken is provided, previously registered accessToken will be used
   Future<bool?> unregister({String? accessToken}) {
     return _channel.invokeMethod(
         'unregister', <String, dynamic>{"accessToken": accessToken});
@@ -67,7 +67,7 @@ class TwilioVoice {
 
   /// Checks if device needs background permission
   ///
-  /// Android only, xiamoi devices need special permission to show background call UI
+  /// Android only, Xiaomi devices need special permission to show background call UI
   Future<bool> requiresBackgroundPermissions() {
     return _channel.invokeMethod<bool?>('requiresBackgroundPermissions',
         {}).then<bool>((bool? value) => value ?? false);
@@ -93,13 +93,13 @@ class TwilioVoice {
 
   /// Register clientId for background calls
   ///
-  /// Register the client name for incomming calls while calling using ids
+  /// Register the client name for incoming calls while calling using ids
   Future<bool?> registerClient(String clientId, String clientName) {
     return _channel.invokeMethod('registerClient',
         <String, dynamic>{"id": clientId, "name": clientName});
   }
 
-  /// Unegister clientId for background calls
+  /// Unregister clientId for background calls
   Future<bool?> unregisterClient(String clientId) {
     return _channel
         .invokeMethod('unregisterClient', <String, dynamic>{"id": clientId});
@@ -107,7 +107,7 @@ class TwilioVoice {
 
   /// Set default caller name for no registered clients
   ///
-  /// This caller name will be shown for incomming calls
+  /// This caller name will be shown for incoming calls
   Future<bool?> setDefaultCallerName(String callerName) {
     return _channel.invokeMethod(
         'defaultCaller', <String, dynamic>{"defaultCaller": callerName});
@@ -137,7 +137,7 @@ class TwilioVoice {
         // Android call reject from string: "LOG|Call Rejected"
         return CallEvent.declined;
       } else if(tokens.toString().toLowerCase().contains("rejecting call")) {
-        // iOS call reject froms tring: "LOG|provider:performEndCallAction: rejecting call"
+        // iOS call reject from string: "LOG|provider:performEndCallAction: rejecting call"
         return CallEvent.declined;
       }
       return CallEvent.log;
@@ -277,12 +277,13 @@ class Call {
     return _channel.invokeMethod('isHolding', <String, dynamic>{});
   }
 
+  /// Toggles mute state to provided value
   Future<bool?> toggleMute(bool isMuted) {
     return _channel
         .invokeMethod('toggleMute', <String, dynamic>{"muted": isMuted});
   }
 
-  /// Toogles speaker state to provided value
+  /// Toggles speaker state to provided value
   Future<bool?> toggleSpeaker(bool speakerIsOn) {
     return _channel.invokeMethod(
         'toggleSpeaker', <String, dynamic>{"speakerIsOn": speakerIsOn});
