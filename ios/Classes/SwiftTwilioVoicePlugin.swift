@@ -150,6 +150,14 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                 _result!(ferror)
             }
         }
+        else if flutterCall.method == "isMuted"
+        {
+            if(self.call != nil) {
+                result(self.call!.isMuted);
+            } else {
+                result(false);
+            }
+        }
         else if flutterCall.method == "toggleSpeaker"
         {
             guard let speakerIsOn = arguments["speakerIsOn"] as? Bool else {return}

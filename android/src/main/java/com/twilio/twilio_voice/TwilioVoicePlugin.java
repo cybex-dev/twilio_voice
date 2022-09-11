@@ -405,6 +405,13 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
             Log.d(TAG, "Muting call");
             this.mute(muted);
             result.success(true);
+        } else if (call.method.equals("isMuted")) {
+            Log.d(TAG, "isMuted invoked");
+            if(activeCall != null) {
+                result.success(activeCall.isMuted());
+            } else {
+                result.success(false);
+            }
         } else if (call.method.equals("call-sid")) {
             result.success(activeCall == null ? null : activeCall.getSid());
         } else if (call.method.equals("isOnCall")) {

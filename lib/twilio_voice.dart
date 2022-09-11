@@ -290,6 +290,11 @@ class Call {
         .invokeMethod('toggleMute', <String, dynamic>{"muted": isMuted});
   }
 
+  /// Query's mute status of call, true if call is muted
+  Future<bool?> isMuted() {
+    return _channel.invokeMethod('isMuted', <String, dynamic>{});
+  }
+
   /// Toggles speaker state to provided value
   Future<bool?> toggleSpeaker(bool speakerIsOn) {
     return _channel.invokeMethod(

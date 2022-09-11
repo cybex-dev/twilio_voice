@@ -2,6 +2,7 @@
 * Feat: [Android] Turn off the screen when a call is active and the head is against the handset. @solid-software (https://solid.software)
 * UPDATE: Hold call signature changed to `setHoldCall({bool = true})`, with query check `isHolding()`
 * ADD: Added additional catches for missed / declined calls/
+* ADD: `isMuted()` state query
 
 ## 0.0.9
 * Feat: forwarded callInvite custom parameters to flutter
