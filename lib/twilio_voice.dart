@@ -132,6 +132,13 @@ class TwilioVoice {
       // source: https://www.twilio.com/docs/api/errors/31603
       // The callee does not wish to participate in the call.
       if(tokens[1].contains("31603")) {
+        // twilio status callback has CallStatus no-answer, which returns code 31603 to calling client
+        return CallEvent.missedCall;
+      } else if(tokens[1].contains("31486")) {
+        // https://jp.twilio.com/docs/api/errors/31486
+        return CallEvent.declined;
+      } else if(tokens.toString().toLowerCase().contains("busy here")) {
+        // Android call reject from string: "LOG|Call Rejected"
         return CallEvent.declined;
       } else if(tokens.toString().toLowerCase().contains("call rejected")) {
         // Android call reject from string: "LOG|Call Rejected"
