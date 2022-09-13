@@ -11,6 +11,8 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     final let PARAMETER_CALLER_NAME = "CALLER_NAME";
     final let PARAMETER_CALLER_ID = "CALLER_ID";
     final let CLIENT_DEFAULT_CALLER = "defaultCaller"
+    let defaultCallKitIcon = "callkit_icon"
+    var callKitIcon: String?
     
     var _result: FlutterResult?
     private var eventSink: FlutterEventSink?
@@ -60,7 +62,8 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         let configuration = CXProviderConfiguration(localizedName: SwiftTwilioVoicePlugin.appName)
         configuration.maximumCallGroups = 1
         configuration.maximumCallsPerCallGroup = 1
-        if let callKitIcon = UIImage(named: "callkit_icon") {
+        let icon = UserDefaults.standard.string(forKey: defaultCallKitIcon) ?? defaultCallKitIcon
+        if let callKitIcon = UIImage(named: icon) {
             configuration.iconTemplateImageData = callKitIcon.pngData()
         }
         
@@ -284,6 +287,18 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             if show != prefsShow{
                 UserDefaults.standard.setValue(show, forKey: "show-notifications")
             }
+            result(true)
+            return
+        } else if flutterCall.method == "updateCallKitIcon" {
+            let newIcon = arguments["icon"] as? String ?? defaultCallKitIcon
+            
+            if let callKitIcon = UIImage(named: newIcon) {
+                callKitProvider.configuration.iconTemplateImageData = callKitIcon.pngData()
+            }
+            
+            // save new icon to persist across sessions
+            UserDefaults.standard.set(newIcon, forKey: defaultCallKitIcon)
+            
             result(true)
             return
         }

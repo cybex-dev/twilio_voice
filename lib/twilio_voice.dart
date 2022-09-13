@@ -91,6 +91,22 @@ class TwilioVoice {
     return _channel.invokeMethod('requestMicPermission', {});
   }
 
+  /// Set iOS call kit icon
+  ///
+  /// This allows for CallKit customization: setting the last button (bottom right) of the callkit.
+  ///
+  /// Ensure you have an icon registered in your XCode project (Runner > Assets)
+  ///
+  /// To do this:
+  /// - open XCode
+  /// - Create/Add your transparency / white mask image into Assets.xcassets (i.e. image uses Alpha channel only  (https://developer.apple.com/documentation/callkit/cxproviderconfiguration/2274376-icontemplateimagedata)
+  /// - Name of icon e.g. "TransparentIcon"
+  ///
+  /// Use `TwilioVoice.instance.updateCallKitIcon(icon: "TransparentIcon")`
+  Future<bool?> updateCallKitIcon({String? icon}) {
+    return _channel.invokeMethod('updateCallKitIcon', <String, dynamic>{"icon": icon});
+  }
+
   /// Register clientId for background calls
   ///
   /// Register the client name for incoming calls while calling using ids
