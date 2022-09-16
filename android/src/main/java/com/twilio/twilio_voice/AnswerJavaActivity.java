@@ -149,9 +149,15 @@ public class AnswerJavaActivity extends AppCompatActivity {
     private void configCallUI() {
         Log.d(TAG, "configCallUI");
         if (activeCallInvite != null) {
-            String fromName = activeCallInvite.getCustomParameters().get("caller_name");
+            String firstName = activeCallInvite.getCustomParameters().get("firstName");
+            String lastName = activeCallInvite.getCustomParameters().get("lastName");
+            String fromName = activeCallInvite.getCustomParameters().get("nickname");
             if(fromName == null) {
-                fromName = getString(R.string.unknown_caller);
+                if (firstName != null || lastName != null) {
+                    fromName = firstName + " " + lastName;
+                } else {
+                    fromName = getString(R.string.unknown_caller);
+                }
             }
             tvUserName.setText(fromName);
 
