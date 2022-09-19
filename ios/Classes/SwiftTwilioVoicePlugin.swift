@@ -554,13 +554,17 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                 userName = self.clients[from]
             }
             
-            var callerName: String? = self.callInvite?.customParameters?["caller_name"];
+//             var callerName: String? = self.callInvite?.customParameters?["caller_name"];
+            var callerName: String? = self.callInvite?.customParameters?["nickname"];
             if callerName == nil {
+                let firstName:String? = callInvite.customParameters?["firstName"];
+                let lastName:String? = callInvite.customParameters?["lastName"];
+                callerName = firstName + " " + lastName;
                 print("notificationCenter: caller name is null")
             }
             
             let title = callerName ?? userName ?? self.clients["defaultCaller"] ?? self.defaultCaller
-            content.title = String(format:  NSLocalizedString("notification_missed_call", comment: ""),title)
+            content.title = String(format:  NSLocalizedString("Missed call from %s", comment: ""),title)
 
             let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
             let request = UNNotificationRequest(identifier: UUID().uuidString,
