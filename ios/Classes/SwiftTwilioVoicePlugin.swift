@@ -557,8 +557,8 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
 //             var callerName: String? = self.callInvite?.customParameters?["caller_name"];
             var callerName: String? = self.callInvite?.customParameters?["nickname"];
             if callerName == nil {
-                let firstName:String? = self.callInvite?.customParameters?["firstName"];
-                let lastName:String? = self.callInvite?.customParameters?["lastName"];
+                var firstName: String? = self.callInvite?.customParameters?["firstName"];
+                var lastName: String? = self.callInvite?.customParameters?["lastName"];
                 callerName = firstName + " " + lastName;
                 print("notificationCenter: caller name is null")
             }
