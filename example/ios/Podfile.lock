@@ -1,6 +1,6 @@
 PODS:
-  - cloud_functions (1.0.3):
-    - Firebase/Functions (= 7.3.0)
+  - cloud_functions (3.0.5):
+    - Firebase/Functions
     - firebase_core
     - Flutter
   - Firebase/Auth (7.3.0):
@@ -14,15 +14,15 @@ PODS:
   - Firebase/Messaging (7.3.0):
     - Firebase/CoreOnly
     - FirebaseMessaging (~> 7.3.0)
-  - firebase_auth (1.1.0):
-    - Firebase/Auth (= 7.3.0)
+  - firebase_auth (3.1.4):
+    - Firebase/Auth
     - firebase_core
     - Flutter
-  - firebase_core (1.0.3):
-    - Firebase/CoreOnly (= 7.3.0)
+  - firebase_core (1.8.0):
+    - Firebase/CoreOnly
     - Flutter
-  - firebase_messaging (9.1.1):
-    - Firebase/Messaging (= 7.3.0)
+  - firebase_messaging (10.0.9):
+    - Firebase/Messaging
     - firebase_core
     - Flutter
   - FirebaseAuth (7.3.0):
@@ -133,11 +133,11 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/twilio_voice/ios"
 
 SPEC CHECKSUMS:
-  cloud_functions: c4ab28246ffa9b4391e21a7f93ae75171b6c6863
+  cloud_functions: 2e660546aeed764aba23ac0c7baed76cc0c52dd7
   Firebase: 26223c695fe322633274198cb19dca8cb7e54416
-  firebase_auth: d09964a120e218411768f5ca2d3ce938abd319f2
-  firebase_core: b5d81dfd4fb2d6f700e67de34d9a633ae325c4e9
-  firebase_messaging: 7547c99f31466371f9cfcb733d5a1bf32a819872
+  firebase_auth: 980e41f23f657d74302cce40ad9da07cab82c81a
+  firebase_core: 0c218eea301d0179ec0d9140f3ec8ed31b71bdd1
+  firebase_messaging: 1ed06e577cd296904b699ec69c436c22f5052a56
   FirebaseAuth: c224a0cf1afa0949bd5c7bfcf154b4f5ce8ddef2
   FirebaseCore: 4d3c72622ce0e2106aaa07bb4b2935ba2c370972
   FirebaseCoreDiagnostics: 68ad972f99206cef818230f3f3179d52ccfb7f8c
@@ -145,7 +145,7 @@ SPEC CHECKSUMS:
   FirebaseInstallations: a58d4f72ec5861840b84df489f2668d970df558a
   FirebaseInstanceID: ad5135045a498d7775903efd39762d2cdfa1be27
   FirebaseMessaging: 68d1bcb14880189558a8ae57167abe0b7e417232
-  Flutter: 434fef37c0980e73bb6479ef766c45957d4b510c
+  Flutter: f04841e97a9d0b0a8025694d0796dd46242b2854
   GoogleDataTransport: cd9db2180fcecd8da1b561aea31e3e56cf834aa7
   GoogleUtilities: eea970f4a389963963bffe8d8fabe43540678b9c
   GTMSessionFetcher: 36689134877faeb055b27dfa4ccc9ceaa42e029e
@@ -154,6 +154,6 @@ SPEC CHECKSUMS:
   twilio_voice: d69bb425ecbb17031f143675876e9ae2114e0249
   TwilioVoice: 6b1d796dcdec4ec6e6d2165bc66a266db1d2d93f
 
-PODFILE CHECKSUM: aafe91acc616949ddb318b77800a7f51bffa2a4c
+PODFILE CHECKSUM: ef19549a9bc3046e7bb7d2fab4d021637c0c58a3
 
-COCOAPODS: 1.10.1
+COCOAPODS: 1.11.3
