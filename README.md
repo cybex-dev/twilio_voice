@@ -524,3 +524,11 @@ firebase deploy --only functions
 Calling should work naturally - just make sure to fetch the token from the endpoint and you can call
 
 See [example](https://github.com/diegogarciar/twilio_voice/blob/master/example/lib/main.dart#L51) code, make sure to change the `voice-accessToken` to your function name, given to you by firebase when deploying (as part of the deploy text)
+
+
+## Future Work
+- Move package to `federated plugin` structure (see [here](https://flutter.dev/go/federated-plugins) for more info), see reduced overhead advantages covered as motivation (see [here](https://medium.com/flutter/how-to-write-a-flutter-web-plugin-part-2-afdddb69ece6) for more info))
+
+## Updating Twilio Voice JS SDK
+`twilio.js` is no longer hosted via CDNs (see [reference](https://github.com/twilio/twilio-voice.js/blob/master/README.md#cdn)), instead it is hosted via npm / github. See instructions found [here](https://github.com/twilio/twilio-voice.js/blob/master/README.md#github)
+This is automatically added to your `web/index.html` file, as a `<script/>` tag during runtime. See [here](./lib/_internal/twilio_loader.dart) for more info.);
