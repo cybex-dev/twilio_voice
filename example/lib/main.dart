@@ -1,17 +1,37 @@
+import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/material.dart';
 
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:twilio_voice/twilio_voice.dart';
 
-import 'package:twilio_voice_example/call_screen.dart';
+import 'call_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
+  if (kIsWeb) {
+    // Add firebase config here
+    final options = FirebaseOptions(
+      apiKey: '',
+      appId: '',
+      messagingSenderId: '',
+      projectId: '',
+      authDomain: '',
+      databaseURL: '',
+      storageBucket: '',
+      measurementId: '',
+    );
+    // For web apps only
+    await Firebase.initializeApp(options: options);
+  } else {
+    // For Android, iOS - Firebase will search for google-services.json in android/app directory or GoogleService-Info.plist in ios/Runner directory respectively.
+    await Firebase.initializeApp();
+  }
   return runApp(MyApp());
 }
 
@@ -29,7 +49,7 @@ class DialScreen extends StatefulWidget {
 
 class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
   late TextEditingController _controller;
-  late String userId;
+  String userId = "";
 
   registerUser() {
     print("voip- service init");
@@ -37,19 +57,45 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
     //   print("device token changed");
     // }
 
-    register();
+    // Use for locally provided token generator e.g. Twilio's quickstarter project: https://github.com/twilio/voice-quickstart-server-node
+    registerLocal();
+    // Or use firebase function to generate token, with function name 'voice-accessToken'.
+    // register();
 
     TwilioVoice.instance.setOnDeviceTokenChanged((token) {
       print("voip-device token changed");
-      register();
+      registerLocal();
+      // register();
     });
+  }
+
+  registerLocal() async {
+    print("voip-registering with token ");
+    print("GET http://localhost:3000/token");
+
+    final uri = Uri.http("localhost:3000", "/token");
+    final result = await http.get(uri);
+    if (result.statusCode >= 200 && result.statusCode < 300) {
+      print("Error requesting token from server [${uri.toString()}]");
+      print(result.body);
+      return;
+    }
+    final data = jsonDecode(result.body);
+    final identity = data["identity"];
+    userId = identity;
+    final token = data["token"];
+    String? androidToken;
+    if (Platform.isAndroid || kIsWeb) {
+      androidToken = await FirebaseMessaging.instance.getToken();
+      print("androidToken is " + androidToken!);
+    }
+    TwilioVoice.instance.setTokens(accessToken: token, deviceToken: androidToken);
   }
 
   register() async {
     print("voip-registtering with token ");
     print("voip-calling voice-accessToken");
-    final function =
-        FirebaseFunctions.instance.httpsCallable("voice-accessToken");
+    final function = FirebaseFunctions.instance.httpsCallable("voice-accessToken");
 
     final data = {
       "platform": Platform.isIOS ? "iOS" : "Android",
@@ -59,15 +105,15 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
     print("voip-result");
     print(result.data);
     String? androidToken;
-    if (Platform.isAndroid) {
+    if (Platform.isAndroid || kIsWeb) {
       androidToken = await FirebaseMessaging.instance.getToken();
       print("androidToken is " + androidToken!);
     }
-    TwilioVoice.instance
-        .setTokens(accessToken: result.data, deviceToken: androidToken);
+    TwilioVoice.instance.setTokens(accessToken: result.data, deviceToken: androidToken);
   }
 
   var registered = false;
+
   waitForLogin() {
     final auth = FirebaseAuth.instance;
     auth.authStateChanges().listen((user) async {
@@ -77,8 +123,12 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
         await auth.signInAnonymously();
       } else if (!registered) {
         registered = true;
-        this.userId = user.uid;
-        print("registering user ${user.uid}");
+        // Note, you can either use Firebase provided [user.uid] or one provided from e.g. localhost:3000/token endpoint returning:
+        // {token: "ey...", identity: "user123"}
+        if (this.userId.isEmpty) {
+          this.userId = user.uid;
+        }
+        print("registering client ${userId} [firebase id ${user.uid}]");
         registerUser();
 
         FirebaseMessaging.instance.requestPermission();
