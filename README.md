@@ -7,6 +7,14 @@ This plugin was taken from the original flutter_twilio_voice, as it seems that p
 - Receive and place calls from iOS devices, uses callkit to receive calls.
 - Receive and place calls from Android devices, uses custom UI to receive calls.
 
+## Feature addition schedule:
+- Web support
+- Audio device selection support (select input/output audio devices)
+- Add Bluetooth support (integration)
+- Update plugin to Flutter federated packages
+- Desktop platform support (implementation as JS wrapper/native implementation, t.b.d.)
+
+Got a feature you want to add, suggest? File a feature request or PR.
 
 ### Android Limitations
 
@@ -492,7 +500,7 @@ exports.accessToken = functions.https.onCall((payload, context) => {
         outgoingApplicationSid,
         pushCredentialSid: pushCredSid,
     });
-
+w
     // Create an access token which we will sign and return to the client,
     // containing the grant we just created
     const token = new AccessToken(accountSid, apiKey, apiSecret);
