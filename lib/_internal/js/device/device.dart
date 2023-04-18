@@ -1,6 +1,7 @@
 import 'package:js/js.dart';
 import 'package:twilio_voice/_internal/js/call/call.dart';
 import 'package:twilio_voice/_internal/js/core/core.dart';
+import 'package:twilio_voice/_internal/js/twilio.dart';
 
 /// Pre-major version update including breaking changes.
 /// Flutter/Dart version update required.
@@ -20,16 +21,19 @@ enum TwilioDeviceEvents {
 }
 
 @JS("Twilio.Device")
-class Device {
-  @JS("Device")
-  external Device._(String token, [DeviceInitOptions? options]);
+class Device extends Twilio {
+  external Device._(token, [DeviceInitOptions? options]);
 
-  factory Device(String token, {DeviceInitOptions? options}) => Device._(token, options);
+  external factory Device(
+    String token, [
+    DeviceInitOptions? options,
+  ]);
 
   /// Connect to Twilio Voice Client
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#connect
   @JS("connect")
-  external Promise<Call> connect(DeviceConnectOptions options);
+  external Promise<Call> connect([DeviceConnectOptions? options]);
+
 
   /// Register device token with Twilio Voice Client
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#deviceregister
@@ -56,32 +60,20 @@ class Device {
 
 /// Device options
 /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#deviceoptions
-@JS()
 @anonymous
+@JS()
 class DeviceInitOptions {
-  @JS()
-  external DeviceInitOptions._(int logLevel, List<String> codecPreferences);
-
-  factory DeviceInitOptions({int logLevel = 1, List<String> codecPreferences = const ["opus", "pcmu"]}) =>
-      DeviceInitOptions._(logLevel, codecPreferences);
-
-  @JS("logLevel")
   external int logLevel;
-
-  @JS("logLevel")
   external List<String> codecPreferences;
+
+  external factory DeviceInitOptions({int logLevel = 1, List<String>? codecPreferences});
 }
 
 /// Device options
 /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#deviceoptions
-@JS()
 @anonymous
+@JS()
 class DeviceConnectOptions {
-  @JS()
-  external DeviceConnectOptions._(Map<String, String> params);
-
-  factory DeviceConnectOptions(Map<String, String> params) => DeviceConnectOptions._(params);
-
-  @JS("params")
   external Map<String, String> params;
+  external factory DeviceConnectOptions({dynamic params});
 }

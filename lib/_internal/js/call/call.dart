@@ -1,5 +1,7 @@
 import 'package:js/js.dart';
 
+import '../twilio.dart';
+
 /// Pre-major version update including breaking changes.
 /// Flutter/Dart version update required.
 enum TwilioCallEvents {
@@ -34,21 +36,26 @@ enum TwilioCallEvents {
 }
 
 @JS("Twilio.Call")
-class Call {
-  @JS("Call")
+class Call extends Twilio {
+
   external Call._();
 
-  factory Call() => Call._();
+  external factory Call();
+
+  /// Get customParameters from Twilio Call, send via outgoing call or received from incoming call (via TwiML app)
+  /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#callparameters
+  @JS("parameters")
+  external Map<dynamic, dynamic> get parameters;
 
   /// Get customParameters from Twilio Call, send via outgoing call or received from incoming call (via TwiML app)
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#callcustomparameters
   @JS("customParameters")
-  external Map<String, String> get customParameters;
+  external Map<dynamic, dynamic> get customParameters;
 
   /// Get the direction of call, either "INCOMING" or "OUTGOING"
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#calldirection
   @JS("direction")
-  external String direction();
+  external String get direction;
 
   /// Disconnect active Twilio Call.
   /// Documentation: https://www.twilio.com/docs/voice/client/javascript/call#disconnect

@@ -191,7 +191,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
     // }
     try {
       // create new Twilio device
-      device = twilioJs.Device(accessToken, options: twilioJs.DeviceInitOptions());
+      device = twilioJs.Device(accessToken, twilioJs.DeviceInitOptions());
       _attachDeviceListeners(device!);
 
       // Register device to accept notifications
@@ -386,7 +386,7 @@ class Call extends MethodChannelTwilioCall {
 
     // this.callOutgoing = true;
     // Log.d(TAG, "calling to " + call.argument("To").toString());
-    final options = twilioJs.DeviceConnectOptions(params);
+    final options = twilioJs.DeviceConnectOptions(params: params);
     try {
       var promise = _device!.connect(options);
       await promise.then((result) {
@@ -462,7 +462,7 @@ class Call extends MethodChannelTwilioCall {
 
   /// On active call connected to remote client
   void _onCallConnected(twilioJs.Call call) {
-    final direction = call.direction() == "INCOMING" ? "Incoming" : "Outgoing";
+    final direction = call.direction == "INCOMING" ? "Incoming" : "Outgoing";
     final from = call.customParameters["From"] ?? "";
     final to = call.customParameters["To"] ?? "";
     logLocalEventEntries(["Connected", from, to, direction]);
