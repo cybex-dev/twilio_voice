@@ -332,9 +332,16 @@ class Call extends MethodChannelTwilioCall {
   }
 
   /// Not currently implemented for web
+  /// https://github.com/twilio/twilio-voice.js/issues/32
+  /// Call holding should be done server-side as suggested by @ryan-rowland here(https://github.com/twilio/twilio-voice.js/issues/32#issuecomment-1016872545)
+  /// See this to get started: https://stackoverflow.com/questions/22643800/twilio-how-to-move-an-existing-call-to-a-conference
+  /// See this for more info on how to use cold holding, and its requirements: https://github.com/twilio/twilio-voice.js/issues/32#issuecomment-1331081241
+  /// TODO(cybex-dev) - implement call holding feature in [twilio-voice.js](https://github.com/twilio/twilio-voice.js) for use in twilio_voice_web
   @override
   Future<bool?> holdCall({bool holdCall = true}) {
-    logLocalEvent(holdCall ? "Unhold" : "Hold", prefix: "");
+    // logLocalEvent(holdCall ? "Unhold" : "Hold", prefix: "");
+    // return Future.value(false);
+    logLocalEvent("Unhold");
     return Future.value(false);
   }
 
