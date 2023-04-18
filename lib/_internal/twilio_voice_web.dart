@@ -36,6 +36,10 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
 
   twilioJs.Device? device;
 
+  html.Navigator get _webNavigatorDelegate => html.window.navigator;
+
+  html.Permissions? get _webPermissionsDelegate => _webNavigatorDelegate.permissions;
+
   late final Call _call = Call();
 
   @override
@@ -80,17 +84,24 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
 
   /// Request microphone permission. Returns true if permission is granted, false otherwise.
   /// Documentation: https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/permissions/request
+  /// Documentation: https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia
+  /// This is a 'hack' to acquire media permissions. The permissions API is not supported in all browsers.
   @override
   Future<bool?> requestMicAccess() async {
     logLocalEvent("requesting mic permission");
-    final perm = await html.window.navigator.permissions?.request({"name": "microphone"});
-    if (perm == null) {
+    try {
+      /// TODO(cybex-dev) - Check browser type, if it is Firefox (or Safari), use the permissions API else use the getUserMedia API
+      // final perm = await _webPermissionsDelegate?.request({"name": "microphone"});
+      // return (perm == "granted");
+
+      /// This dirty hack to get media stream. Request (to show permissions popup on Chrome and other browsers, then stop the stream to release the permission)
+      /// TODO(cybex-dev) - check supported media streams
+      html.MediaStream mediaStream = await _webNavigatorDelegate.getUserMedia(audio: true);
+      mediaStream.getTracks().forEach((track) => track.stop());
+      return hasMicAccess();
+    } catch (e) {
       print("Failed to request microphone permission");
-      return false;
-    }
-    if (perm.state == "granted") {
-      return true;
-    } else {
+      print(e);
       return false;
     }
   }
@@ -100,15 +111,24 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   @override
   Future<bool> hasMicAccess() async {
     logLocalEvent("checkPermissionForMicrophone");
-    final perm = await html.window.navigator.permissions?.query({"name": "microphone"});
-    if (perm == null) {
+    try {
+      final perm = await _webPermissionsDelegate?.query({"name": "microphone"});
+      if (perm == null) {
+        print("Failed to query microphone permission");
+        return false;
+      }
+      if (perm.state == "granted") {
+        return true;
+      } else if (perm.state == "prompt") {
+        logLocalEvent("RequestMicrophoneAccess");
+        return false;
+      } else {
+        logLocalEvent("Microphone permission denied", prefix: "");
+        return false;
+      }
+    } catch (e) {
       print("Failed to query microphone permission");
-      return false;
-    }
-    if (perm.state == "granted") {
-      return true;
-    } else {
-      logLocalEvent("RequestMicrophoneAccess", prefix: "");
+      print(e);
       return false;
     }
   }
@@ -117,14 +137,18 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   /// Documentation: https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/permissions/request
   @override
   Future<bool?> requestBackgroundPermissions() async {
-    final perm = await html.window.navigator.permissions?.request({"name": "notifications"});
-    if (perm == null) {
+    try {
+      // final perm = await _webPermissionsDelegate?.request({"name": "notifications"});
+      // if (perm == null) {
+      //   print("Failed to request notifications permission");
+      //   return false;
+      // }
+      // return (perm.state == "granted");
+      final perm = await html.Notification.requestPermission();
+      return (perm == "granted");
+    } catch (e) {
       print("Failed to request notifications permission");
-      return false;
-    }
-    if (perm.state == "granted") {
-      return true;
-    } else {
+      print(e);
       return false;
     }
   }
@@ -133,14 +157,18 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   /// Documentation: https://developer.mozilla.org/en-US/docs/Web/API/Permissions/query
   @override
   Future<bool> requiresBackgroundPermissions() async {
-    final perm = await html.window.navigator.permissions?.query({"name": "notifications"});
-    if (perm == null) {
+    try {
+      // final perm = await _webPermissionsDelegate?.query({"name": "notifications"});
+      // if (perm == null) {
+      //   print("Failed to query notifications permission");
+      //   return false;
+      // }
+      // return (perm.state == "granted");
+      final perm = html.Notification.permission;
+      return (perm == "granted");
+    } catch (e) {
       print("Failed to query notifications permission");
-      return false;
-    }
-    if (perm.state == "granted") {
-      return true;
-    } else {
+      print(e);
       return false;
     }
   }
