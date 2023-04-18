@@ -6,6 +6,7 @@ import 'package:js/js_util.dart';
 import 'package:twilio_voice/_internal/platform_interface/twilio_voice_platform_interface.dart';
 import 'package:twilio_voice/_internal/twilio_loader.dart';
 
+import '../twilio_voice.dart';
 import './js/js.dart' as twilioJs;
 import 'local_storage_web/local_storage_web.dart';
 import 'method_channel/twilio_call_method_channel.dart';
@@ -43,7 +44,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   late final Call _call = Call();
 
   @override
-  TwilioCallPlatform get call => _call;
+  Call get call => _call;
 
   static void registerWith(Registrar registrar) {
     TwilioVoicePlatform.instance = TwilioVoiceWeb();
@@ -306,7 +307,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
 
 class Call extends MethodChannelTwilioCall {
   /// Twilio Call JS interface object
-  twilioJs.Call? _call;
+  twilioJs.Call? _jsCall;
   twilioJs.Device? _device;
 
   twilioJs.Device? get device => _device;
@@ -315,7 +316,7 @@ class Call extends MethodChannelTwilioCall {
     _device = value;
   }
 
-  Call({twilioJs.Call? call}) : _call = call;
+  Call({twilioJs.Call? call}) : _jsCall = call;
 
   twilioJs.Call? get nativeCall {
     return _jsCall;
@@ -332,8 +333,8 @@ class Call extends MethodChannelTwilioCall {
   /// See [twilioJs.Call.sendDigits]
   @override
   Future<bool?> sendDigits(String digits) async {
-    if (_call != null) {
-      _call!.sendDigits(digits);
+    if (_jsCall != null) {
+      _jsCall!.sendDigits(digits);
       return true;
     }
     return false;
@@ -371,13 +372,13 @@ class Call extends MethodChannelTwilioCall {
   /// See [twilioJs.Call.accept]
   @override
   Future<bool?> answer() async {
-    if (_call != null) {
+    if (_jsCall != null) {
       // Accept incoming call
       _jsCall!.accept();
       activeCall = activeCallFromNativeJsCall(_jsCall!);
 
       // attach event listeners
-      _attachCallEventListeners(_call!);
+      _attachCallEventListeners(_jsCall!);
 
       // log event
       final customParameters = _jsCall!.parameters;
@@ -393,10 +394,10 @@ class Call extends MethodChannelTwilioCall {
   /// Gets call Sid from call parameters or custom parameters.
   @override
   Future<String?> getSid() async {
-    if (_call == null) {
+    if (_jsCall == null) {
       return null;
     }
-    return _call?.parameters["CallSid"] ?? _call?.customParameters["CallSid"] ?? null;
+    return _jsCall?.parameters["CallSid"] ?? _jsCall?.customParameters["CallSid"] ?? null;
   }
 
   /// Returns true if there is an active call, a convenience function for [activeCall != null], false otherwise.
@@ -410,9 +411,9 @@ class Call extends MethodChannelTwilioCall {
   /// See [twilioJs.Call.disconnect]
   @override
   Future<bool?> hangUp() async {
-    if (_call != null) {
-      _call!.disconnect();
-      _detachCallEventListeners(_call!);
+    if (_jsCall != null) {
+      _jsCall!.disconnect();
+      _detachCallEventListeners(_jsCall!);
       return true;
     }
     return false;
