@@ -269,9 +269,9 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
 
   /// On device error
   /// See [twilioJs.Device.on] and [twilioJs.TwilioDeviceEvents.error]
-  /// Documentation: https://www.twilio.com/docs/voice/client/javascript/device#events
-  void _onDeviceError(twilioJs.Device device, String error) {
-    logLocalEvent("Error: " + error);
+  /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#error-event
+  void _onDeviceError(twilioJs.TwilioError twilioError, twilioJs.Call? call) {
+    print("Device Error: ${twilioError.message}");
   }
 
   /// On incoming call received via [twilioJs.Device.on] and [twilioJs.TwilioDeviceEvents.incoming]
@@ -487,8 +487,10 @@ class Call extends MethodChannelTwilioCall {
   }
 
   /// On reject (inbound) call
-  void _onCallError(twilioJs.Call call, dynamic exception) {
-    logLocalEvent("Call Error: ${exception.getErrorCode()}, ${exception.getMessage()}");
+  /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#error-event
+  void _onCallError(twilioJs.TwilioError error) {
+    print("Call Error: $error");
+    logLocalEvent("Call Error: ${error.code}, ${error.message}");
   }
 
   /// On active call connected to remote client
@@ -500,7 +502,8 @@ class Call extends MethodChannelTwilioCall {
   }
 
   /// On active call reconnecting to Twilio network
-  void _onCallReconnecting(twilioJs.Call call, dynamic error) {
+  void _onCallReconnecting(dynamic twilioError) {
+    print("Reconnecting: $twilioError}");
     logLocalEvent("Reconnecting...", prefix: "");
   }
 
