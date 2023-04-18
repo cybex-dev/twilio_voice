@@ -5,26 +5,12 @@ import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 import 'package:twilio_voice/_internal/platform_interface/twilio_call_platform_interface.dart';
 import 'package:js/js_util.dart';
 import 'package:twilio_voice/_internal/platform_interface/twilio_voice_platform_interface.dart';
-import 'package:twilio_voice/_internal/twilio_loader.dart';
 
 import './js/js.dart' as twilioJs;
 import 'local_storage_web/local_storage_web.dart';
 import 'method_channel/twilio_call_method_channel.dart';
 import 'method_channel/twilio_voice_method_channel.dart';
-
-// TODO - Future work
-// - select output devices
-// - select input devices
-// - hold call
-// - mute call
-// - toggle speaker
-// - get call SID
-// - bind volume events
-// - call notifications
-// - return call (call back)
-
-// TODO now
-// get audio devices, bind to device
+import '../twilio_voice.dart';
 
 /// The web implementation of [TwilioVoicePlatform].
 class TwilioVoiceWeb extends MethodChannelTwilioVoice {
@@ -295,7 +281,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
 
 class Call extends MethodChannelTwilioCall {
   /// Twilio Call JS interface object
-  twilioJs.Call? _call;
+  twilioJs.Call? _jsCall;
   twilioJs.Device? _device;
 
   twilioJs.Device? get device => _device;
@@ -304,14 +290,22 @@ class Call extends MethodChannelTwilioCall {
     _device = value;
   }
 
-  Call({twilioJs.Call? call}) : _call = call;
+  Call({twilioJs.Call? call}) : _jsCall = call;
+
+  twilioJs.Call? get nativeCall {
+    return _jsCall;
+  }
+
+  set nativeCall(twilioJs.Call? value) {
+    _jsCall = value;
+  }
 
   /// Send digits to the call. Returns true if successful, false otherwise.
   /// See [twilioJs.Call.sendDigits]
   @override
   Future<bool?> sendDigits(String digits) async {
-    if (_call != null) {
-      _call!.sendDigits(digits);
+    if (_jsCall != null) {
+      _jsCall!.sendDigits(digits);
       return true;
     }
     return false;
@@ -349,15 +343,15 @@ class Call extends MethodChannelTwilioCall {
   /// See [twilioJs.Call.accept]
   @override
   Future<bool?> answer() async {
-    if (_call != null) {
+    if (_jsCall != null) {
       // Accept incoming call
-      _call!.accept();
+      _jsCall!.accept();
 
       // attach event listeners
-      _attachCallEventListeners(_call!);
+      _attachCallEventListeners(_jsCall!);
 
       // log event
-      final customParameters = _call!.customParameters;
+      final customParameters = _jsCall!.parameters;
       final from = customParameters["From"] ?? "";
       final to = customParameters["To"] ?? "";
       logLocalEventEntries(["Answer", from, to, jsonEncode(customParameters)]);
@@ -380,16 +374,16 @@ class Call extends MethodChannelTwilioCall {
   /// See [MethodChannelTwilioCall.activeCall]
   @override
   Future<bool> isOnCall() async {
-    return activeCall != null;
+    return _jsCall != null;
   }
 
   /// Returns true if the call was disconnected, false otherwise.
   /// See [twilioJs.Call.disconnect]
   @override
   Future<bool?> hangUp() async {
-    if (_call != null) {
-      _call!.disconnect();
-      _detachCallEventListeners(_call!);
+    if (_jsCall != null) {
+      _jsCall!.disconnect();
+      _detachCallEventListeners(_jsCall!);
       return true;
     }
     return false;
@@ -432,8 +426,8 @@ class Call extends MethodChannelTwilioCall {
     try {
       var promise = _device!.connect(options);
       await promise.then((result) {
-        _call = result;
-        _attachCallEventListeners(_call!);
+        _jsCall = result;
+        _attachCallEventListeners(_jsCall!);
       });
     } catch (e) {
       print("Failed to place call: $e");
