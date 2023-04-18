@@ -25,9 +25,10 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
   MethodChannel get _channel => sharedChannel;
 
   /// Sends call events
+  @override
   Stream<CallEvent> get callEventsListener {
     if (_callEventsListener == null) {
-      _callEventsListener = _eventChannel.receiveBroadcastStream().map((dynamic event) => _parseCallEvent(event));
+      _callEventsListener = _eventChannel.receiveBroadcastStream().map((dynamic event) => parseCallEvent(event));
     }
     return _callEventsListener!;
   }
@@ -119,7 +120,8 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
     return _channel.invokeMethod("backgroundCallUI", {});
   }
 
-  CallEvent _parseCallEvent(String state) {
+  @override
+  CallEvent parseCallEvent(String state) {
     if (state.startsWith("DEVICETOKEN|")) {
       var token = state.split('|')[1];
       if (deviceTokenChanged != null) {

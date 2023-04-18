@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
@@ -5,7 +8,7 @@ import '../method_channel/shared_platform_method_channel.dart';
 
 abstract class SharedPlatformInterface extends PlatformInterface {
   static const _kMethodChannelName = 'twilio_voice/messages';
-  static const _kEventChannelName = 'twilio_voice/events';
+  static const kEventChannelName = 'twilio_voice/events';
 
   /// Communication with native code
   MethodChannel get sharedChannel => _sharedChannel;
@@ -13,7 +16,15 @@ abstract class SharedPlatformInterface extends PlatformInterface {
 
   /// Communication to flutter code
   EventChannel get eventChannel => _eventChannel;
-  EventChannel _eventChannel = EventChannel(_kEventChannelName);
+  EventChannel _eventChannel = EventChannel(kEventChannelName);
+
+  // ignore: close_sinks
+  StreamController<String>? _callEventsController;
+  StreamController<String> get callEventsController {
+    _callEventsController ??= StreamController<String>.broadcast();
+    return _callEventsController!;
+  }
+  Stream<String> get callEventsStream => callEventsController.stream;
 
   SharedPlatformInterface({required Object token}) : super(token: token);
 
@@ -42,7 +53,10 @@ abstract class SharedPlatformInterface extends PlatformInterface {
   /// The event will be sent as a String with the following format:
   /// - (if prefix is not empty): "prefix|description", where '|' is separator
   /// - (if prefix is empty): "description"
-  void logLocalEvent(String description, {String prefix = "LOG", String separator = "|"}) {
+  void logLocalEvent(String description, {String prefix = "LOG", String separator = "|"}) async {
+    if(!kIsWeb) {
+      throw UnimplementedError("Use eventChannel() via sendPhoneEvents on platform implementation");
+    }
     // eventChannel.binaryMessenger.handlePlatformMessage(
     //   _kEventChannelName,
     //   const StandardMethodCodec().encodeSuccessEnvelope(description),
@@ -56,13 +70,12 @@ abstract class SharedPlatformInterface extends PlatformInterface {
     }
 
     // Send events to EventChannel for integration into existing communication flow
-    final byteMessage = const StandardMethodCodec().encodeSuccessEnvelope(message);
-    eventChannel.binaryMessenger.send(_kEventChannelName, byteMessage);
+    callEventsController.add(message);
   }
 
   /// Sends call events
-// void logLocalError({String description = "", String code = "", Object? details}) {
-//   final message = const StandardMethodCodec().encodeErrorEnvelope(code: code, message: description, details: details);
-//   eventChannel.binaryMessenger.send(_kEventChannelName, message);
-// }
+  // void logLocalError({String description = "", String code = "", Object? details}) {
+  //   final message = const StandardMethodCodec().encodeErrorEnvelope(code: code, message: description, details: details);
+  //   eventChannel.binaryMessenger.send(_kEventChannelName, message);
+  // }
 }

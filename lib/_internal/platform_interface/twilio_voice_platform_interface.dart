@@ -79,4 +79,7 @@ abstract class TwilioVoicePlatform extends SharedPlatformInterface {
 
   /// Android-only, shows background call UI
   Future<bool?> showBackgroundCallUI();
+
+  /// Sends call events
+  CallEvent parseCallEvent(String state);
 }
