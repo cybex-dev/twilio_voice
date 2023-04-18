@@ -249,9 +249,12 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   /// On incoming call received via [twilioJs.Device.on] and [twilioJs.TwilioDeviceEvents.incoming]
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#incoming-event
   void _onDeviceIncoming(twilioJs.Call call) {
-    final from = call.customParameters["From"] ?? "";
-    final to = call.customParameters["To"] ?? "";
-    logLocalEventEntries(["Ringing", from, to, "Incoming", jsonEncode(call.customParameters)]);
+    print("Call incoming");
+    this.call.nativeCall = call;
+    print(this.call.activeCall.toString());
+    final from = "caller"; // call.parameters["From"] ?? "";
+    final to = "recipient"; // call.parameters["To"] ?? "";
+    logLocalEventEntries(["Incoming", from, to, "Incoming", "{}" /*jsonEncode(call.parameters)*/], prefix: "");
   }
 
   /// On device token about to expire (default is 10s prior to expiry), via [twilioJs.Device.on] and [twilioJs.TwilioDeviceEvents.tokenWillExpire]

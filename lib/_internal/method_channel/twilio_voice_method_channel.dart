@@ -149,6 +149,13 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
       print(
           'Connected - From: ${call.activeCall!.from}, To: ${call.activeCall!.to}, StartOn: ${call.activeCall!.initiated}, Direction: ${call.activeCall!.callDirection}');
       return CallEvent.connected;
+    } else if (state.startsWith("Incoming|")) {
+      // Added as temporary override for incoming calls, not breaking current (expected) Ringing behaviour
+      call.activeCall = createCallFromState(state, callDirection: CallDirection.incoming);
+
+      print('Incoming - From: ${call.activeCall!.from}, To: ${call.activeCall!.to}, Direction: ${call.activeCall!.callDirection}');
+
+      return CallEvent.incoming;
     } else if (state.startsWith("Ringing|")) {
       call.activeCall = createCallFromState(state, callDirection: CallDirection.outgoing);
 

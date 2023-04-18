@@ -194,6 +194,15 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
               hasPushedToCall = true;
             }
             break;
+          case CallEvent.incoming:
+            // applies to web only
+            if (kIsWeb) {
+              final activeCall = TwilioVoice.instance.call.activeCall;
+              if (activeCall != null && activeCall.callDirection == CallDirection.incoming) {
+                _showWebIncomingCall();
+              }
+            }
+            break;
           case CallEvent.ringing:
             final activeCall = TwilioVoice.instance.call.activeCall;
             if (activeCall != null) {
@@ -300,5 +309,50 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
   void pushToCallScreen() {
     Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(
         fullscreenDialog: true, builder: (context) => CallScreen()));
+  }
+
+  void _showWebIncomingCall() async {
+    final activeCall = TwilioVoice.instance.call.activeCall!;
+    final action = await _showWebIncomingCallDialog(context, activeCall);
+    if (action == true) {
+      print("accepting call");
+      TwilioVoice.instance.call.answer();
+      pushToCallScreen();
+    } else {
+      print("rejecting call");
+      TwilioVoice.instance.call.hangUp();
+    }
+  }
+
+  Future<bool?> _showWebIncomingCallDialog(BuildContext context, ActiveCall activeCall) async {
+    if (!kIsWeb) {
+      print("showIncomingCallScreen only for web");
+      return false;
+    }
+
+    // show accept/reject incoming call screen dialog
+    return showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text("Incoming Call"),
+          content: Text("Incoming call from ${activeCall.from}"),
+          actions: [
+            TextButton(
+              child: Text("Accept"),
+              onPressed: () {
+                Navigator.of(context).pop(true);
+              },
+            ),
+            TextButton(
+              child: Text("Reject"),
+              onPressed: () {
+                Navigator.of(context).pop(false);
+              },
+            ),
+          ],
+        );
+      },
+    );
   }
 }
