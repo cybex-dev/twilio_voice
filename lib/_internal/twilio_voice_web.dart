@@ -359,10 +359,13 @@ class Call extends MethodChannelTwilioCall {
     return false;
   }
 
-  /// Not currently implemented for web
+  /// Gets call Sid from call parameters or custom parameters.
   @override
-  Future<String?> getSid() {
-    return Future.value(null);
+  Future<String?> getSid() async {
+    if (_jsCall == null) {
+      return null;
+    }
+    return _jsCall?.parameters["CallSid"] ?? _jsCall?.customParameters["CallSid"] ?? null;
   }
 
   /// Returns true if there is an active call, a convenience function for [activeCall != null], false otherwise.
