@@ -85,7 +85,7 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
     userId = identity;
     final token = data["token"];
     String? androidToken;
-    if (Platform.isAndroid || kIsWeb) {
+    if (!kIsWeb && Platform.isAndroid) {
       androidToken = await FirebaseMessaging.instance.getToken();
       print("androidToken is " + androidToken!);
     }
