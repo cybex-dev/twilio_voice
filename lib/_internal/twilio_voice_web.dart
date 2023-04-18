@@ -3,6 +3,7 @@ import 'dart:html' as html;
 
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 import 'package:twilio_voice/_internal/platform_interface/twilio_call_platform_interface.dart';
+import 'package:js/js_util.dart';
 import 'package:twilio_voice/_internal/platform_interface/twilio_voice_platform_interface.dart';
 import 'package:twilio_voice/_internal/twilio_loader.dart';
 
@@ -237,22 +238,22 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   /// See [twilioJs.Device.on]
   void _attachDeviceListeners(twilioJs.Device device) {
     assert(device != null, "Device cannot be null");
-    device.on("registered", _onDeviceRegistered);
-    device.on("unregistered", _onDeviceUnregistered);
-    device.on("error", _onDeviceError);
-    device.on("incoming", _onDeviceIncoming);
-    device.on("tokenWillExpire", _onTokenWillExpire);
+    device.on("registered", allowInterop(_onDeviceRegistered));
+    device.on("unregistered", allowInterop(_onDeviceUnregistered));
+    device.on("error", allowInterop(_onDeviceError));
+    device.on("incoming", allowInterop(_onDeviceIncoming));
+    device.on("tokenWillExpire", allowInterop(_onTokenWillExpire));
   }
 
   /// Detach event listeners to [twilioJs.Device]
   /// See [twilioJs.Device.off]
   void _detachDeviceListeners(twilioJs.Device device) {
     assert(device != null, "Device cannot be null");
-    device.off("registered", _onDeviceRegistered);
-    device.off("unregistered", _onDeviceUnregistered);
-    device.off("error", _onDeviceError);
-    device.off("incoming", _onDeviceIncoming);
-    device.off("tokenWillExpire", _onTokenWillExpire);
+    device.off("registered", allowInterop(_onDeviceRegistered));
+    device.off("unregistered", allowInterop(_onDeviceUnregistered));
+    device.off("error", allowInterop(_onDeviceError));
+    device.off("incoming", allowInterop(_onDeviceIncoming));
+    device.off("tokenWillExpire", allowInterop(_onTokenWillExpire));
   }
 
   /// On device registered and ready to make/receive calls via [twilioJs.Device.on] and [twilioJs.TwilioDeviceEvents.registered]
@@ -438,28 +439,28 @@ class Call extends MethodChannelTwilioCall {
   /// See [twilioJs.Call.on]
   void _attachCallEventListeners(twilioJs.Call call) {
     assert(call != null, "Call cannot be null");
-    call.on("accept", _onCallAccept);
-    call.on("disconnect", _onCallDisconnect);
-    call.on("cancel", _onCallCancel);
-    call.on("reject", _onCallReject);
-    call.on("error", _onCallError);
-    call.on("connected", _onCallConnected);
-    call.on("reconnecting", _onCallReconnecting);
-    call.on("reconnected", _onCallReconnected);
+    call.on("accept", allowInterop(_onCallAccept));
+    call.on("disconnect", allowInterop(_onCallDisconnect));
+    call.on("cancel", allowInterop(_onCallCancel));
+    call.on("reject", allowInterop(_onCallReject));
+    call.on("error", allowInterop(_onCallError));
+    // call.on("connected", allowInterop(_onCallConnected));
+    call.on("reconnecting", allowInterop(_onCallReconnecting));
+    call.on("reconnected", allowInterop(_onCallReconnected));
   }
 
   /// Detach event listeners to the active call
   /// See [twilioJs.Call.off]
   void _detachCallEventListeners(twilioJs.Call call) {
     assert(call != null, "Call cannot be null");
-    call.off("accept", _onCallAccept);
-    call.off("disconnect", _onCallDisconnect);
-    call.off("cancel", _onCallCancel);
-    call.off("reject", _onCallReject);
-    call.off("error", _onCallError);
-    call.off("connected", _onCallConnected);
-    call.off("reconnecting", _onCallReconnecting);
-    call.off("reconnected", _onCallReconnected);
+    // call.off("accept", allowInterop(_onCallAccept));
+    // call.off("disconnect", allowInterop(_onCallDisconnect));
+    // call.off("cancel", allowInterop(_onCallCancel));
+    // call.off("reject", allowInterop(_onCallReject));
+    // call.off("error", allowInterop(_onCallError));
+    // call.off("connected", allowInterop(_onCallConnected));
+    // call.off("reconnecting", allowInterop(_onCallReconnecting));
+    // call.off("reconnected", allowInterop(_onCallReconnected));
   }
 
   /// On accept/answering (inbound) call
