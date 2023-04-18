@@ -30,7 +30,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   late final Call _call = Call();
 
   @override
-  TwilioCallPlatform get call => _call;
+  Call get call => _call;
 
   static void registerWith(Registrar registrar) {
     TwilioVoicePlatform.instance = TwilioVoiceWeb();
