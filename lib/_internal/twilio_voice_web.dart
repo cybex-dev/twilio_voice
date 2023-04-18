@@ -28,7 +28,8 @@ import 'method_channel/twilio_voice_method_channel.dart';
 /// The web implementation of [TwilioVoicePlatform].
 class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   TwilioVoiceWeb() {
-    loadTwilio();
+    // TODO(cybex-dev) - load twilio.min.js via [TwilioLoader] in future
+    // loadTwilio();
   }
 
   final LocalStorageWeb _localStorage = LocalStorageWeb();

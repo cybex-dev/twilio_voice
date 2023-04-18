@@ -14,7 +14,8 @@ void _injectSrcScript(String src) async {
   return;
 }
 
-// Initializes the Twilio JS SDKs by injecting them into the `head` of the document when Twilio is initialized.
+/// Ignored for web in current implementation, using bundled twilio.min.js instead
+/// Initializes the Twilio JS SDKs by injecting them into the `head` of the document when Twilio is initialized.
 Future<void> loadTwilio() async {
   // If Twilio is already available, Twilio has already been initialized
   // (or the user has added the scripts to their html file).
