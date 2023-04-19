@@ -299,7 +299,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
 
   /// On device token about to expire (default is 10s prior to expiry), via [twilioJs.Device.on] and [twilioJs.TwilioDeviceEvents.tokenWillExpire]
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#tokenwillexpire-event
-  void _onTokenWillExpire() {
+  void _onTokenWillExpire(dynamic obj) {
     print("Token will expire");
   }
 }
