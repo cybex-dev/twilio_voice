@@ -259,6 +259,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   /// On device registered and ready to make/receive calls via [twilioJs.Device.on] and [twilioJs.TwilioDeviceEvents.registered]
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#registered-event
   void _onDeviceRegistered() {
+    print("_onDeviceRegistered");
     print("Device registered for callInvites");
   }
 
@@ -277,6 +278,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   /// On device unregistered, access token disabled and won't receive any more call invites [twilioJs.Device.off] and [twilioJs.TwilioDeviceEvents.unregistered]
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#unregistered-event
   void _onDeviceUnregistered() {
+    print("_onDeviceUnregistered");
     print("Device unregistered, won't receive no more callInvites");
   }
 
@@ -284,13 +286,15 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   /// See [twilioJs.Device.on] and [twilioJs.TwilioDeviceEvents.error]
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#error-event
   void _onDeviceError(twilioJs.TwilioError twilioError, twilioJs.Call? call) {
+    print("_onDeviceError");
     print("Device Error: ${twilioError.message}");
   }
 
   /// On incoming call received via [twilioJs.Device.on] and [twilioJs.TwilioDeviceEvents.incoming]
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#incoming-event
   void _onDeviceIncoming(twilioJs.Call call) {
-    print("Call incoming");
+    print("_onDeviceIncoming");
+    requestMicAccess();
     this.call.nativeCall = call;
     print(this.call.activeCall.toString());
     final from = "caller"; // call.parameters["From"] ?? "";
@@ -307,6 +311,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   /// On device token about to expire (default is 10s prior to expiry), via [twilioJs.Device.on] and [twilioJs.TwilioDeviceEvents.tokenWillExpire]
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#tokenwillexpire-event
   void _onTokenWillExpire() {
+    print("_onTokenWillExpire");
     print("Token will expire");
   }
 }
@@ -332,6 +337,7 @@ class Call extends MethodChannelTwilioCall {
     _jsCall = value;
     if (value != null) {
       activeCall = activeCallFromNativeJsCall(value);
+      _attachCallEventListeners(_jsCall!);
     }
   }
 
@@ -431,8 +437,6 @@ class Call extends MethodChannelTwilioCall {
         print("Disconnecting call");
         _jsCall!.disconnect();
       }
-
-      _detachCallEventListeners(_jsCall!);
       return true;
     }
     return false;
@@ -497,7 +501,7 @@ class Call extends MethodChannelTwilioCall {
     call.on("cancel", js.allowInterop(_onCallCancel));
     call.on("reject", js.allowInterop(_onCallReject));
     call.on("error", js.allowInterop(_onCallError));
-    // call.on("connected", js.allowInterop(_onCallConnected));
+    call.on("connected", js.allowInterop(_onCallConnected));
     call.on("reconnecting", js.allowInterop(_onCallReconnecting));
     call.on("reconnected", js.allowInterop(_onCallReconnected));
   }
@@ -520,8 +524,9 @@ class Call extends MethodChannelTwilioCall {
   /// On accept/answering (inbound) call
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#accept-event
   void _onCallAccept(twilioJs.Call call) {
-    activeCall = activeCallFromNativeJsCall(call);
-    print(activeCall.toString());
+    print("_onCallAccept");
+    nativeCall = call;
+    printCallStatus();
     final from = "caller"; // call.parameters["From"] ?? "";
     final to = "recipient"; // call.parameters["To"] ?? "";
     logLocalEventEntries([
@@ -535,12 +540,15 @@ class Call extends MethodChannelTwilioCall {
   /// On disconnect active (outbound/inbound) call
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#disconnect-event
   void _onCallDisconnect(twilioJs.Call call) {
-    if(_jsCall != null) {
-      _detachCallEventListeners(_jsCall!);
-      nativeCall = null;
+    print("_onCallDisconnect");
+    nativeCall = call;
+    printCallStatus();
+    final status = getCallStatus(call);
+    if(status == CallStatus.closed && _jsCall != null) {
+      _detachCallEventListeners(call);
+      logLocalEvent("Call Ended");
     }
-    print("call disconnected");
-    logLocalEvent("Call Ended");
+    nativeCall = null;
   }
 
   /// On cancels active (outbound/inbound) call
@@ -549,12 +557,12 @@ class Call extends MethodChannelTwilioCall {
   /// - calling [disconnect] on an active call before recipient has answered
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#cancel-event
   void _onCallCancel() {
-    activeCall = null;
+    print("_onCallCancel");
     if(_jsCall != null) {
       _detachCallEventListeners(_jsCall!);
       nativeCall = null;
     }
-    print("call cancelled");
+    printCallStatus();
     logLocalEvent("Missed Call");
     logLocalEvent("Call Ended");
   }
@@ -562,48 +570,62 @@ class Call extends MethodChannelTwilioCall {
   /// On reject (inbound) call
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#reject-event
   void _onCallReject() {
+    print("_onCallReject");
+    printCallStatus();
     if(_jsCall != null) {
       _detachCallEventListeners(_jsCall!);
       nativeCall = null;
     }
-    print("call rejected");
     logLocalEvent("Call Rejected", prefix: "");
   }
 
   /// On reject (inbound) call
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#error-event
   void _onCallError(twilioJs.TwilioError error) {
+    print("_onCallError");
+    printCallStatus();
     print("Call Error: $error");
     logLocalEvent("Call Error: ${error.code}, ${error.message}");
   }
 
   /// On active call connected to remote client
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall
-  // void _onCallConnected() {
-  //   final _f = (twilioJs.Call call) {
-  //     final direction = call.direction() == "INCOMING" ? "Incoming" : "Outgoing";
-  //     final from = call.customParameters["From"] ?? "";
-  //     final to = call.customParameters["To"] ?? "";
-  //     logLocalEventEntries(["Connected", from, to, direction]);
-  //   };
-  //   return allowInterop(_f);
-  // }
+  void _onCallConnected(twilioJs.Call call) {
+    print("_onCallConnected");
+    final direction = call.direction == "INCOMING" ? "Incoming" : "Outgoing";
+    final from = call.customParameters["From"] ?? "";
+    final to = call.customParameters["To"] ?? "";
+    nativeCall = call;
+    printCallStatus();
+    logLocalEventEntries(["Connected", from, to, direction]);
+  }
 
   /// On active call reconnecting to Twilio network
   void _onCallReconnecting(dynamic twilioError) {
+    print("_onCallReconnecting");
+    printCallStatus();
     print("Reconnecting: $twilioError}");
     logLocalEvent("Reconnecting...", prefix: "");
   }
 
   /// On active call reconnecting to Twilio network
   void _onCallReconnected() {
-    print("Reconnected");
+    print("_onCallReconnected");
+    printCallStatus();
     logLocalEvent("Reconnected", prefix: "");
   }
 
   CallStatus getCallStatus(twilioJs.Call call) {
     final status = call.status();
     return parseCallStatus(status);
+  }
+
+  void printCallStatus() {
+    if(_jsCall != null) {
+      print("Call Status: ${getCallStatus(_jsCall!)}");
+    } else {
+      print("Call Status: null");
+    }
   }
 }
 
