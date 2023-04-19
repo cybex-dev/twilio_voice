@@ -3,7 +3,6 @@ import 'dart:html' as html;
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 import 'package:js/js_util.dart';
 import 'package:twilio_voice/_internal/platform_interface/twilio_voice_platform_interface.dart';
-import 'package:twilio_voice/_internal/twilio_loader.dart';
 
 import '../twilio_voice.dart';
 import './js/js.dart' as twilioJs;
