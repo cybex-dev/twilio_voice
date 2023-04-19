@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:html' as html;
 
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
@@ -502,7 +501,7 @@ class Call extends MethodChannelTwilioCall {
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#accept-event
   void _onCallAccept(twilioJs.Call call) {
     activeCall = activeCallFromNativeJsCall(call);
-    print(jsonEncode(activeCall));
+    print(activeCall.toString());
     final from = "caller"; // call.parameters["From"] ?? "";
     final to = "recipient"; // call.parameters["To"] ?? "";
     logLocalEventEntries(["Answer", from, to, "{}"/*jsonEncode(call.parameters)*/]);
