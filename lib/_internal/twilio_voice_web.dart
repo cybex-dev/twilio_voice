@@ -465,7 +465,7 @@ class Call extends MethodChannelTwilioCall {
   /// See [MethodChannelTwilioCall.activeCall]
   @override
   Future<bool> isOnCall() async {
-    return _jsCall != null;
+    return this.device?.isBusy ?? _jsCall != null;
   }
 
   /// Returns true if the call was disconnected, false otherwise.
