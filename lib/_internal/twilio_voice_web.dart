@@ -336,8 +336,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   /// See [twilioJs.Device.on] and [twilioJs.TwilioDeviceEvents.error]
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#error-event
   void _onDeviceError(twilioJs.TwilioError twilioError, twilioJs.Call? call) {
-    print("_onDeviceError");
-    print("Device Error: ${twilioError.message}");
+    logLocalEvent(twilioError.message);
   }
 
   /// On incoming call received via [twilioJs.Device.on] and [twilioJs.TwilioDeviceEvents.incoming]
@@ -610,12 +609,10 @@ class Call extends MethodChannelTwilioCall {
     final from = "caller"; // call.parameters["From"] ?? "";
     final to = "recipient"; // call.parameters["To"] ?? "";
     final direction = _jsCall!.direction == "INCOMING" ? "Incoming" : "Outgoing";
-    Logger.logLocalEventEntries([
-      "Ringing",
-      from,
-      to,
-      direction,
-    ], prefix: "");
+    Logger.logLocalEventEntries(
+      ["Ringing", from, to, direction],
+      prefix: "",
+    );
   }
 
   /// On accept/answering (inbound) call
@@ -685,12 +682,12 @@ class Call extends MethodChannelTwilioCall {
 
   /// On active call reconnecting to Twilio network
   void _onCallReconnecting(dynamic twilioError) {
-    Logger.logLocalEvent("Reconnecting...", prefix: "");
+    Logger.logLocalEvent("Reconnecting...");
   }
 
   /// On active call reconnecting to Twilio network
   void _onCallReconnected() {
-    Logger.logLocalEvent("Reconnected", prefix: "");
+    Logger.logLocalEvent("Reconnected");
   }
 
   CallStatus getCallStatus(twilioJs.Call call) {
