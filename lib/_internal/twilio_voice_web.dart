@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:html' as html;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 
 // Added as temporary measure till sky_engine includes js_util (allowInterop())
@@ -15,14 +17,55 @@ import 'local_storage_web/local_storage_web.dart';
 import 'method_channel/twilio_call_method_channel.dart';
 import 'method_channel/twilio_voice_method_channel.dart';
 
+class Logger {
+  // ignore: close_sinks
+  static StreamController<String>? _callEventsController;
+  static StreamController<String> get callEventsController {
+    _callEventsController ??= StreamController<String>.broadcast();
+    return _callEventsController!;
+  }
+  static Stream<String> get callEventsStream => callEventsController.stream;
+
+  /// Logs event to EventChannel, but uses [List.join] with [separator] to join [prefix] and [description].
+  /// This is used to send events to the EventChannel for integration into existing communication flow.
+  /// The event will be sent as a String with the following format:
+  /// - (if prefix is not empty): "prefix|description", where '|' is separator
+  /// - (if prefix is empty): "description"
+  static void logLocalEventEntries(List<String> entries, {String prefix = "LOG", String separator = "|"}) {
+    logLocalEvent(entries.join(separator), prefix: prefix, separator: separator);
+  }
+
+  /// Logs event to EventChannel.
+  /// This is used to send events to the EventChannel for integration into existing communication flow.
+  /// The event will be sent as a String with the following format:
+  /// - (if prefix is not empty): "prefix|description", where '|' is separator
+  /// - (if prefix is empty): "description"
+  static void logLocalEvent(String description, {String prefix = "LOG", String separator = "|"}) async {
+    if(!kIsWeb) {
+      throw UnimplementedError("Use eventChannel() via sendPhoneEvents on platform implementation");
+    }
+    // eventChannel.binaryMessenger.handlePlatformMessage(
+    //   _kEventChannelName,
+    //   const StandardMethodCodec().encodeSuccessEnvelope(description),
+    //   (ByteData? data) {},
+    // );
+    String message = "";
+    if (prefix.isEmpty) {
+      message = description;
+    } else {
+      message = "$prefix$separator$description";
+    }
+
+    // Send events to EventChannel for integration into existing communication flow
+    callEventsController.add(message);
+  }
+}
+
 /// The web implementation of [TwilioVoicePlatform].
 class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   TwilioVoiceWeb() {
     // TODO(cybex-dev) - load twilio.min.js via [TwilioLoader] in future
     // loadTwilio();
-    callEventsListener.listen((event) {
-      print("[TwilioVoiceWeb] Event: $event");
-    });
   }
 
   final LocalStorageWeb _localStorage = LocalStorageWeb();
@@ -46,7 +89,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
 
   Stream<CallEvent> get callEventsListener {
     if(_callEventsListener == null) {
-      _callEventsListener = callEventsStream.asBroadcastStream().map(parseCallEvent);
+      _callEventsListener =  Logger.callEventsStream.map(parseCallEvent);
     }
     return _callEventsListener!;
   }
@@ -61,7 +104,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   /// See [LocalStorageWeb.saveDefaultCallerName]
   @override
   Future<bool?> setDefaultCallerName(String callerName) async {
-    logLocalEvent("defaultCaller is " + callerName);
+    Logger.logLocalEvent("defaultCaller is " + callerName);
     _localStorage.saveDefaultCallerName(callerName);
     return true;
   }
@@ -70,7 +113,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   /// See [LocalStorageWeb.removeRegisteredClient]
   @override
   Future<bool?> unregisterClient(String clientId) async {
-    logLocalEvent("Unregistering" + clientId);
+    Logger.logLocalEvent("Unregistering" + clientId);
     _localStorage.removeRegisteredClient(clientId);
     return true;
   }
@@ -79,7 +122,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   /// See [LocalStorageWeb.addRegisteredClient]
   @override
   Future<bool?> registerClient(String clientId, String clientName) async {
-    logLocalEvent("Registering client " + clientId + ":" + clientName);
+    Logger.logLocalEvent("Registering client " + clientId + ":" + clientName);
     _localStorage.addRegisteredClient(clientId, clientName);
     return true;
   }
@@ -90,7 +133,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   /// This is a 'hack' to acquire media permissions. The permissions API is not supported in all browsers.
   @override
   Future<bool?> requestMicAccess() async {
-    logLocalEvent("requesting mic permission");
+    Logger.logLocalEvent("requesting mic permission");
     try {
       /// TODO(cybex-dev) - Check browser type, if it is Firefox (or Safari), use the permissions API else use the getUserMedia API
       // final perm = await _webPermissionsDelegate?.request({"name": "microphone"});
@@ -112,7 +155,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   /// Documentation: https://developer.mozilla.org/en-US/docs/Web/API/Permissions/query
   @override
   Future<bool> hasMicAccess() async {
-    logLocalEvent("checkPermissionForMicrophone");
+    Logger.logLocalEvent("checkPermissionForMicrophone");
     try {
       final perm = await _webPermissionsDelegate?.query({"name": "microphone"});
       if (perm == null) {
@@ -122,10 +165,10 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
       if (perm.state == "granted") {
         return true;
       } else if (perm.state == "prompt") {
-        logLocalEvent("RequestMicrophoneAccess");
+        Logger.logLocalEvent("RequestMicrophoneAccess");
         return false;
       } else {
-        logLocalEvent("Microphone permission denied", prefix: "");
+        Logger.logLocalEvent("Microphone permission denied", prefix: "");
         return false;
       }
     } catch (e) {
@@ -273,11 +316,11 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   // /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#registered-event
   // Function _onDeviceRegistered() {
   //   // final _f = (twilioJs.Device device) {
-  //   //   logLocalEvent("Device registered for callInvites", prefix: "");
+  //   //   Logger.logLocalEvent("Device registered for callInvites", prefix: "");
   //   // };
   //   // return allowInterop(_f);
   //   return allowInterop((twilioJs.Device device) {
-  //     logLocalEvent("Device registered for callInvites", prefix: "");
+  //     Logger.logLocalEvent("Device registered for callInvites", prefix: "");
   //   });
   // }
 
@@ -305,7 +348,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
     print(this.call.activeCall.toString());
     final from = "caller"; // call.parameters["From"] ?? "";
     final to = "recipient"; // call.parameters["To"] ?? "";
-    logLocalEventEntries(
+    Logger.logLocalEventEntries(
       ["Incoming", from, to, "Incoming", "{}"],
       prefix: "",
     );
@@ -358,14 +401,14 @@ class Call extends MethodChannelTwilioCall {
   /// Not currently implemented for web
   @override
   Future<bool?> toggleSpeaker(bool speakerIsOn) async {
-    logLocalEvent(speakerIsOn ? "Speaker On" : "Speaker Off", prefix: "");
+    Logger.logLocalEvent(speakerIsOn ? "Speaker On" : "Speaker Off", prefix: "");
     return Future.value(false);
   }
 
   /// Not currently implemented for web
   @override
   Future<bool?> toggleMute(bool isMuted) async {
-    logLocalEvent(isMuted ? "Mute" : "Unmute", prefix: "");
+    Logger.logLocalEvent(isMuted ? "Mute" : "Unmute", prefix: "");
     return Future.value(false);
   }
 
@@ -377,9 +420,9 @@ class Call extends MethodChannelTwilioCall {
   /// TODO(cybex-dev) - implement call holding feature in [twilio-voice.js](https://github.com/twilio/twilio-voice.js) for use in twilio_voice_web
   @override
   Future<bool?> holdCall({bool holdCall = true}) {
-    // logLocalEvent(holdCall ? "Unhold" : "Hold", prefix: "");
+    // Logger.logLocalEvent(holdCall ? "Unhold" : "Hold", prefix: "");
     // return Future.value(false);
-    logLocalEvent("Unhold");
+    Logger.logLocalEvent("Unhold");
     return Future.value(false);
   }
 
@@ -399,7 +442,7 @@ class Call extends MethodChannelTwilioCall {
       final customParameters = _jsCall!.parameters;
       final from = "caller"; // customParameters["From"] ?? "";
       final to = "recipient"; // customParameters["To"] ?? "";
-      logLocalEventEntries([
+      Logger.logLocalEventEntries([
         "Answer",
         from,
         to,
@@ -434,10 +477,8 @@ class Call extends MethodChannelTwilioCall {
     if (_jsCall != null) {
       CallStatus callStatus = getCallStatus(_jsCall!);
       if (callStatus == CallStatus.ringing) {
-        print("Rejecting call");
         _jsCall!.reject();
       } else {
-        print("Disconnecting call");
         _jsCall!.disconnect();
       }
       return true;
@@ -467,7 +508,7 @@ class Call extends MethodChannelTwilioCall {
     assert(extraOptions?.keys.contains("From") ?? true, "From cannot be passed in extraOptions");
     assert(extraOptions?.keys.contains("To") ?? true, "To cannot be passed in extraOptions");
 
-    logLocalEvent("Making new call", prefix: "");
+    Logger.logLocalEvent("Making new call");
     // handle parameters
     final params = <String, String>{
       "From": from,
@@ -571,7 +612,7 @@ class Call extends MethodChannelTwilioCall {
     final from = "caller"; // call.parameters["From"] ?? "";
     final to = "recipient"; // call.parameters["To"] ?? "";
     final direction = _jsCall!.direction == "INCOMING" ? "Incoming" : "Outgoing";
-    logLocalEventEntries([
+    Logger.logLocalEventEntries([
       "Ringing",
       from,
       to,
@@ -584,7 +625,7 @@ class Call extends MethodChannelTwilioCall {
   void _onCallAccept(twilioJs.Call call) {
     final from = "caller"; // call.parameters["From"] ?? "";
     final to = "recipient"; // call.parameters["To"] ?? "";
-    logLocalEventEntries([
+    Logger.logLocalEventEntries([
       "Answer",
       from,
       to,
@@ -598,7 +639,7 @@ class Call extends MethodChannelTwilioCall {
     final status = getCallStatus(call);
     _detachCallEventListeners(call);
     if (status == CallStatus.closed && _jsCall != null) {
-      logLocalEvent("Call Ended", prefix: "");
+      Logger.logLocalEvent("Call Ended", prefix: "");
     }
     nativeCall = null;
   }
@@ -613,8 +654,8 @@ class Call extends MethodChannelTwilioCall {
       _detachCallEventListeners(_jsCall!);
       nativeCall = null;
     }
-    logLocalEvent("Missed Call", prefix: "");
-    logLocalEvent("Call Ended", prefix: "");
+    Logger.logLocalEvent("Missed Call", prefix: "");
+    Logger.logLocalEvent("Call Ended", prefix: "");
   }
 
   /// On reject (inbound) call
@@ -624,13 +665,13 @@ class Call extends MethodChannelTwilioCall {
       _detachCallEventListeners(_jsCall!);
       nativeCall = null;
     }
-    logLocalEvent("Call Rejected", prefix: "");
+    Logger.logLocalEvent("Call Rejected");
   }
 
   /// On reject (inbound) call
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#error-event
   void _onCallError(twilioJs.TwilioError error) {
-    logLocalEvent("Call Error: ${error.code}, ${error.message}");
+    Logger.logLocalEvent("Call Error: ${error.code}, ${error.message}");
   }
 
   /// On active call connected to remote client
@@ -640,17 +681,17 @@ class Call extends MethodChannelTwilioCall {
     final from = "caller"; // call.customParameters["From"] ?? "";
     final to = "recipient"; // call.customParameters["To"] ?? "";
     // nativeCall = call;
-    logLocalEventEntries(["Connected", from, to, direction], prefix: "");
+    Logger.logLocalEventEntries(["Connected", from, to, direction], prefix: "");
   }
 
   /// On active call reconnecting to Twilio network
   void _onCallReconnecting(dynamic twilioError) {
-    logLocalEvent("Reconnecting...", prefix: "");
+    Logger.logLocalEvent("Reconnecting...", prefix: "");
   }
 
   /// On active call reconnecting to Twilio network
   void _onCallReconnected() {
-    logLocalEvent("Reconnected", prefix: "");
+    Logger.logLocalEvent("Reconnected", prefix: "");
   }
 
   CallStatus getCallStatus(twilioJs.Call call) {
