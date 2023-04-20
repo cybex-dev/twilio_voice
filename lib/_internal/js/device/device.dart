@@ -31,6 +31,11 @@ class Device extends Twilio {
     DeviceInitOptions? options,
   ]);
 
+  // /// Returns array of active calls
+  // /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#devicecalls
+  // @JS("calls")
+  // external dynamic get calls;
+
   /// Returns true if the device is on an active call
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#deviceisbusy
   @JS("isBusy")
