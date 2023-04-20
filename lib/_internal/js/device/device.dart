@@ -31,6 +31,11 @@ class Device extends Twilio {
     DeviceInitOptions? options,
   ]);
 
+  /// Get current device token
+  /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#devicetoken
+  @JS("token")
+  external String get token;
+
   /// Connect to Twilio Voice Client
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#connect
   @JS("connect")
