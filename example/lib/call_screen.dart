@@ -13,8 +13,9 @@ class _CallScreenState extends State<CallScreen> {
   var mute = false;
   var isEnded = false;
 
-  String? message = "Connecting...";
+  String message = "";
   late StreamSubscription<CallEvent> callStateListener;
+
   void listenCall() {
     callStateListener = TwilioVoice.instance.callEventsListener.listen((event) {
       print("voip-onCallStateChanged $event");
@@ -75,7 +76,7 @@ class _CallScreenState extends State<CallScreen> {
         case CallEvent.answer:
           print("call answered");
           setState(() {
-            message = null;
+            message = "Answered";
           });
           break;
         case CallEvent.hold:
@@ -102,8 +103,9 @@ class _CallScreenState extends State<CallScreen> {
 
   @override
   void initState() {
-    listenCall();
     super.initState();
+    message = "Connecting...";
+    listenCall();
     caller = getCaller();
   }
 
