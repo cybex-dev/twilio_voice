@@ -1,6 +1,7 @@
 import 'dart:html' as html;
 
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
+
 // Added as temporary measure till sky_engine includes js_util (allowInterop())
 import 'package:js/js.dart' as js;
 import 'package:js/js_util.dart' as js_util;
@@ -496,6 +497,7 @@ class Call extends MethodChannelTwilioCall {
   /// See [twilioJs.Call.on]
   void _attachCallEventListeners(twilioJs.Call call) {
     assert(call != null, "Call cannot be null");
+    call.on("ringing", js.allowInterop(_onCallRinging));
     call.on("accept", js.allowInterop(_onCallAccept));
     call.on("disconnect", js.allowInterop(_onCallDisconnect));
     call.on("cancel", js.allowInterop(_onCallCancel));
@@ -511,14 +513,32 @@ class Call extends MethodChannelTwilioCall {
   /// 'off' event listener isn't implemented in twilio-voice.js
   void _detachCallEventListeners(twilioJs.Call call) {
     assert(call != null, "Call cannot be null");
-    // call.off("accept", js.allowInterop(_onCallAccept));
-    // call.off("disconnect", js.allowInterop(_onCallDisconnect));
-    // call.off("cancel", js.allowInterop(_onCallCancel));
-    // call.off("reject", js.allowInterop(_onCallReject));
-    // call.off("error", js.allowInterop(_onCallError));
-    // call.off("connected", js.allowInterop(_onCallConnected));
-    // call.off("reconnecting", js.allowInterop(_onCallReconnecting));
-    // call.off("reconnected", js.allowInterop(_onCallReconnected));
+    call.removeListener("ringing", js.allowInterop(_onCallRinging));
+    call.removeListener("accept", js.allowInterop(_onCallAccept));
+    call.removeListener("disconnect", js.allowInterop(_onCallDisconnect));
+    call.removeListener("cancel", js.allowInterop(_onCallCancel));
+    call.removeListener("reject", js.allowInterop(_onCallReject));
+    call.removeListener("error", js.allowInterop(_onCallError));
+    call.removeListener("connected", js.allowInterop(_onCallConnected));
+    call.removeListener("reconnecting", js.allowInterop(_onCallReconnecting));
+    call.removeListener("reconnected", js.allowInterop(_onCallReconnected));
+  }
+
+  /// On accept/answering (inbound) call
+  /// Undocumented event: Ringing found in twilio-voice.js implementation: https://github.com/twilio/twilio-voice.js/blob/94ea6b6d8d1128ac5091f3a3bec4eae745e4d12f/lib/twilio/call.ts#L1355
+  /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#accept-event
+  void _onCallRinging(bool hasEarlyMedia) {
+    print("_onCallRinging");
+    printCallStatus();
+    final from = "caller"; // call.parameters["From"] ?? "";
+    final to = "recipient"; // call.parameters["To"] ?? "";
+    final direction = _jsCall!.direction == "INCOMING" ? "Incoming" : "Outgoing";
+    logLocalEventEntries([
+      "Ringing",
+      from,
+      to,
+      direction,
+    ]);
   }
 
   /// On accept/answering (inbound) call
@@ -544,7 +564,7 @@ class Call extends MethodChannelTwilioCall {
     nativeCall = call;
     printCallStatus();
     final status = getCallStatus(call);
-    if(status == CallStatus.closed && _jsCall != null) {
+    if (status == CallStatus.closed && _jsCall != null) {
       _detachCallEventListeners(call);
       logLocalEvent("Call Ended");
     }
@@ -558,7 +578,7 @@ class Call extends MethodChannelTwilioCall {
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#cancel-event
   void _onCallCancel() {
     print("_onCallCancel");
-    if(_jsCall != null) {
+    if (_jsCall != null) {
       _detachCallEventListeners(_jsCall!);
       nativeCall = null;
     }
@@ -572,7 +592,7 @@ class Call extends MethodChannelTwilioCall {
   void _onCallReject() {
     print("_onCallReject");
     printCallStatus();
-    if(_jsCall != null) {
+    if (_jsCall != null) {
       _detachCallEventListeners(_jsCall!);
       nativeCall = null;
     }
@@ -621,7 +641,7 @@ class Call extends MethodChannelTwilioCall {
   }
 
   void printCallStatus() {
-    if(_jsCall != null) {
+    if (_jsCall != null) {
       print("Call Status: ${getCallStatus(_jsCall!)}");
     } else {
       print("Call Status: null");
