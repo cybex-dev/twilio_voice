@@ -673,6 +673,7 @@ class Call extends MethodChannelTwilioCall {
   /// On active call connected to remote client
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall
   void _onCallConnected(twilioJs.Call call) {
+    nativeCall = call;
     final direction = call.direction == "INCOMING" ? "Incoming" : "Outgoing";
     final params = getCallParams(call);
     final from = params["From"] ?? "";
