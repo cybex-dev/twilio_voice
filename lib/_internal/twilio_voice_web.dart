@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:html' as html;
 
 import 'package:flutter/foundation.dart';
@@ -342,14 +343,13 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   /// On incoming call received via [twilioJs.Device.on] and [twilioJs.TwilioDeviceEvents.incoming]
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#incoming-event
   void _onDeviceIncoming(twilioJs.Call call) {
-    print("_onDeviceIncoming");
     requestMicAccess();
     this.call.nativeCall = call;
-    print(this.call.activeCall.toString());
-    final from = "caller"; // call.parameters["From"] ?? "";
-    final to = "recipient"; // call.parameters["To"] ?? "";
+    final params = getCallParams(call);
+    final from = params["From"] ?? "";
+    final to = params["To"] ?? "";
     Logger.logLocalEventEntries(
-      ["Incoming", from, to, "Incoming", "{}"],
+      ["Incoming", from, to, "Incoming", jsonEncode(params)],
       prefix: "",
     );
   }
@@ -439,15 +439,13 @@ class Call extends MethodChannelTwilioCall {
       _attachCallEventListeners(_jsCall!);
 
       // log event
-      final customParameters = _jsCall!.parameters;
-      final from = "caller"; // customParameters["From"] ?? "";
-      final to = "recipient"; // customParameters["To"] ?? "";
-      Logger.logLocalEventEntries([
-        "Answer",
-        from,
-        to,
-        "{}" /*jsonEncode(customParameters)*/
-      ], prefix: "");
+      final params = getCallParams(_jsCall!);
+      final from = params["From"] ?? "";
+      final to = params["To"] ?? "";
+      Logger.logLocalEventEntries(
+        ["Answer", from, to, jsonEncode(params)],
+        prefix: "",
+      );
 
       return true;
     }
@@ -460,7 +458,8 @@ class Call extends MethodChannelTwilioCall {
     if (_jsCall == null) {
       return null;
     }
-    return _jsCall?.parameters["CallSid"] ?? _jsCall?.customParameters["CallSid"] ?? null;
+    final params = getCallParams(_jsCall!);
+    return params["CallSid"] ?? null;
   }
 
   /// Returns true if there is an active call, a convenience function for [activeCall != null], false otherwise.
@@ -623,13 +622,14 @@ class Call extends MethodChannelTwilioCall {
   /// On accept/answering (inbound) call
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#accept-event
   void _onCallAccept(twilioJs.Call call) {
-    final from = "caller"; // call.parameters["From"] ?? "";
-    final to = "recipient"; // call.parameters["To"] ?? "";
+    final params = getCallParams(call);
+    final from = params["From"] ?? "";
+    final to = params["To"] ?? "";
     Logger.logLocalEventEntries([
       "Answer",
       from,
       to,
-      "{}" /*jsonEncode(call.parameters)*/
+      jsonEncode(params),
     ], prefix: "");
   }
 
@@ -678,9 +678,9 @@ class Call extends MethodChannelTwilioCall {
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall
   void _onCallConnected(twilioJs.Call call) {
     final direction = call.direction == "INCOMING" ? "Incoming" : "Outgoing";
-    final from = "caller"; // call.customParameters["From"] ?? "";
-    final to = "recipient"; // call.customParameters["To"] ?? "";
-    // nativeCall = call;
+    final params = getCallParams(call);
+    final from = params["From"] ?? "";
+    final to = params["To"] ?? "";
     Logger.logLocalEventEntries(["Connected", from, to, direction], prefix: "");
   }
 
@@ -700,7 +700,21 @@ class Call extends MethodChannelTwilioCall {
   }
 }
 
+Map<String, String> getCallParams(twilioJs.Call call) {
+  final params = call.parameters;
+  final keys = objectKeys(params);
+  final entries = keys.map<MapEntry<String, String>>((dynamic k) {
+    final value = getProperty(params, k);
+    return MapEntry<String, String>(k, value);
+  });
+  return Map<String, String>.fromEntries(entries);
+}
+
 ActiveCall activeCallFromNativeJsCall(twilioJs.Call call, {DateTime? initiated}) {
+
+  final params = getCallParams(call);
+  params.removeWhere((key, value) => key == "To" || key == "From");
+
   final direction = call.direction;
   final date = initiated ?? DateTime.now();
   final _activeCall = ActiveCall(
@@ -708,7 +722,7 @@ ActiveCall activeCallFromNativeJsCall(twilioJs.Call call, {DateTime? initiated})
     // call.customParameters["From"] ?? "",
     to: "recipient",
     // call.customParameters["To"] ?? "",
-    customParams: {},
+    customParams: params,
     //call.customParameters as Map<String, dynamic>?,
     callDirection: direction == "INCOMING" ? CallDirection.incoming : CallDirection.outgoing,
     initiated: date,
