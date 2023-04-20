@@ -69,6 +69,7 @@ abstract class SharedPlatformInterface extends PlatformInterface {
       message = "${prefix}${separator}${description}";
     }
 
+    print("Sending event: $message");
     // Send events to EventChannel for integration into existing communication flow
     callEventsController.add(message);
   }
