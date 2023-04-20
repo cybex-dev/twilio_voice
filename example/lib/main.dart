@@ -173,7 +173,6 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
             CallDirection.incoming) {
       print("user is on call");
       pushToCallScreen();
-      hasPushedToCall = true;
     }
   }
 
@@ -188,10 +187,10 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
         switch (event) {
           case CallEvent.answer:
             //at this point android is still paused
-            if (Platform.isIOS && state == null ||
+            if (kIsWeb ||
+                Platform.isIOS && state == null ||
                 state == AppLifecycleState.resumed) {
               pushToCallScreen();
-              hasPushedToCall = true;
             }
             break;
           case CallEvent.incoming:
@@ -199,7 +198,7 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
             if (kIsWeb) {
               final activeCall = TwilioVoice.instance.call.activeCall;
               if (activeCall != null && activeCall.callDirection == CallDirection.incoming) {
-                _showWebIncomingCall();
+                _showWebIncomingCallDialog();
               }
             }
             break;
@@ -223,14 +222,17 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
             }
             break;
           case CallEvent.connected:
-            if (Platform.isAndroid &&
+            if (kIsWeb) {
+              if (state == null || state == AppLifecycleState.resumed) {
+                pushToCallScreen();
+              }
+            } else if (Platform.isAndroid &&
                 TwilioVoice.instance.call.activeCall!.callDirection ==
                     CallDirection.incoming) {
               if (state != AppLifecycleState.resumed) {
                 TwilioVoice.instance.showBackgroundCallUI();
               } else if (state == null || state == AppLifecycleState.resumed) {
                 pushToCallScreen();
-                hasPushedToCall = true;
               }
             }
             break;
@@ -239,7 +241,6 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
             break;
           case CallEvent.returningCall:
             pushToCallScreen();
-            hasPushedToCall = true;
             break;
           default:
             break;
@@ -306,14 +307,9 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
     );
   }
 
-  void pushToCallScreen() {
-    Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(
-        fullscreenDialog: true, builder: (context) => CallScreen()));
-  }
-
-  void _showWebIncomingCall() async {
+  void _showWebIncomingCallDialog() async {
     final activeCall = TwilioVoice.instance.call.activeCall!;
-    final action = await _showWebIncomingCallDialog(context, activeCall);
+    final action = await showIncomingCallScreen(context, activeCall);
     if (action == true) {
       print("accepting call");
       TwilioVoice.instance.call.answer();
@@ -324,7 +320,15 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
     }
   }
 
-  Future<bool?> _showWebIncomingCallDialog(BuildContext context, ActiveCall activeCall) async {
+  void pushToCallScreen() {
+    if (hasPushedToCall) {
+      return;
+    }
+    hasPushedToCall = true;
+    Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(fullscreenDialog: true, builder: (context) => CallScreen()));
+  }
+
+  Future<bool?> showIncomingCallScreen(BuildContext context, ActiveCall activeCall) async {
     if (!kIsWeb) {
       print("showIncomingCallScreen only for web");
       return false;
