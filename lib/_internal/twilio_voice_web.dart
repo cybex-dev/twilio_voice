@@ -411,7 +411,10 @@ class Call extends MethodChannelTwilioCall {
   @override
   Future<bool?> toggleMute(bool isMuted) async {
     Logger.logLocalEvent(isMuted ? "Mute" : "Unmute", prefix: "");
-    return Future.value(false);
+    if(_jsCall != null) {
+      _jsCall!.mute(isMuted);
+    }
+    return isMuted;
   }
 
   /// Not currently implemented for web
