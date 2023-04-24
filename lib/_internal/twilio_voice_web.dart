@@ -351,6 +351,10 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
       ["Incoming", from, to, "Incoming", jsonEncode(params)],
       prefix: "",
     );
+    Logger.logLocalEventEntries(
+      ["Ringing", from, to, "Incoming", jsonEncode(params)],
+      prefix: "",
+    );
   }
 
   /// On device token about to expire (default is 10s prior to expiry), via [twilioJs.Device.on] and [twilioJs.TwilioDeviceEvents.tokenWillExpire]
@@ -576,9 +580,6 @@ class Call extends MethodChannelTwilioCall {
       case CallStatus.closed:
         // TODO: Handle this case.
         break;
-      case CallStatus.connecting:
-        // TODO: Handle this case.
-        break;
       case CallStatus.connected:
         if(_jsCall != null) {
           _onCallConnected(_jsCall!);
@@ -590,7 +591,11 @@ class Call extends MethodChannelTwilioCall {
       case CallStatus.reconnected:
         // TODO: Handle this case.
         break;
+      case CallStatus.connecting:
+        // Added missing Ringing for outgoing calls
       case CallStatus.ringing:
+        /// jsCall should not be null here since `CallStatus.incoming` (incoming) or
+        /// `CallStatus.connecting` (outgoing) via `place()` has already been fired and set
         _onCallRinging();
         break;
       case CallStatus.rejected:
