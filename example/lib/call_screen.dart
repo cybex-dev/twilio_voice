@@ -61,7 +61,7 @@ class _CallScreenState extends State<CallScreen> {
         case CallEvent.ringing:
           print("ringing");
           setState(() {
-            message = "Calling...";
+            message = "Ringing...";
           });
           break;
         case CallEvent.declined:
@@ -75,9 +75,12 @@ class _CallScreenState extends State<CallScreen> {
           break;
         case CallEvent.answer:
           print("call answered");
-          setState(() {
-            message = "Answered";
-          });
+          final activeCall = TwilioVoice.instance.call.activeCall;
+          if(activeCall != null && activeCall.callDirection == CallDirection.incoming) {
+            setState(() {
+              message = "Answered";
+            });
+          }
           break;
         case CallEvent.hold:
         case CallEvent.log:
