@@ -606,13 +606,16 @@ class Call extends MethodChannelTwilioCall {
   /// Undocumented event: Ringing found in twilio-voice.js implementation: https://github.com/twilio/twilio-voice.js/blob/94ea6b6d8d1128ac5091f3a3bec4eae745e4d12f/lib/twilio/call.ts#L1355
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#accept-event
   void _onCallRinging({bool hasEarlyMedia = false}) {
-    final from = "caller"; // call.parameters["From"] ?? "";
-    final to = "recipient"; // call.parameters["To"] ?? "";
-    final direction = _jsCall!.direction == "INCOMING" ? "Incoming" : "Outgoing";
-    Logger.logLocalEventEntries(
-      ["Ringing", from, to, direction],
-      prefix: "",
-    );
+    if(_jsCall != null) {
+      final params = getCallParams(_jsCall!);
+      final from = params["From"] ?? "";
+      final to = params["To"] ?? "";
+      final direction = _jsCall!.direction == "INCOMING" ? "Incoming" : "Outgoing";
+      Logger.logLocalEventEntries(
+        ["Ringing", from, to, direction],
+        prefix: "",
+      );
+    }
   }
 
   /// On accept/answering (inbound) call
