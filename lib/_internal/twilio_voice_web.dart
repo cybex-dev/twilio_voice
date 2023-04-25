@@ -723,7 +723,9 @@ ActiveCall activeCallFromNativeJsCall(twilioJs.Call call, {DateTime? initiated})
   final params = getCallParams(call);
   final from = params["From"] ?? params["from"] ?? "";
   final to = params["To"] ?? params["to"] ?? "";
-  params.removeWhere((key, value) => key == "To" || key == "From");
+
+  /// Do not remove To and From params as they are used to build call state using [createCallFromState(String)]
+  // params.removeWhere((key, value) => key == "To" || key == "From");
 
   final direction = call.direction;
   final date = initiated ?? DateTime.now();
