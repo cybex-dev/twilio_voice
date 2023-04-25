@@ -721,14 +721,16 @@ Map<String, String> getCallParams(twilioJs.Call call) {
 ActiveCall activeCallFromNativeJsCall(twilioJs.Call call, {DateTime? initiated}) {
 
   final params = getCallParams(call);
+  final from = params["From"] ?? params["from"] ?? "";
+  final to = params["To"] ?? params["to"] ?? "";
   params.removeWhere((key, value) => key == "To" || key == "From");
 
   final direction = call.direction;
   final date = initiated ?? DateTime.now();
   final _activeCall = ActiveCall(
-    from: "caller",
+    from: from,
     // call.customParameters["From"] ?? "",
-    to: "recipient",
+    to: to,
     // call.customParameters["To"] ?? "",
     customParams: params,
     //call.customParameters as Map<String, dynamic>?,
