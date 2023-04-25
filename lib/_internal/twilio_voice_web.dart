@@ -14,6 +14,7 @@ import 'package:twilio_voice/_internal/platform_interface/twilio_voice_platform_
 
 import '../twilio_voice.dart';
 import './js/js.dart' as twilioJs;
+import 'js/utils/js_object_utils.dart';
 import 'local_storage_web/local_storage_web.dart';
 import 'method_channel/twilio_call_method_channel.dart';
 import 'method_channel/twilio_voice_method_channel.dart';
@@ -708,14 +709,22 @@ class Call extends MethodChannelTwilioCall {
   }
 }
 
-Map<String, String> getCallParams(twilioJs.Call call) {
-  final params = call.parameters;
-  final keys = objectKeys(params);
-  final entries = keys.map<MapEntry<String, String>>((dynamic k) {
-    final value = getProperty(params, k);
-    return MapEntry<String, String>(k, value);
+/// Since Call.customParameters is of type Map (but specifically implements a LegacyJavaScriptObject), we cannot access the Map directly.
+/// Instead, we convert it to an array using [toArray] and then convert it to a Map
+Map<String, String> _getCustomCallParameters(dynamic callParameters) {
+  final list = toArray(callParameters) as List<dynamic>;
+  final entries = list.map((e) {
+    final entry = e as List;
+    return MapEntry<String, String>(entry.first.toString(), entry.last.toString());
   });
   return Map<String, String>.fromEntries(entries);
+}
+
+Map<String, String> getCallParams(twilioJs.Call call) {
+  final customParams = _getCustomCallParameters(call.customParameters);
+  final params = jsToStringMap(call.parameters);
+
+  return Map<String, String>.from(customParams)..addAll(params);
 }
 
 ActiveCall activeCallFromNativeJsCall(twilioJs.Call call, {DateTime? initiated}) {

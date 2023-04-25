@@ -91,6 +91,6 @@ class DeviceInitOptions {
 @anonymous
 @JS()
 class DeviceConnectOptions {
-  external Map<String, String> params;
+  external dynamic params;
   external factory DeviceConnectOptions({dynamic params});
 }
