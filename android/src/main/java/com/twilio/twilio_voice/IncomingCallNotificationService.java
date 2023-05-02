@@ -76,11 +76,11 @@ public class IncomingCallNotificationService extends Service {
         intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent pendingIntent;
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-        pendingIntent =PendingIntent.getActivity(this, notificationId, intent, PendingIntent.FLAG_IMMUTABLE);
+            pendingIntent =PendingIntent.getActivity(this, notificationId, intent, PendingIntent.FLAG_IMMUTABLE);
         }
         else
         {
-            pendingIntent =PendingIntent.getActivity(this, notificationId, intent, PendingIntent.FLAG_IMMUTABLE);
+            pendingIntent =PendingIntent.getActivity(this, notificationId, intent, PendingIntent.FLAG_UPDATE_CURRENT);
         }
         /*
          * Pass the notification id and call sid to use as an identifier to cancel the
