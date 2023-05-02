@@ -78,7 +78,7 @@ public class IncomingCallNotificationService extends Service {
         int flags = PendingIntent.FLAG_UPDATE_CURRENT;
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            flags = PendingIntent.FLAG_IMMUTABLE; // You can use FLAG_MUTABLE if needed
+            flags = PendingIntent.FLAG_MUTABLE; // You can use FLAG_MUTABLE if needed
         }
         PendingIntent pendingIntent = PendingIntent.getActivity(this, notificationId, intent, flags);
         /*
