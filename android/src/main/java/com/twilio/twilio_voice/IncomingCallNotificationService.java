@@ -16,7 +16,6 @@ import android.os.Bundle;
 import android.os.IBinder;
 import android.util.Log;
 
-
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 import androidx.lifecycle.Lifecycle;
@@ -75,14 +74,14 @@ public class IncomingCallNotificationService extends Service {
         intent.putExtra(Constants.INCOMING_CALL_NOTIFICATION_ID, notificationId);
         intent.putExtra(Constants.INCOMING_CALL_INVITE, callInvite);
         intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            flags = PendingIntent.FLAG_MUTABLE; 
-        }else{
-            flags = PendingIntent.FLAG_ONE_SHOT;
+        PendingIntent pendingIntent;
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+        pendingIntent =PendingIntent.getActivity(this, notificationId, intent, PendingIntent.FLAG_IMMUTABLE);
         }
-        PendingIntent pendingIntent = PendingIntent.getActivity(this, notificationId, intent, flags);
+        else
+        {
+            pendingIntent =PendingIntent.getActivity(this, notificationId, intent, PendingIntent.FLAG_IMMUTABLE);
+        }
         /*
          * Pass the notification id and call sid to use as an identifier to cancel the
          * notification later
