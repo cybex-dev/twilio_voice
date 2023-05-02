@@ -74,7 +74,12 @@ public class IncomingCallNotificationService extends Service {
         intent.putExtra(Constants.INCOMING_CALL_NOTIFICATION_ID, notificationId);
         intent.putExtra(Constants.INCOMING_CALL_INVITE, callInvite);
         intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        PendingIntent pendingIntent = PendingIntent.getActivity(this, notificationId, intent, PendingIntent.FLAG_UPDATE_CURRENT);
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            flags = PendingIntent.FLAG_IMMUTABLE; // You can use FLAG_MUTABLE if needed
+        }
+        PendingIntent pendingIntent = PendingIntent.getActivity(this, notificationId, intent, flags);
         /*
          * Pass the notification id and call sid to use as an identifier to cancel the
          * notification later

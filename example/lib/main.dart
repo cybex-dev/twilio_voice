@@ -48,8 +48,7 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
   register() async {
     print("voip-registtering with token ");
     print("voip-calling voice-accessToken");
-    final function =
-        FirebaseFunctions.instance.httpsCallable("voice-accessToken");
+    final function = FirebaseFunctions.instance.httpsCallable("voice-accessToken");
 
     final data = {
       "platform": Platform.isIOS ? "iOS" : "Android",
@@ -63,8 +62,7 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
       androidToken = await FirebaseMessaging.instance.getToken();
       print("androidToken is " + androidToken!);
     }
-    TwilioVoice.instance
-        .setTokens(accessToken: result.data, deviceToken: androidToken);
+    TwilioVoice.instance.setTokens(accessToken: result.data, deviceToken: androidToken);
   }
 
   var registered = false;
@@ -107,7 +105,7 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
 
     super.initState();
     waitForCall();
-    WidgetsBinding.instance!.addObserver(this);
+    WidgetsBinding.instance.addObserver(this);
 
     final partnerId = "alicesId";
     TwilioVoice.instance.registerClient(partnerId, "Alice");
@@ -117,10 +115,7 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
   checkActiveCall() async {
     final isOnCall = await TwilioVoice.instance.call.isOnCall();
     print("checkActiveCall $isOnCall");
-    if (isOnCall &&
-        !hasPushedToCall &&
-        TwilioVoice.instance.call.activeCall!.callDirection ==
-            CallDirection.incoming) {
+    if (isOnCall && !hasPushedToCall && TwilioVoice.instance.call.activeCall!.callDirection == CallDirection.incoming) {
       print("user is on call");
       pushToCallScreen();
       hasPushedToCall = true;
@@ -138,8 +133,7 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
         switch (event) {
           case CallEvent.answer:
             //at this point android is still paused
-            if (Platform.isIOS && state == null ||
-                state == AppLifecycleState.resumed) {
+            if (Platform.isIOS && state == null || state == AppLifecycleState.resumed) {
               pushToCallScreen();
               hasPushedToCall = true;
             }
@@ -155,7 +149,7 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
             break;
           case CallEvent.declined:
             final activeCall = TwilioVoice.instance.call.activeCall;
-            if(activeCall != null) {
+            if (activeCall != null) {
               TwilioVoice.instance.call.hangUp().then((value) {
                 hasPushedToCall = false;
               });
@@ -164,9 +158,7 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
             }
             break;
           case CallEvent.connected:
-            if (Platform.isAndroid &&
-                TwilioVoice.instance.call.activeCall!.callDirection ==
-                    CallDirection.incoming) {
+            if (Platform.isAndroid && TwilioVoice.instance.call.activeCall!.callDirection == CallDirection.incoming) {
               if (state != AppLifecycleState.resumed) {
                 TwilioVoice.instance.showBackgroundCallUI();
               } else if (state == null || state == AppLifecycleState.resumed) {
@@ -200,7 +192,7 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
 
   @override
   void dispose() {
-    WidgetsBinding.instance!.removeObserver(this);
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
@@ -219,8 +211,7 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
               children: <Widget>[
                 TextFormField(
                   controller: _controller,
-                  decoration: InputDecoration(
-                      labelText: 'Client Identifier or Phone Number'),
+                  decoration: InputDecoration(labelText: 'Client Identifier or Phone Number'),
                 ),
                 SizedBox(
                   height: 10,
@@ -234,8 +225,7 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
                       return;
                     }
                     print("starting call to ${_controller.text}");
-                    TwilioVoice.instance.call
-                        .place(to: _controller.text, from: userId);
+                    TwilioVoice.instance.call.place(to: _controller.text, from: userId);
                     pushToCallScreen();
                   },
                 ),
@@ -248,7 +238,7 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
   }
 
   void pushToCallScreen() {
-    Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(
-        fullscreenDialog: true, builder: (context) => CallScreen()));
+    Navigator.of(context, rootNavigator: true)
+        .push(MaterialPageRoute(fullscreenDialog: true, builder: (context) => CallScreen()));
   }
 }
