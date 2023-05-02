@@ -16,6 +16,7 @@ import android.os.Bundle;
 import android.os.IBinder;
 import android.util.Log;
 
+
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 import androidx.lifecycle.Lifecycle;
@@ -76,7 +77,7 @@ public class IncomingCallNotificationService extends Service {
         intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
         int flags = PendingIntent.FLAG_UPDATE_CURRENT;
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             flags = PendingIntent.FLAG_IMMUTABLE; // You can use FLAG_MUTABLE if needed
         }
         PendingIntent pendingIntent = PendingIntent.getActivity(this, notificationId, intent, flags);
