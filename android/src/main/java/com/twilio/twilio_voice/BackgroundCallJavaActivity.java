@@ -170,7 +170,8 @@ public class BackgroundCallJavaActivity extends AppCompatActivity {
             @Override
             public void onClick(View v) {
                 Log.d(TAG, "onCLick");
-                sendIntent(Constants.ACTION_TOGGLE_KEYPAD);
+//                sendIntent(Constants.ACTION_TOGGLE_KEYPAD);
+                
                 isKeypadOpen = !isKeypadOpen;
                 applyFabState(btnKeypad, isKeypadOpen);
             }

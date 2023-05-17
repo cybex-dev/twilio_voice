@@ -114,7 +114,7 @@ public class AnswerJavaActivity extends AppCompatActivity {
                     checkPermissionsAndAccept();
                     break;
                 case Constants.ACTION_END_CALL:
-                    Log.d(TAG, "ending call" + activeCall != null ? "TRue" : "False");
+                    Log.d(TAG, "ending call" + activeCall != null ? "True" : "False");
                     activeCall.disconnect();
                     initiatedDisconnect = true;
                     finish();
