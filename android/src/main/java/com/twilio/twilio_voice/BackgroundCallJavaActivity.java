@@ -47,6 +47,7 @@ public class BackgroundCallJavaActivity extends AppCompatActivity {
     private ImageView btnMute;
     private ImageView btnOutput;
     private ImageView btnHangUp;
+    private ImageView btnKeypad;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -59,6 +60,7 @@ public class BackgroundCallJavaActivity extends AppCompatActivity {
         btnMute = (ImageView) findViewById(R.id.btnMute);
         btnOutput = (ImageView) findViewById(R.id.btnOutput);
         btnHangUp = (ImageView) findViewById(R.id.btnHangUp);
+        btnKeypad = (ImageView) findViewById(R.id.btnKeypad);
 
         KeyguardManager kgm = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
         Boolean isKeyguardUp = kgm.inKeyguardRestrictedInputMode();
@@ -149,6 +151,7 @@ public class BackgroundCallJavaActivity extends AppCompatActivity {
     
 
     boolean isMuted = false;
+    boolean isKeypadOpen= false;
 
     private void configCallUI() {
         Log.d(TAG, "configCallUI");
@@ -160,6 +163,16 @@ public class BackgroundCallJavaActivity extends AppCompatActivity {
                 sendIntent(Constants.ACTION_TOGGLE_MUTE);
                 isMuted = !isMuted;
                 applyFabState(btnMute, isMuted);
+            }
+        });
+
+        btnKeypad.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Log.d(TAG, "onCLick");
+                sendIntent(Constants.ACTION_TOGGLE_KEYPAD);
+                isKeypadOpen = !isKeypadOpen;
+                applyFabState(btnKeypad, isKeypadOpen);
             }
         });
 

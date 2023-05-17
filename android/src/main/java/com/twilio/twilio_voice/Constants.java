@@ -14,6 +14,7 @@ public class Constants {
     public static final String ACTION_ACCEPT = "ACTION_ACCEPT";
     public static final String ACTION_REJECT = "ACTION_REJECT";
     public static final String ACTION_TOGGLE_MUTE = "ACTION_TOGGLE_MUTE";
+    public static final String ACTION_TOGGLE_KEYPAD = "ACTION_TOGGLE_KEYPAD";
 //    public static final String ACTION_TOGGLE_SPEAKER = "ACTION_TOGGLE_SPEAKER";
     public static final String ACTION_END_CALL = "ACTION_END_CALL";
     public static final String ACTION_INCOMING_CALL_NOTIFICATION = "ACTION_INCOMING_CALL_NOTIFICATION";
