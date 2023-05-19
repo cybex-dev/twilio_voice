@@ -200,6 +200,106 @@ public class BackgroundCallJavaActivity extends AppCompatActivity {
 
                     }
                 });
+                btn1.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        // append to keypad textview
+                        String currentText = keypadView.getText().toString();
+                        keypadView.setText(currentText + "1");
+                        // send to ivr
+                        sendIvrIntent(Constants.ACTION_SEND_IVR, "1");
+
+                    }
+                });
+                btn2.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        // append to keypad textview
+                        String currentText = keypadView.getText().toString();
+                        keypadView.setText(currentText + "2");
+                        // send to ivr
+                        sendIvrIntent(Constants.ACTION_SEND_IVR, "2");
+
+                    }
+                });
+                btn3.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        // append to keypad textview
+                        String currentText = keypadView.getText().toString();
+                        keypadView.setText(currentText + "3");
+                        // send to ivr
+                        sendIvrIntent(Constants.ACTION_SEND_IVR, "3");
+
+                    }
+                });
+                btn4.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        // append to keypad textview
+                        String currentText = keypadView.getText().toString();
+                        keypadView.setText(currentText + "4");
+                        // send to ivr
+                        sendIvrIntent(Constants.ACTION_SEND_IVR, "4");
+
+                    }
+                });
+                btn5.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        // append to keypad textview
+                        String currentText = keypadView.getText().toString();
+                        keypadView.setText(currentText + "5");
+                        // send to ivr
+                        sendIvrIntent(Constants.ACTION_SEND_IVR, "5");
+
+                    }
+                });
+                btn6.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        // append to keypad textview
+                        String currentText = keypadView.getText().toString();
+                        keypadView.setText(currentText + "6");
+                        // send to ivr
+                        sendIvrIntent(Constants.ACTION_SEND_IVR, "6");
+
+                    }
+                });
+                btn7.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        // append to keypad textview
+                        String currentText = keypadView.getText().toString();
+                        keypadView.setText(currentText + "7");
+                        // send to ivr
+                        sendIvrIntent(Constants.ACTION_SEND_IVR, "7");
+
+                    }
+                });
+                btn3.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        // append to keypad textview
+                        String currentText = keypadView.getText().toString();
+                        keypadView.setText(currentText + "8");
+                        // send to ivr
+                        sendIvrIntent(Constants.ACTION_SEND_IVR, "8");
+
+                    }
+                });
+                btn9.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        // append to keypad textview
+                        String currentText = keypadView.getText().toString();
+                        keypadView.setText(currentText + "9");
+                        // send to ivr
+                        sendIvrIntent(Constants.ACTION_SEND_IVR, "9");
+
+                    }
+                });
+
 
                 isKeypadOpen = !isKeypadOpen;
                 applyFabState(btnKeypad, isKeypadOpen);
