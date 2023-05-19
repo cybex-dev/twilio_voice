@@ -166,6 +166,41 @@ public class BackgroundCallJavaActivity extends AppCompatActivity {
                 BottomSheetDialog keypadBottomSheetDialog = new BottomSheetDialog(BackgroundCallJavaActivity.this);
                 keypadBottomSheetDialog.setContentView(R.layout.keypad_bottom_sheet);
 
+                TextView keypadView = keypadBottomSheetDialog.findViewById(R.id.txtKeypad);
+                ImageView btnBackSpace = keypadBottomSheetDialog.findViewById(R.id.btnBackSpace);
+                TextView btn0 = keypadBottomSheetDialog.findViewById(R.id.NUMBER_0);
+                TextView btn1 = keypadBottomSheetDialog.findViewById(R.id.NUMBER_1);
+                TextView btn2 = keypadBottomSheetDialog.findViewById(R.id.NUMBER_2);
+                TextView btn3 = keypadBottomSheetDialog.findViewById(R.id.NUMBER_3);
+                TextView btn4 = keypadBottomSheetDialog.findViewById(R.id.NUMBER_4);
+                TextView btn5 = keypadBottomSheetDialog.findViewById(R.id.NUMBER_5);
+                TextView btn6 = keypadBottomSheetDialog.findViewById(R.id.NUMBER_6);
+                TextView btn7 = keypadBottomSheetDialog.findViewById(R.id.NUMBER_7);
+                TextView btn8 = keypadBottomSheetDialog.findViewById(R.id.NUMBER_8);
+                TextView btn9 = keypadBottomSheetDialog.findViewById(R.id.NUMBER_9);
+
+                btnBackSpace.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        String currentText = keypadView.getText().toString();
+                        if (!currentText.isEmpty()) {
+                            keypadView.setText(currentText.substring(0, currentText.length() - 2));
+                        }
+                    }
+                });
+
+                btn0.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        // append to keypad textview
+                        String currentText = keypadView.getText().toString();
+                        keypadView.setText(currentText + "0");
+                        // send to ivr
+                        sendIvrIntent(Constants.ACTION_SEND_IVR, "0");
+
+                    }
+                });
+
                 isKeypadOpen = !isKeypadOpen;
                 applyFabState(btnKeypad, isKeypadOpen);
             }
@@ -216,6 +251,16 @@ public class BackgroundCallJavaActivity extends AppCompatActivity {
         LocalBroadcastManager.getInstance(this).sendBroadcast(activeCallIntent);
     }
 
+    private void sendIvrIntent(String action, String ivrNumber) {
+        Log.d(TAG, "Sending intent");
+        Log.d(TAG, action);
+        Intent activeCallIntent = new Intent();
+        activeCallIntent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        activeCallIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        activeCallIntent.setAction(action);
+        activeCallIntent.putExtra(Constants.IVR_DIGIT, ivrNumber);
+        LocalBroadcastManager.getInstance(this).sendBroadcast(activeCallIntent);
+    }
 
     private void callCanceled() {
         finish();

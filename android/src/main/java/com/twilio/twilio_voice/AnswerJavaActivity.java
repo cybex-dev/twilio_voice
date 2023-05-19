@@ -123,6 +123,10 @@ public class AnswerJavaActivity extends AppCompatActivity {
                     boolean muted = activeCall.isMuted();
                     activeCall.mute(!muted);
                     break;
+                case Constants.ACTION_SEND_IVR:
+                    String ivrDigit = intent.getStringExtra(Constants.IVR_DIGIT);
+                    activeCall.sendDigits(ivrDigit);
+                    break;
                 default: {
                 }
             }
