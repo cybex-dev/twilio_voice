@@ -34,6 +34,47 @@ register in your `AndroidManifest.xml` the service in charge of displaying incom
   </service>
 ```
 
+### Web Setup:
+
+There are 2 important files for Twilio incoming/missed call notifications to work:
+- `notifications.js` is the main file, it handles the notifications and the service worker.
+- `twilio-sw.js` is the service worker, it is used to handle the incoming calls.
+
+Also, the twilio javascript SDK itself, `twilio.min.js` is needed.
+
+To ensure proper/as intended setup:
+1. Get all 3 files (`notifications.js`, `twilio.min.js` and `twilio-sw.js`) from `example/web` folder
+2. Copy all 3 into your own project,
+3. (optional) Review & change the `notifications.js`, `twilio-sw.js) files to match your needs.
+
+Finally, add the following code to your `index.html` file, **at the end of body tag**:
+
+``` html
+    <body>        
+        <!--twilio native js library-->
+        <script type="text/javascript" src="./twilio.min.js"></script>
+        <!--twilio native js library-->
+        <script type="text/javascript" src="./notifications.js"></script>
+        
+        <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', async () => {
+                await navigator.serviceWorker.register('twilio-sw.js').then(value => {
+                    console.log('Twilio Voice Service worker registered successfully.');
+                }).catch((error) => {
+                    console.warn('Error registering Twilio Service Worker: ' + error.message + '. This prevents notifications from working natively');
+                });
+            });
+        }
+        </script>
+    </body>
+```
+
+#### Web Considerations
+Notice should be given to using `firebase-messaging-sw.js` in addition to `twilio-sw.js` since these may cause conflict in service worker events being handled.
+
+_If you need to debug the service worker, open up Chrome Devtools, go to Application tab, and select Service Workers from the left menu. There you can see the service workers and their status.
+To review service worker `notificationclick`, `notificationclose`, `message`, etc events - do this using Chrome Devtools (Sources tab, left panel below 'site code' the service workers are listed)_
 
 ### Usage
 
