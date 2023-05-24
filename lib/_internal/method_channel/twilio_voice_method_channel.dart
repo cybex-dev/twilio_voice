@@ -37,7 +37,7 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
 
   @override
   void setOnDeviceTokenChanged(OnDeviceTokenChanged deviceTokenChanged) {
-    deviceTokenChanged = deviceTokenChanged;
+    this.deviceTokenChanged = deviceTokenChanged;
   }
 
   /// register fcm token, and device token for android
