@@ -80,10 +80,34 @@ class Device extends Twilio {
 @anonymous
 @JS()
 class DeviceInitOptions {
+  /// The Voice JavaScript SDK exposes a loglevel-based logger to allow for runtime logging configuration.
+  ///
+  /// You can set this property to a number which corresponds to the log levels shown below.
+  /// 0 = "trace"
+  /// 1 = "debug"
+  /// 2 = "info"
+  /// 3 = "warn"
+  /// 4 = "error"
+  /// 5 = "silent"
+  ///
+  /// Default is 1 "trace"
   external int logLevel;
+
+  /// An array of codec names ordered from most-preferred to least-preferred.
+  /// Opus and PCMU are the two codecs currently supported by Twilio Voice JS SDK. Opus can provide better quality for lower bandwidth, particularly noticeable in poor network conditions.
+  /// Default: ["pcmu", "opus"]
   external List<String> codecPreferences;
 
-  external factory DeviceInitOptions({int logLevel = 1, List<String>? codecPreferences});
+  /// Setting this property to true will enable a dialog prompt with the text "A call is currently in progress. Leaving or reloading the page will end the call." when closing a page which has an active connection.
+  /// Setting the property to a string will create a custom message prompt with that string. If custom text is not supported by the browser, Twilio will display the browser's default dialog.
+  external bool closeProtection;
+
+  /// Not implemented yet
+  /// Whether the Device instance should raise the 'incoming' event when a new call invite is received while already on an active call.
+  /// set to false by default
+  external bool allowIncomingWhileBusy;
+
+  external factory DeviceInitOptions({int logLevel = 1, List<String>? codecPreferences, bool closeProtection = false, /*bool allowIncomingWhileBusy = false*/});
 }
 
 /// Device options
