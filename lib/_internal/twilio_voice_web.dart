@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer';
 import 'dart:html' as html;
 
 import 'package:flutter/foundation.dart';
@@ -18,6 +19,146 @@ import 'js/utils/js_object_utils.dart';
 import 'local_storage_web/local_storage_web.dart';
 import 'method_channel/twilio_call_method_channel.dart';
 import 'method_channel/twilio_voice_method_channel.dart';
+
+class TwilioSW {
+  TwilioSW._() {
+    _setupServiceWorker();
+  }
+
+  static TwilioSW _instance = TwilioSW._();
+
+  static TwilioSW get instance => _instance;
+
+  html.ServiceWorkerContainer? _webServiceWorkerContainerDelegate;
+  html.ServiceWorker? _webServiceWorkerDelegate;
+  StreamSubscription<html.MessageEvent>? _webServiceWorkerMessageSubscription;
+
+  ValueChanged<Map<dynamic, dynamic>>? _messageReceived;
+
+  set onMessageReceived(ValueChanged<Map<dynamic, dynamic>> value) {
+    _messageReceived = value;
+  }
+
+  /// If present, this allows app functionality in the background.
+  /// Use-cases included, but aren't limited to:
+  /// - showing incoming call notifications with responding actions (e.g. answer/hangup).
+  /// - listening to incoming calls (via TwilioVoiceSDK Js websocket connection)
+  void _setupServiceWorker() {
+    _webServiceWorkerContainerDelegate = html.window.navigator.serviceWorker;
+    if (_webServiceWorkerContainerDelegate == null) {
+      print("No service worker found, check if you've registered the `twilio-sw.js` service worker and if the script is present.");
+      return;
+    }
+
+    // attach SW event listeners to respond to incoming messages from SW
+    _attachServiceWorkerListeners();
+
+    _webServiceWorkerDelegate = _webServiceWorkerContainerDelegate?.controller;
+    if (_webServiceWorkerDelegate == null) {
+      print("No service worker registered and/or controlling the page. Try (soft) refreshing?");
+      return;
+    }
+  }
+
+  void _attachServiceWorkerListeners() {
+    if (_webServiceWorkerContainerDelegate != null) {
+      if (_webServiceWorkerMessageSubscription != null) {
+        // already registered, we don't have to register again
+        return;
+      }
+      _webServiceWorkerMessageSubscription = _webServiceWorkerContainerDelegate!.onMessage.listen((event) {
+        _messageReceived?.call(event.data);
+      });
+    }
+  }
+
+  Future<void> destroy() {
+    return _detachServiceWorkerListeners();
+  }
+
+  Future<void> _detachServiceWorkerListeners() async {
+    await _webServiceWorkerMessageSubscription?.cancel();
+  }
+
+  void send(Map<String, dynamic> message) {
+    if (_webServiceWorkerDelegate != null) {
+      _webServiceWorkerDelegate!.postMessage(message);
+    }
+  }
+}
+
+class NotificationService {
+  TwilioSW _twilioSW = TwilioSW.instance;
+
+  NotificationService._();
+
+  static NotificationService _instance = NotificationService._();
+
+  static NotificationService get instance => _instance;
+
+  Future<void> showNotification({
+    required String action,
+    required String title,
+    required String tag,
+    String? body,
+    String? imageUrl,
+    bool? requiresInteraction,
+    List<Map<String, String>>? actions,
+  }) async {
+    // request background permissions
+    if(!await hasPermission()) {
+      bool result = await requestPermission();
+      if(!result) {
+        print("Cannot show notification with permission.");
+        return;
+      }
+    }
+
+    final notification = <String, dynamic>{
+      'action': action,
+      'payload': {
+        'title': title,
+        'options': {
+          'tag': tag,
+          'body': body,
+          'image': imageUrl,
+          // TODO(cybex-dev): Service worker events i.e. 'notificationclick' & 'notificationclose' are (on Windows) intercepted before reaching twilio-sw, thus do not respond to events.
+          'actions': actions,
+          // TODO(cybex-dev) Hide requires interaction until we can handle events in the service worker (see above)
+          'requireInteraction': requiresInteraction,
+        }
+      }
+    };
+    // See above, actions are removed temporarily on Windows notifications since they aren't triggered/received by Service Worker.
+    if (kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
+      notification['payload']['options']['actions'] = [];
+    }
+
+    _twilioSW.send(notification);
+  }
+
+  Future<bool> requestPermission() async {
+    try {
+      final perm = await html.Notification.requestPermission();
+      return (perm == "granted");
+    } catch (e) {
+      print("Failed to request notifications permission");
+      print(e);
+      return false;
+    }
+  }
+
+  Future<bool> hasPermission() async {
+    try {
+      final perm = html.Notification.permission;
+      return (perm == "granted");
+    } catch (e) {
+      print("Failed to query notifications permission");
+      print(e);
+      return false;
+    }
+  }
+}
 
 class Logger {
   // ignore: close_sinks
@@ -68,6 +209,11 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   TwilioVoiceWeb() {
     // TODO(cybex-dev) - load twilio.min.js via [TwilioLoader] in future
     // loadTwilio();
+
+    // setup SW listener
+    final sw = TwilioSW.instance;
+    sw._setupServiceWorker();
+    sw.onMessageReceived = _handleServiceWorkerMessage;
   }
 
   final LocalStorageWeb _localStorage = LocalStorageWeb();
@@ -94,6 +240,35 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
       _callEventsListener =  Logger.callEventsStream.map(parseCallEvent);
     }
     return _callEventsListener!;
+  }
+
+  void _handleServiceWorkerMessage(dynamic data) {
+    String? action;
+    Map? payload;
+    if (data is String) {
+      action = data;
+    } else if (data is Map) {
+      action = data["action"];
+      payload = data["payload"];
+    } else {
+      print("Invalid data received from service worker: $data");
+    }
+
+    if (action == null) {
+      print("No action received from service worker");
+      return;
+    }
+
+    switch (action) {
+      case "answer":
+        call.answer();
+        break;
+      case "reject":
+        call.hangUp();
+        break;
+      default:
+        print("Unhandled action from service worker: $action");
+    }
   }
 
   /// This feature is not available for web
@@ -184,40 +359,14 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   /// Documentation: https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/permissions/request
   @override
   Future<bool?> requestBackgroundPermissions() async {
-    try {
-      // final perm = await _webPermissionsDelegate?.request({"name": "notifications"});
-      // if (perm == null) {
-      //   print("Failed to request notifications permission");
-      //   return false;
-      // }
-      // return (perm.state == "granted");
-      final perm = await html.Notification.requestPermission();
-      return (perm == "granted");
-    } catch (e) {
-      print("Failed to request notifications permission");
-      print(e);
-      return false;
-    }
+    return NotificationService.instance.requestPermission();
   }
 
   /// Queries current window for notifications permission. Returns true if permission is granted, false otherwise.
   /// Documentation: https://developer.mozilla.org/en-US/docs/Web/API/Permissions/query
   @override
   Future<bool> requiresBackgroundPermissions() async {
-    try {
-      // final perm = await _webPermissionsDelegate?.query({"name": "notifications"});
-      // if (perm == null) {
-      //   print("Failed to query notifications permission");
-      //   return false;
-      // }
-      // return (perm.state == "granted");
-      final perm = html.Notification.permission;
-      return (perm == "granted");
-    } catch (e) {
-      print("Failed to query notifications permission");
-      print(e);
-      return false;
-    }
+    return NotificationService.instance.hasPermission();
   }
 
   /// Unregister device from Twilio. Returns true if successful, false otherwise.
@@ -231,6 +380,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
     try {
       device?.unregister();
       _detachDeviceListeners(device!);
+      TwilioSW.instance.destroy();
       return true;
     } catch (e) {
       print("Failed to unregister device: $e");
@@ -356,6 +506,52 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
       ["Ringing", from, to, "Incoming", jsonEncode(params)],
       prefix: "",
     );
+
+    _showIncomingCallNotification(call);
+  }
+
+  String _resolveCallerName(Map<String, String> params) {
+    final from = params["From"] ?? "";
+    if (from.startsWith("client:")) {
+      final clientName = from.substring(7);
+      return _localStorage.getRegisteredClient(clientName) ?? _localStorage.getRegisteredClient("defaultCaller") ?? clientName;
+    } else {
+      return from;
+    }
+  }
+
+  String? _resolveImageUrl(Map<String, String> params) {
+    return params["__TWI_CALLER_URL"] ?? params["imageUrl"] ?? params["url"];
+  }
+
+  void _showIncomingCallNotification(twilioJs.Call call) {
+    // request permission to show notification
+    NotificationService.instance.requestPermission();
+
+    final action = 'incoming';
+    final callParams = getCallParams(call);
+    final title = _resolveCallerName(callParams);
+    final body = 'Incoming Call';
+    final callSid = callParams["CallSid"] as String;
+    final imageUrl = _resolveImageUrl(callParams);
+    final actions = <Map<String, String>>[
+      {'action': 'answer', 'title': 'Accept', 'icon': 'icons/answer/128.png'},
+      {'action': 'reject', 'title': 'Reject', 'icon': 'icons/hangup/128.png'},
+    ];
+    // final actions = <Map<String, String>>[
+    //   {'action': 'cancel', 'title': 'Ok'},
+    // ];
+
+    // show JS notification using SW
+    NotificationService.instance.showNotification(
+      action: action,
+      title: title,
+      tag: callSid,
+      body: body,
+      imageUrl: imageUrl,
+      actions: actions,
+      requiresInteraction: true,
+    );
   }
 
   /// On device token about to expire (default is 10s prior to expiry), via [twilioJs.Device.on] and [twilioJs.TwilioDeviceEvents.tokenWillExpire]
@@ -453,6 +649,10 @@ class Call extends MethodChannelTwilioCall {
         prefix: "",
       );
 
+      // notify SW to cancel notification
+      final callSid = await getSid();
+      _cancelNotification(callSid!);
+
       return true;
     }
     return false;
@@ -480,6 +680,10 @@ class Call extends MethodChannelTwilioCall {
   @override
   Future<bool?> hangUp() async {
     if (_jsCall != null) {
+      // notify SW to cancel notification
+      final callSid = await getSid();
+      _cancelNotification(callSid!);
+
       CallStatus callStatus = getCallStatus(_jsCall!);
       if (callStatus == CallStatus.ringing) {
         _jsCall!.reject();
@@ -630,15 +834,17 @@ class Call extends MethodChannelTwilioCall {
   /// On accept/answering (inbound) call
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#accept-event
   void _onCallAccept(twilioJs.Call call) {
-    final params = getCallParams(call);
-    final from = params["From"] ?? "";
-    final to = params["To"] ?? "";
-    Logger.logLocalEventEntries([
-      "Answer",
-      from,
-      to,
-      jsonEncode(params),
-    ], prefix: "");
+    if (call.direction == "INCOMING") {
+      final params = getCallParams(call);
+      final from = params["From"] ?? "";
+      final to = params["To"] ?? "";
+      Logger.logLocalEventEntries([
+        "Answer",
+        from,
+        to,
+        jsonEncode(params),
+      ], prefix: "");
+    }
   }
 
   /// On disconnect active (outbound/inbound) call
@@ -657,13 +863,43 @@ class Call extends MethodChannelTwilioCall {
   /// - ignoring an incoming call
   /// - calling [disconnect] on an active call before recipient has answered
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#cancel-event
-  void _onCallCancel() {
+  void _onCallCancel() async {
+    // notify SW to cancel notification
+    final callSid = await getSid();
+    _cancelNotification(callSid!);
+
+    _showMissedCallNotification(_jsCall!);
     if (_jsCall != null) {
       _detachCallEventListeners(_jsCall!);
       nativeCall = null;
     }
     Logger.logLocalEvent("Missed Call", prefix: "");
     Logger.logLocalEvent("Call Ended", prefix: "");
+  }
+
+
+
+  Future<void> _showMissedCallNotification(twilioJs.Call call) async {
+    final action = 'missed';
+    final callParams = getCallParams(call);
+    // TODO(cybex-dev) resolve from local storage
+    final title = callParams["From"] ?? "";
+    final body = 'Missed Call';
+
+    final actions = <Map<String, String>>[
+      // TODO(cybex-dev) future actions
+      // {'action': 'callback', 'title': 'Return Call'},
+    ];
+
+    // show JS notification using SW
+    NotificationService.instance.showNotification(
+      action: action,
+      title: title,
+      tag: "",
+      body: body,
+      actions: actions,
+      requiresInteraction: true,
+    );
   }
 
   /// On reject (inbound) call
@@ -707,6 +943,16 @@ class Call extends MethodChannelTwilioCall {
     final status = call.status();
     return parseCallStatus(status);
   }
+
+  void _cancelNotification(String callSid) {
+    final message = {
+      'action': 'cancel',
+      'payload': {
+        'tag': callSid,
+      },
+    };
+    TwilioSW.instance.send(message);
+  }
 }
 
 /// Since Call.customParameters is of type Map (but specifically implements a LegacyJavaScriptObject), we cannot access the Map directly.
@@ -723,6 +969,7 @@ Map<String, String> _getCustomCallParameters(dynamic callParameters) {
 Map<String, String> getCallParams(twilioJs.Call call) {
   final customParams = _getCustomCallParameters(call.customParameters);
   final params = jsToStringMap(call.parameters);
+  params.remove("Params");
 
   return Map<String, String>.from(customParams)..addAll(params);
 }

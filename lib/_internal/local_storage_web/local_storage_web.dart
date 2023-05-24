@@ -27,7 +27,7 @@ class LocalStorageWeb extends ILocalStorageWeb {
   }
 
   @override
-  String getRegisteredClient(String id, String defaultValue) {
+  String? getRegisteredClient(String id, {String? defaultValue}) {
     return _localStorage[id] ?? defaultValue;
   }
 

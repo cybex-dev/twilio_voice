@@ -19,7 +19,7 @@ abstract class ILocalStorageWeb {
   void removeRegisteredClient(String id);
 
   /// Get registered client by id, if the client is not registered, return [defaultValue].
-  String getRegisteredClient(String id, String defaultValue);
+  String? getRegisteredClient(String id, {String? defaultValue});
 
   /// Clear local storage data
   void clearStorage();

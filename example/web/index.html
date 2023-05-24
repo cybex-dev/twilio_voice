@@ -40,7 +40,6 @@
   <script src="flutter.js" defer></script>
 </head>
 <body>
-  <script type="text/javascript" src="./twilio.min.js"></script>
   <script>
     window.addEventListener('load', function(ev) {
       // Download main.dart.js
@@ -55,6 +54,23 @@
         }
       });
     });
+  </script>
+
+  <!--twilio native js library-->
+  <script type="text/javascript" src="./twilio.min.js"></script>
+  <!--twilio native js library-->
+  <script type="text/javascript" src="./notifications.js"></script>
+
+  <script>
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', async () => {
+            await navigator.serviceWorker.register('twilio-sw.js').then(value => {
+                console.log('Twilio Voice Service worker registered successfully.');
+            }).catch((error) => {
+                console.warn('Error registering Twilio Service Worker: ' + error.message + '. This prevents notifications from working natively');
+            });
+        });
+    }
   </script>
 </body>
 </html>
