@@ -110,8 +110,8 @@ class DeviceInitOptions {
   external factory DeviceInitOptions({int logLevel = 1, List<String>? codecPreferences, bool closeProtection = false, /*bool allowIncomingWhileBusy = false*/});
 }
 
-/// Device options
-/// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#deviceoptions
+/// Device Connect options
+/// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#connectoptions
 @anonymous
 @JS()
 class DeviceConnectOptions {

@@ -401,6 +401,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   /// Note: [deviceToken] is ignored for web
   @override
   Future<bool?> setTokens({required String accessToken, String? deviceToken}) async {
+    // TODO use updateOptions for Twilio device
     assert(accessToken.isNotEmpty, "Access token cannot be empty");
     // assert(deviceToken != null && deviceToken.isNotEmpty, "Device token cannot be null or empty");
     // if (device != null) {
