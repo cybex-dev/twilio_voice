@@ -136,10 +136,10 @@ class TwilioVoice {
       // The callee is busy.
       if (tokens[1].contains("31603") || tokens[1].contains("31486")) {
         return CallEvent.declined;
-      } else if (tokens.toString().toLowerCase().contains("call rejected")) {
+      } else if(tokens.toString().toLowerCase().contains("call rejected")) {
         // Android call reject from string: "LOG|Call Rejected"
         return CallEvent.declined;
-      } else if (tokens.toString().toLowerCase().contains("rejecting call")) {
+      } else if(tokens.toString().toLowerCase().contains("rejecting call")) {
         // iOS call reject froms tring: "LOG|provider:performEndCallAction: rejecting call"
         return CallEvent.declined;
       }
@@ -262,8 +262,7 @@ class Call {
 
   /// Gets the active call's SID. This will be null until the first Ringing event occurs
   Future<String?> getSid() {
-    return _channel.invokeMethod<String?>('call-sid',
-        <String, dynamic>{}).then<String?>((String? value) => value);
+    return _channel.invokeMethod<String?>('call-sid', <String, dynamic>{}).then<String?>((String? value) => value);
   }
 
   /// Answers incoming call
