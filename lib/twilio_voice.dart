@@ -270,9 +270,9 @@ class Call {
     return _channel.invokeMethod('answer', <String, dynamic>{});
   }
 
-  /// Holds active call
-  Future<bool?> holdCall() {
-    return _channel.invokeMethod('holdCall', <String, dynamic>{});
+  /// Sets hold call state using `shouldHold` value, returns true if successful
+  Future<bool?> holdCall({bool shouldHold = true}) {
+    return _channel.invokeMethod('holdCall', <String, dynamic>{"shouldHold": shouldHold});
   }
 
   /// Query's active call holding state

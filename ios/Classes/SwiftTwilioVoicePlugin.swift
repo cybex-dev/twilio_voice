@@ -190,14 +190,23 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
          self.identity = clientIdentity;
          } */
         else if flutterCall.method == "holdCall" {
+            guard let shouldHold = arguments["shouldHold"] as? Bool else {return}
+            
             if (self.call != nil) {
-                
                 let hold = self.call!.isOnHold
-                self.call!.isOnHold = !hold
-                guard let eventSink = eventSink else {
-                    return
+                if(shouldHold && !hold) {
+                    self.call!.isOnHold = true
+                    guard let eventSink = eventSink else {
+                        return
+                    }
+                    eventSink("Hold")
+                } else if(!shouldHold && hold) {
+                    self.call!.isOnHold = false
+                    guard let eventSink = eventSink else {
+                        return
+                    }
+                    eventSink("Unhold")
                 }
-                eventSink(!hold ? "Hold" : "Unhold")
             }
         }
         else if flutterCall.method == "isHolding" {
