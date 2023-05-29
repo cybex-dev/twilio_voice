@@ -145,6 +145,14 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                 _result!(ferror)
             }
         }
+        else if flutterCall.method == "isMuted"
+        {
+            if(self.call != nil) {
+                result(self.call!.isMuted);
+            } else {
+                result(false);
+            }
+        }
         else if flutterCall.method == "toggleSpeaker"
         {
             guard let speakerIsOn = arguments["speakerIsOn"] as? Bool else {return}
@@ -153,6 +161,11 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                 return
             }
             eventSink(speakerIsOn ? "Speaker On" : "Speaker Off")
+        }
+        else if flutterCall.method == "isOnSpeaker"
+        {
+            let isOnSpeaker: Bool = isSpeakerOn();
+            result(isOnSpeaker);
         }
         else if flutterCall.method == "call-sid"
         {
@@ -186,6 +199,22 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                 }
                 eventSink(!hold ? "Hold" : "Unhold")
             }
+        }
+        else if flutterCall.method == "isHolding" {
+            // guard call not nil
+            guard let call = self.call else {
+                return;
+            }
+            
+            // toggle state current state
+            let isOnHold = call.isOnHold;
+            call.isOnHold = !isOnHold;
+            
+            // guard event sink not nil & post update
+            guard let eventSink = eventSink else {
+                return
+            }
+            eventSink(!isOnHold ? "Hold" : "Unhold")
         }
         else if flutterCall.method == "answer" {
             // nuthin
@@ -619,6 +648,20 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         self.callOutgoing = false
         self.userInitiatedDisconnect = false
         
+    }
+    
+    func isSpeakerOn() -> Bool {
+        // Source: https://stackoverflow.com/a/51759708/4628115
+        let currentRoute = AVAudioSession.sharedInstance().currentRoute
+        for output in currentRoute.outputs {
+            switch output.portType {
+                case AVAudioSession.Port.builtInSpeaker:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+        return false;
     }
     
     
