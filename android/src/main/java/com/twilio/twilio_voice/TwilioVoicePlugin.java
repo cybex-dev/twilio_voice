@@ -520,6 +520,9 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
                 activity.startActivity(localIntent);
             }
             result.success(true);
+        } else if (call.method.equals("updateCallKitIcon")) {
+            // we don't use CallKit on Android... yet
+            result.success(true);
         } else {
             result.notImplemented();
         }
