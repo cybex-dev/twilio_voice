@@ -1,12 +1,10 @@
 package com.twilio.twilio_voice;
 
-import android.Manifest;
 import android.app.KeyguardManager;
 import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.content.pm.PackageManager;
 import android.content.res.ColorStateList;
 import android.media.AudioManager;
 import android.os.Build;
@@ -17,18 +15,12 @@ import android.view.View;
 import android.view.WindowManager;
 import android.widget.ImageView;
 import android.widget.TextView;
-import android.widget.Toast;
 
-import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
-import androidx.lifecycle.Lifecycle;
-import androidx.lifecycle.ProcessLifecycleOwner;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
-//import com.twilio.voice.Call;
-import com.twilio.voice.CallInvite;
+import com.google.android.material.bottomsheet.BottomSheetDialog;
 
 public class BackgroundCallJavaActivity extends AppCompatActivity {
 
@@ -38,7 +30,7 @@ public class BackgroundCallJavaActivity extends AppCompatActivity {
 
     //    private Call activeCall;
     private NotificationManager notificationManager;
-    
+
     private PowerManager powerManager;
     private PowerManager.WakeLock wakeLock;
 
@@ -47,6 +39,7 @@ public class BackgroundCallJavaActivity extends AppCompatActivity {
     private ImageView btnMute;
     private ImageView btnOutput;
     private ImageView btnHangUp;
+    private ImageView btnKeypad;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -59,6 +52,7 @@ public class BackgroundCallJavaActivity extends AppCompatActivity {
         btnMute = (ImageView) findViewById(R.id.btnMute);
         btnOutput = (ImageView) findViewById(R.id.btnOutput);
         btnHangUp = (ImageView) findViewById(R.id.btnHangUp);
+        btnKeypad = (ImageView) findViewById(R.id.btnKeypad);
 
         KeyguardManager kgm = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
         Boolean isKeyguardUp = kgm.inKeyguardRestrictedInputMode();
@@ -92,7 +86,7 @@ public class BackgroundCallJavaActivity extends AppCompatActivity {
     private void handleCallIntent(Intent intent) {
         if (intent != null) {
 
-            
+
             if (intent.getStringExtra(Constants.CALL_FROM) != null) {
                 activateSensor();
                 String fromId = intent.getStringExtra(Constants.CALL_FROM).replace("client:", "");
@@ -107,7 +101,7 @@ public class BackgroundCallJavaActivity extends AppCompatActivity {
                 tvCallStatus.setText(getString(R.string.connected_status));
                 Log.d(TAG, "handleCallIntent-");
                 configCallUI();
-            }else{
+            } else {
                 finish();
             }
         }
@@ -121,14 +115,14 @@ public class BackgroundCallJavaActivity extends AppCompatActivity {
         if (!wakeLock.isHeld()) {
             Log.d(TAG, "wakeLog acquire");
             wakeLock.acquire();
-        } 
+        }
     }
 
     private void deactivateSensor() {
         if (wakeLock != null && wakeLock.isHeld()) {
             Log.d(TAG, "wakeLog release");
             wakeLock.release();
-        } 
+        }
     }
 
     @Override
@@ -146,9 +140,18 @@ public class BackgroundCallJavaActivity extends AppCompatActivity {
             }
         }
     }
-    
+
+    private void onNumpadAction(String buttonText) {
+        // append to keypad textview
+        String currentText = keypadView.getText().toString();
+        keypadView.setText(currentText + buttonText);
+        // send to ivr
+        sendIvrIntent(Constants.ACTION_SEND_IVR, buttonText);
+    }
+
 
     boolean isMuted = false;
+    boolean isKeypadOpen = false;
 
     private void configCallUI() {
         Log.d(TAG, "configCallUI");
@@ -162,6 +165,57 @@ public class BackgroundCallJavaActivity extends AppCompatActivity {
                 applyFabState(btnMute, isMuted);
             }
         });
+
+        btnKeypad.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Log.d(TAG, "onCLick");
+//                sendIntent(Constants.ACTION_TOGGLE_KEYPAD);
+                BottomSheetDialog keypadBottomSheetDialog = new BottomSheetDialog(BackgroundCallJavaActivity.this);
+                keypadBottomSheetDialog.setContentView(R.layout.keypad_bottom_sheet);
+
+                TextView keypadView = keypadBottomSheetDialog.findViewById(R.id.txtKeypad);
+                ImageView btnBackSpace = keypadBottomSheetDialog.findViewById(R.id.btnBackSpace);
+                TextView btn0 = keypadBottomSheetDialog.findViewById(R.id.NUMBER_0);
+                TextView btn1 = keypadBottomSheetDialog.findViewById(R.id.NUMBER_1);
+                TextView btn2 = keypadBottomSheetDialog.findViewById(R.id.NUMBER_2);
+                TextView btn3 = keypadBottomSheetDialog.findViewById(R.id.NUMBER_3);
+                TextView btn4 = keypadBottomSheetDialog.findViewById(R.id.NUMBER_4);
+                TextView btn5 = keypadBottomSheetDialog.findViewById(R.id.NUMBER_5);
+                TextView btn6 = keypadBottomSheetDialog.findViewById(R.id.NUMBER_6);
+                TextView btn7 = keypadBottomSheetDialog.findViewById(R.id.NUMBER_7);
+                TextView btn8 = keypadBottomSheetDialog.findViewById(R.id.NUMBER_8);
+                TextView btn9 = keypadBottomSheetDialog.findViewById(R.id.NUMBER_9);
+
+                btnBackSpace.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        String currentText = keypadView.getText().toString();
+                        if (!currentText.isEmpty()) {
+                            keypadView.setText(currentText.substring(0, currentText.length() - 2));
+                        }
+                    }
+                });
+
+                btn0.setOnClickListener(()->onNumpadAction("0"));
+                btn1.setOnClickListener(()->onNumpadAction("1"));
+                btn2.setOnClickListener(()->onNumpadAction("2"));
+                btn3.setOnClickListener(()->onNumpadAction("3"));
+                btn4.setOnClickListener(()->onNumpadAction("4"));
+                btn5.setOnClickListener(()->onNumpadAction("5"));
+                btn6.setOnClickListener(()->onNumpadAction("6"));
+                btn7.setOnClickListener(()->onNumpadAction("7"));
+                btn8.setOnClickListener(()->onNumpadAction("8"));
+                btn9.setOnClickListener(()->onNumpadAction("9"));
+
+               
+
+
+                isKeypadOpen = !isKeypadOpen;
+                applyFabState(btnKeypad, isKeypadOpen);
+            }
+        });
+
 
         btnHangUp.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -208,6 +262,16 @@ public class BackgroundCallJavaActivity extends AppCompatActivity {
         LocalBroadcastManager.getInstance(this).sendBroadcast(activeCallIntent);
     }
 
+    private void sendIvrIntent(String action, String ivrNumber) {
+        Log.d(TAG, "Sending intent");
+        Log.d(TAG, action);
+        Intent activeCallIntent = new Intent();
+        activeCallIntent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        activeCallIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        activeCallIntent.setAction(action);
+        activeCallIntent.putExtra(Constants.IVR_DIGIT, ivrNumber);
+        LocalBroadcastManager.getInstance(this).sendBroadcast(activeCallIntent);
+    }
 
     private void callCanceled() {
         finish();

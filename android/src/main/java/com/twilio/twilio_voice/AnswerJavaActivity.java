@@ -114,7 +114,7 @@ public class AnswerJavaActivity extends AppCompatActivity {
                     checkPermissionsAndAccept();
                     break;
                 case Constants.ACTION_END_CALL:
-                    Log.d(TAG, "ending call" + activeCall != null ? "TRue" : "False");
+                    Log.d(TAG, "ending call" + activeCall != null ? "True" : "False");
                     activeCall.disconnect();
                     initiatedDisconnect = true;
                     finish();
@@ -122,6 +122,10 @@ public class AnswerJavaActivity extends AppCompatActivity {
                 case Constants.ACTION_TOGGLE_MUTE:
                     boolean muted = activeCall.isMuted();
                     activeCall.mute(!muted);
+                    break;
+                case Constants.ACTION_SEND_IVR:
+                    String ivrDigit = intent.getStringExtra(Constants.IVR_DIGIT);
+                    activeCall.sendDigits(ivrDigit);
                     break;
                 default: {
                 }
