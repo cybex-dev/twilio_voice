@@ -1,5 +1,6 @@
 ## Next release
 * Feat: [Android] Turn off the screen when a call is active and the head is against the handset. @solid-software (https://solid.software)
+* Feat: [iOS] Add support for changing callkit icon (future plans to extended this for Flutter assets) @cybex-dev
 
 ## 0.0.9
 * Feat: forwarded callInvite custom parameters to flutter
