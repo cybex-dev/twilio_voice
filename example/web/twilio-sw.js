@@ -8,14 +8,15 @@ const _log = (...message) => {
     console.log(`[ ${tag} ]`, ...message);
 };
 const _error = (...message) => {
-    console.error(tag, ...message);
+    console.error(`[ ${tag} ]`, ...message);
 };
 
 _log('Started');
 
 self.addEventListener('activate', (event) => {
     _log('activate event', event);
-    event.waitUntil(self.clients.claim()); // Become available to all pages
+    // self.clients.claim();
+   event.waitUntil(self.clients.claim()); // Become available to all pages
     _log('activated!');
 
     // Optional: Get a list of all the current open windows/tabs under
@@ -30,13 +31,15 @@ self.addEventListener('activate', (event) => {
     // });
 });
 
+// disabled due to Chrome no-op warning
 self.addEventListener('fetch', (event) => {
-//    _log(`fetch event [${event.request.url}]`, event);
+   _log(`fetch event [${event.request.url}]`, event);
 });
 
 self.addEventListener('install', (event) => {
     _log('install event, skip waiting', event);
-    event.waitUntil(self.skipWaiting()); // Activate worker immediately
+    // self.skipWaiting()
+   event.waitUntil(self.skipWaiting()); // Activate worker immediately
 
     // // Skip over the "waiting" lifecycle state, to ensure that our
     // // new service worker is activated immediately, even if there's
@@ -50,7 +53,7 @@ self.addEventListener('message', (event) => {
 });
 
 self.addEventListener('messageerror', (event) => {
-    _log('messageerror event', event);
+    _error('messageerror event', event);
 });
 
 self.addEventListener('notificationclick', (event) => {
