@@ -48,8 +48,8 @@ class DialScreen extends StatefulWidget {
 }
 
 class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
-  late TextEditingController _controller;
   String userId = "";
+  bool twilioInit = false;
 
   registerUser() {
     print("voip- service init");
@@ -58,15 +58,34 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
     // }
 
     // Use for locally provided token generator e.g. Twilio's quickstarter project: https://github.com/twilio/voice-quickstart-server-node
-    registerLocal();
+    if (!kIsWeb) {
+      setState(() {
+        twilioInit = true;
+      });
+      registerLocal();
+    }
     // Or use firebase function to generate token, with function name 'voice-accessToken'.
     // register();
 
     TwilioVoice.instance.setOnDeviceTokenChanged((token) {
       print("voip-device token changed");
-      registerLocal();
-      // register();
+      if (!kIsWeb) {
+        registerLocal();
+        // register();
+      }
     });
+  }
+
+  Future<bool?> registerWithAccessToken(String identity, String token) async {
+    print("voip-registering with token ");
+
+    userId = identity;
+    String? androidToken;
+    if (!kIsWeb && Platform.isAndroid) {
+      androidToken = await FirebaseMessaging.instance.getToken();
+      print("androidToken is " + androidToken!);
+    }
+    return TwilioVoice.instance.setTokens(accessToken: token, deviceToken: androidToken);
   }
 
   registerLocal() async {
@@ -161,7 +180,6 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
 
     final partnerId = "alicesId";
     TwilioVoice.instance.registerClient(partnerId, "Alice");
-    _controller = TextEditingController();
   }
 
   checkActiveCall() async {
@@ -264,6 +282,36 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
     super.dispose();
   }
 
+  Future<void> _onPerformCall(String clientIdentifier) async {
+    if (!await (TwilioVoice.instance.hasMicAccess())) {
+      print("request mic access");
+      TwilioVoice.instance.requestMicAccess();
+      return;
+    }
+    print("starting call to $clientIdentifier");
+    TwilioVoice.instance.call.place(to: clientIdentifier, from: userId);
+    pushToCallScreen();
+  }
+
+  Future<void> _onRegisterWithToken(String token, [String? identity]) async {
+    final _identity = identity ?? "??";
+    return registerWithAccessToken(_identity, token).then((value) {
+      if (value == null || !value) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text("Error"),
+            content: Text("Failed to register for calls"),
+          ),
+        );
+      } else {
+        setState(() {
+          twilioInit = true;
+        });
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -274,33 +322,14 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
         child: Center(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                TextFormField(
-                  controller: _controller,
-                  decoration: InputDecoration(
-                      labelText: 'Client Identifier or Phone Number'),
-                ),
-                SizedBox(
-                  height: 10,
-                ),
-                ElevatedButton(
-                  child: Text("Make Call"),
-                  onPressed: () async {
-                    if (!await (TwilioVoice.instance.hasMicAccess())) {
-                      print("request mic access");
-                      TwilioVoice.instance.requestMicAccess();
-                      return;
-                    }
-                    print("starting call to ${_controller.text}");
-                    TwilioVoice.instance.call
-                        .place(to: _controller.text, from: userId);
-                    pushToCallScreen();
-                  },
-                ),
-              ],
-            ),
+            child: twilioInit
+                ? _CallUI(
+                    userId: userId,
+                    onPerformCall: _onPerformCall,
+                  )
+                : _RegisterTwilioUi(
+                    onRegister: _onRegisterWithToken,
+                  ),
           ),
         ),
       ),
@@ -357,6 +386,116 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
           ],
         );
       },
+    );
+  }
+}
+
+typedef PerformCall = Future<void> Function(String clientIdentifier);
+
+class _CallUI extends StatefulWidget {
+  final String userId;
+  final PerformCall onPerformCall;
+
+  const _CallUI({Key? key, required this.userId, required this.onPerformCall}) : super(key: key);
+
+  @override
+  State<_CallUI> createState() => _CallUIState();
+}
+
+class _CallUIState extends State<_CallUI> {
+  late TextEditingController _controller = TextEditingController();
+  late GlobalKey<FormFieldState<String>> _identifierKey = GlobalKey<FormFieldState<String>>();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        TextFormField(
+          key: _identifierKey,
+          controller: _controller,
+          validator: (value) {
+            if (value == null || value.isEmpty) {
+              return "Please enter a client identifier";
+            }
+            return null;
+          },
+          decoration: InputDecoration(labelText: 'Client Identifier or Phone Number'),
+        ),
+        SizedBox(
+          height: 10,
+        ),
+        Text("My Identity: ${widget.userId}}"),
+        SizedBox(
+          height: 10,
+        ),
+        ElevatedButton(
+          child: Text("Make Call"),
+          onPressed: () {
+            if (!_identifierKey.currentState!.validate()) {
+              return;
+            }
+            final identity = _controller.text;
+            widget.onPerformCall(identity);
+          },
+        ),
+      ],
+    );
+  }
+}
+
+typedef OnRegister = Future<void> Function(String accessToken, [String? identity]);
+
+class _RegisterTwilioUi extends StatefulWidget {
+  final OnRegister onRegister;
+
+  const _RegisterTwilioUi({
+    Key? key,
+    required this.onRegister,
+  }) : super(key: key);
+
+  @override
+  State<_RegisterTwilioUi> createState() => _RegisterTwilioUiState();
+}
+
+class _RegisterTwilioUiState extends State<_RegisterTwilioUi> {
+  late TextEditingController _accessTokenController = TextEditingController();
+  late TextEditingController _identityController = TextEditingController();
+  late GlobalKey<FormFieldState<String>> _accessTokenKey = GlobalKey<FormFieldState<String>>();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        TextFormField(
+          controller: _identityController,
+          decoration: InputDecoration(labelText: 'My Identity'),
+        ),
+        SizedBox(
+          height: 10,
+        ),
+        TextFormField(
+          key: _accessTokenKey,
+          validator: (value) => value == null || value.isEmpty ? "Access Token is required" : null,
+          controller: _accessTokenController,
+          decoration: InputDecoration(labelText: 'Access Token'),
+        ),
+        SizedBox(
+          height: 10,
+        ),
+        ElevatedButton(
+          child: Text("Register for calls"),
+          onPressed: () async {
+            if (!_accessTokenKey.currentState!.validate()) {
+              return;
+            }
+            final identity = _identityController.text;
+            final token = _accessTokenController.text;
+            widget.onRegister(identity, token);
+          },
+        ),
+      ],
     );
   }
 }
