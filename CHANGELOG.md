@@ -1,6 +1,6 @@
 ## Next release
 * Feat: [Android] Turn off the screen when a call is active and the head is against the handset. @solid-software (https://solid.software)
-* Feat: [Web] Web support with notifications (via Service Worker)
+* Feat: [Web] Web support with notifications (via Service Worker) with live example
 
 ## 0.0.9
 * Feat: forwarded callInvite custom parameters to flutter
