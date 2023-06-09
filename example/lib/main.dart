@@ -492,7 +492,7 @@ class _RegisterTwilioUiState extends State<_RegisterTwilioUi> {
             }
             final identity = _identityController.text;
             final token = _accessTokenController.text;
-            widget.onRegister(identity, token);
+            widget.onRegister(token, identity);
           },
         ),
       ],
