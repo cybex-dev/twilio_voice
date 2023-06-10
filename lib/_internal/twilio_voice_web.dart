@@ -130,9 +130,9 @@ class NotificationService {
       }
     };
     // See above, actions are removed temporarily on Windows notifications since they aren't triggered/received by Service Worker.
-    if (kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
-      notification['payload']['options']['actions'] = [];
-    }
+    // if (kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
+    //   notification['payload']['options']['actions'] = [];
+    // }
 
     _twilioSW.send(notification);
   }
