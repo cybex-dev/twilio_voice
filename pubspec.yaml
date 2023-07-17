@@ -31,6 +31,8 @@ flutter:
         pluginClass: TwilioVoicePlugin
       ios:
         pluginClass: TwilioVoicePlugin
+      macos:
+        pluginClass: TwilioVoicePlugin
 
   # To add assets to your plugin package, add an assets section, like this:
   # assets:
