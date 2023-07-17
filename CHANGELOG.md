@@ -1,5 +1,6 @@
 ## Next release
 * Feat: [Android] Turn off the screen when a call is active and the head is against the handset. @solid-software (https://solid.software)
+* Feat: [macOS] Added support for macOS, based on iOS implementation backed by Twilio Voice Web  (twilio-voice.js v2.4.0).
 
 ## 0.0.9
 * Feat: forwarded callInvite custom parameters to flutter

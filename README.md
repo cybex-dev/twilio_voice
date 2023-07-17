@@ -6,19 +6,28 @@ This plugin was taken from the original flutter_twilio_voice, as it seems that p
 ## Features
 - Receive and place calls from iOS devices, uses callkit to receive calls.
 - Receive and place calls from Android devices, uses custom UI to receive calls.
+- Receive and place calls from MacOS devices, uses custom UI to receive calls (in future & macOS 13.0+, we'll be using CallKit).
 
 ## Feature addition schedule:
-- Web support
+- Web support (in testing, see [cybex-dev/feat_web_support](https://github.com/cybex-dev/twilio_voice/tree/feat_web_support))
 - Audio device selection support (select input/output audio devices)
 - Add Bluetooth support (integration)
 - Update plugin to Flutter federated packages
-- Desktop platform support (implementation as JS wrapper/native implementation, t.b.d.)
+- Desktop platform support (implementation as JS wrapper/native implementation, early development)
+- Unify Android & iOS incoming call screens with predefined parameters to autofill UI elements (in development).
 
 Got a feature you want to add, suggest? File a feature request or PR.
 
 ### Android Limitations
 
 As iOS has CallKit, an Apple provided UI for answering calls, there is no default UI for android to receive calls, for this reason a default UI was made. To increase customization, the UI will use a splash_icon.png registered on your res/drawable folder. I haven't found a way to customize colors, if you find one, please submit a pull request.
+
+### macOS Limitations
+
+1. CallKit support is found in macOS 13.0+ which there is no support for yet. In future, this will be taken into consideration for feature development.
+2. Twilio Voice does not offer a native SDK for macOS, so we're using the Twilio Voice Web SDK (twilio-voice.js, v2.4.0) to provide the functionality. This is a temporary solution until (or even if) Twilio Voice SDK for macOS is released. 
+
+This limits macOS to not support remote push notifications `.voip` and `.apns` as the web SDK does not support this. Instead, it uses a web socket connection to listen for incoming calls, arguably more efficient vs time but forces the app to be open at all times to receive incoming calls. 
 
 ### Setup
 Please follow Twilio's quickstart setup for each platform, you don't need to write the native code but it will help you understand the basic functionality of setting up your server, registering your iOS app for VOIP, etc.
