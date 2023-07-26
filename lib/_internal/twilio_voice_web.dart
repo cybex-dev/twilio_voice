@@ -763,6 +763,7 @@ class Call extends MethodChannelTwilioCall {
     call.on("reconnecting", js.allowInterop(_onCallReconnecting));
     call.on("reconnected", js.allowInterop(_onCallReconnected));
     call.on("status", js.allowInterop(_onCallStatusChanged));
+    call.on("log", js.allowInterop(_onLogEvent));
   }
 
   /// Detach event listeners to the active call
@@ -780,6 +781,11 @@ class Call extends MethodChannelTwilioCall {
     call.removeListener("reconnecting", js.allowInterop(_onCallReconnecting));
     call.removeListener("reconnected", js.allowInterop(_onCallReconnected));
     call.removeListener("status", js.allowInterop(_onCallStatusChanged));
+    call.removeListener("log", js.allowInterop(_onLogEvent));
+  }
+
+  void _onLogEvent(String status) {
+    log("Log Event: " + status);
   }
 
   /// On accept/answering (inbound) call
