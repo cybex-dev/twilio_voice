@@ -163,10 +163,12 @@ class NotificationService {
 class Logger {
   // ignore: close_sinks
   static StreamController<String>? _callEventsController;
+
   static StreamController<String> get callEventsController {
     _callEventsController ??= StreamController<String>.broadcast();
     return _callEventsController!;
   }
+
   static Stream<String> get callEventsStream => callEventsController.stream;
 
   /// Logs event to EventChannel, but uses [List.join] with [separator] to join [prefix] and [description].
@@ -184,7 +186,7 @@ class Logger {
   /// - (if prefix is not empty): "prefix|description", where '|' is separator
   /// - (if prefix is empty): "description"
   static void logLocalEvent(String description, {String prefix = "LOG", String separator = "|"}) async {
-    if(!kIsWeb) {
+    if (!kIsWeb) {
       throw UnimplementedError("Use eventChannel() via sendPhoneEvents on platform implementation");
     }
     // eventChannel.binaryMessenger.handlePlatformMessage(
@@ -236,8 +238,8 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   Stream<CallEvent>? _callEventsListener;
 
   Stream<CallEvent> get callEventsListener {
-    if(_callEventsListener == null) {
-      _callEventsListener =  Logger.callEventsStream.map(parseCallEvent);
+    if (_callEventsListener == null) {
+      _callEventsListener = Logger.callEventsStream.map(parseCallEvent);
     }
     return _callEventsListener!;
   }
@@ -612,7 +614,7 @@ class Call extends MethodChannelTwilioCall {
   @override
   Future<bool?> toggleMute(bool isMuted) async {
     Logger.logLocalEvent(isMuted ? "Mute" : "Unmute", prefix: "");
-    if(_jsCall != null) {
+    if (_jsCall != null) {
       _jsCall!.mute(isMuted);
     }
     return isMuted;
@@ -694,6 +696,7 @@ class Call extends MethodChannelTwilioCall {
       } else {
         _jsCall!.disconnect();
       }
+
       return true;
     }
     return false;
@@ -794,12 +797,12 @@ class Call extends MethodChannelTwilioCall {
   void _onCallStatusChanged(String status) {
     CallStatus callStatus = parseCallStatus(status);
 
-    switch(callStatus) {
+    switch (callStatus) {
       case CallStatus.closed:
         // TODO: Handle this case.
         break;
       case CallStatus.connected:
-        if(_jsCall != null) {
+        if (_jsCall != null) {
           _onCallConnected(_jsCall!);
         }
         break;
@@ -810,8 +813,9 @@ class Call extends MethodChannelTwilioCall {
         // TODO: Handle this case.
         break;
       case CallStatus.connecting:
-        // Added missing Ringing for outgoing calls
+      // Added missing Ringing for outgoing calls
       case CallStatus.ringing:
+
         /// jsCall should not be null here since `CallStatus.incoming` (incoming) or
         /// `CallStatus.connecting` (outgoing) via `place()` has already been fired and set
         _onCallRinging();
@@ -829,7 +833,7 @@ class Call extends MethodChannelTwilioCall {
   /// Undocumented event: Ringing found in twilio-voice.js implementation: https://github.com/twilio/twilio-voice.js/blob/94ea6b6d8d1128ac5091f3a3bec4eae745e4d12f/lib/twilio/call.ts#L1355
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#accept-event
   void _onCallRinging({bool hasEarlyMedia = false}) {
-    if(_jsCall != null) {
+    if (_jsCall != null) {
       final params = getCallParams(_jsCall!);
       final from = params["From"] ?? "";
       final to = params["To"] ?? "";
@@ -985,7 +989,6 @@ Map<String, String> getCallParams(twilioJs.Call call) {
 }
 
 ActiveCall activeCallFromNativeJsCall(twilioJs.Call call, {DateTime? initiated}) {
-
   final params = getCallParams(call);
   final from = params["From"] ?? params["from"] ?? "";
   final to = params["To"] ?? params["to"] ?? "";
