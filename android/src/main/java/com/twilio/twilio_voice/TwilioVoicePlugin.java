@@ -400,11 +400,21 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
             sendPhoneCallEvents(speakerIsOn ? "Speaker On" : "Speaker Off");
 
             result.success(true);
+        } else if (call.method.equals("isOnSpeaker")) {
+            boolean isSpeakerOn = audioManager.isSpeakerphoneOn();
+            result.success(isSpeakerOn);
         } else if (call.method.equals("toggleMute")) {
           boolean muted = call.argument("muted");
             Log.d(TAG, "Muting call");
             this.mute(muted);
             result.success(true);
+        } else if (call.method.equals("isMuted")) {
+            Log.d(TAG, "isMuted invoked");
+            if(activeCall != null) {
+                result.success(activeCall.isMuted());
+            } else {
+                result.success(false);
+            }
         } else if (call.method.equals("call-sid")) {
             result.success(activeCall == null ? null : activeCall.getSid());
         } else if (call.method.equals("isOnCall")) {
@@ -412,8 +422,16 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
             result.success(this.activeCall != null);
         } else if (call.method.equals("holdCall")) {
             Log.d(TAG, "Hold call invoked");
-            this.hold();
+            boolean shouldHold = call.argument("shouldHold");
+            this.updateHoldState(shouldHold);
             result.success(true);
+        } else if (call.method.equals("isHolding")) {
+            Log.d(TAG, "isHolding call invoked");
+            if(activeCall != null) {
+                result.success(activeCall.isOnHold());
+            } else {
+                result.success(false);
+            }
         } else if (call.method.equals("answer")) {
             Log.d(TAG, "Answering call");
             this.answer();
@@ -682,11 +700,17 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
 
     }
 
-    private void hold() {
+    private void updateHoldState(boolean shouldHold) {
         if (activeCall != null) {
             boolean hold = activeCall.isOnHold();
-            activeCall.hold(!hold);
-            sendPhoneCallEvents(hold ? "Unhold" : "Hold");
+            if (shouldHold && !hold) {
+                activeCall.hold(true);
+                sendPhoneCallEvents("Hold");
+            } else if(!shouldHold && hold) {
+                // hold call only when required to
+                activeCall.hold(false);
+                sendPhoneCallEvents("Unhold");
+            }
         }
     }
 

@@ -286,21 +286,36 @@ class Call {
     return _channel.invokeMethod('answer', <String, dynamic>{});
   }
 
-  /// Holds active call
-  Future<bool?> holdCall() {
-    return _channel.invokeMethod('holdCall', <String, dynamic>{});
+  /// Sets hold call state using `shouldHold` value, returns true if successful
+  Future<bool?> holdCall({bool shouldHold = true}) {
+    return _channel.invokeMethod('holdCall', <String, dynamic>{"shouldHold": shouldHold});
   }
 
-  /// Toogles mute state to provided value
+  /// Query's active call holding state
+  Future<bool?> isHolding() {
+    return _channel.invokeMethod('isHolding', <String, dynamic>{});
+  }
+
+  /// Toggles mute state to provided value
   Future<bool?> toggleMute(bool isMuted) {
     return _channel
         .invokeMethod('toggleMute', <String, dynamic>{"muted": isMuted});
   }
 
-  /// Toogles speaker state to provided value
+  /// Query's mute status of call, true if call is muted
+  Future<bool?> isMuted() {
+    return _channel.invokeMethod('isMuted', <String, dynamic>{});
+  }
+
+  /// Toggles speaker state to provided value
   Future<bool?> toggleSpeaker(bool speakerIsOn) {
     return _channel.invokeMethod(
         'toggleSpeaker', <String, dynamic>{"speakerIsOn": speakerIsOn});
+  }
+
+  /// Query's speaker output status, true if on loud speaker.
+  Future<bool?> isOnSpeaker() {
+    return _channel.invokeMethod('isOnSpeaker', <String, dynamic>{});
   }
 
   Future<bool?> sendDigits(String digits) {
