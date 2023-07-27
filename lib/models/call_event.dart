@@ -16,4 +16,5 @@ enum CallEvent {
   answer,
   missedCall,
   returningCall,
+  audioSwitch,
 }
