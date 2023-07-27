@@ -115,7 +115,8 @@ public class AnswerJavaActivity extends AppCompatActivity {
                     break;
                 case Constants.ACTION_END_CALL:
                     Log.d(TAG, "ending call" + activeCall != null ? "TRue" : "False");
-                    activeCall.disconnect();
+                    if (activeCall != null)
+                        activeCall.disconnect();
                     initiatedDisconnect = true;
                     finish();
                     break;
@@ -149,7 +150,6 @@ public class AnswerJavaActivity extends AppCompatActivity {
     private void configCallUI() {
         Log.d(TAG, "configCallUI");
         if (activeCallInvite != null) {
-
             String fromId = activeCallInvite.getFrom().replace("client:", "");
             SharedPreferences preferences = getApplicationContext().getSharedPreferences(TwilioPreferences, Context.MODE_PRIVATE);
             String caller = preferences.getString(fromId, preferences.getString("defaultCaller", getString(R.string.unknown_caller)));
