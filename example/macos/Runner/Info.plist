@@ -26,16 +26,9 @@
 	<string>$(PRODUCT_COPYRIGHT)</string>
 	<key>NSMainNibFile</key>
 	<string>MainMenu</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>This app requires microhone access to place and answer phone calls.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
-	<key>NSAppTransportSecurity</key>
-	<dict>
-<!--		<key>NSAllowsArbitraryLoadsInWebContent</key>-->
-<!--		<true/>-->
-<!--		<key>NSAllowsArbitraryLoadsForMedia</key>-->
-<!--		<true/>-->
-        <key>NSAllowsArbitraryLoads</key>
-        <true/>
-	</dict>
 </dict>
 </plist>
