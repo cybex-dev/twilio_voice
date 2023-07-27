@@ -10,6 +10,9 @@ import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 import 'package:js/js.dart' as js;
 import 'package:js/js_util.dart' as js_util;
 import 'package:twilio_voice/_internal/js/call/call_status.dart';
+
+// This is required for JS interop, do not remove even though linter complains
+// ignore: unused_import
 import 'package:js/js_util.dart';
 import 'package:twilio_voice/_internal/platform_interface/twilio_voice_platform_interface.dart';
 
@@ -246,6 +249,9 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
 
   void _handleServiceWorkerMessage(dynamic data) {
     String? action;
+
+    // Kept for backwards compatibility or future use, for processing incoming data from service worker
+    // ignore: unused_local_variable
     Map? payload;
     if (data is String) {
       action = data;
@@ -444,6 +450,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   /// Attach event listeners to [twilioJs.Device]
   /// See [twilioJs.Device.on]
   void _attachDeviceListeners(twilioJs.Device device) {
+    // ignore: unnecessary_null_comparison
     assert(device != null, "Device cannot be null");
     device.on("registered", js.allowInterop(_onDeviceRegistered));
     device.on("unregistered", js.allowInterop(_onDeviceUnregistered));
@@ -455,6 +462,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   /// Detach event listeners to [twilioJs.Device]
   /// See [twilioJs.Device.off]
   void _detachDeviceListeners(twilioJs.Device device) {
+    // ignore: unnecessary_null_comparison
     assert(device != null, "Device cannot be null");
     device.off("registered", js.allowInterop(_onDeviceRegistered));
     device.off("unregistered", js.allowInterop(_onDeviceUnregistered));
@@ -572,6 +580,7 @@ class Call extends MethodChannelTwilioCall {
   twilioJs.Call? _jsCall;
   twilioJs.Device? _device;
 
+  // ignore: unnecessary_getters_setters
   twilioJs.Device? get device => _device;
 
   set device(twilioJs.Device? value) {
@@ -755,6 +764,7 @@ class Call extends MethodChannelTwilioCall {
   /// Attach event listeners to the active call
   /// See [twilioJs.Call.on]
   void _attachCallEventListeners(twilioJs.Call call) {
+    // ignore: unnecessary_null_comparison
     assert(call != null, "Call cannot be null");
     // call.on("ringing", js.allowInterop(_onCallRinging));
     call.on("accept", js.allowInterop(_onCallAccept));
@@ -773,6 +783,7 @@ class Call extends MethodChannelTwilioCall {
   /// See [twilioJs.Call.off]
   /// 'off' event listener isn't implemented in twilio-voice.js
   void _detachCallEventListeners(twilioJs.Call call) {
+    // ignore: unnecessary_null_comparison
     assert(call != null, "Call cannot be null");
     // call.removeListener("ringing", js.allowInterop(_onCallRinging));
     call.removeListener("accept", js.allowInterop(_onCallAccept));
@@ -832,6 +843,7 @@ class Call extends MethodChannelTwilioCall {
   /// On accept/answering (inbound) call
   /// Undocumented event: Ringing found in twilio-voice.js implementation: https://github.com/twilio/twilio-voice.js/blob/94ea6b6d8d1128ac5091f3a3bec4eae745e4d12f/lib/twilio/call.ts#L1355
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#accept-event
+  // ignore: unused_element
   void _onCallRinging({bool hasEarlyMedia = false}) {
     if (_jsCall != null) {
       final params = getCallParams(_jsCall!);
