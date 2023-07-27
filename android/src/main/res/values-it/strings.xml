@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="answer">Risposta</string>
+    <string name="decline">Declino</string>
+    <string name="new_call">Chiamata da %s</string>
+    <string name="incoming_call_title">Chiamata in arrivo…</string>
+    <string name="unknown_caller">Numero sconosciutoo</string>
+    <string name="notification_missed_call">chiamata persa da %s</string>
+    <string name="twilio_call_back">Chiamare</string>
+    <string name="connected_status">Collegato</string>
+</resources>

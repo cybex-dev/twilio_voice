@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="answer">Annehmen</string>
+    <string name="decline">Ablehnen</string>
+    <string name="new_call">Anruf von %s</string>
+    <string name="incoming_call_title">Eingehender Anruf…</string>
+    <string name="unknown_caller">unbekannter Anrufer</string>
+    <string name="notification_missed_call">Verpasster Anruf von %s</string>
+    <string name="twilio_call_back">Rückruf</string>
+    <string name="connected_status">verbunden</string>
+</resources>
