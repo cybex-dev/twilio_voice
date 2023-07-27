@@ -9,13 +9,13 @@ This plugin was taken from the original flutter_twilio_voice, as it seems that p
 ## Features
 - Receive and place calls from iOS devices, uses callkit to receive calls.
 - Receive and place calls from Android devices, uses custom UI to receive calls.
+- Receive and place calls from Web (FCM push notification integration not yet supported by Twilio Voice Web, see [here](https://github.com/twilio/twilio-voice.js/pull/159#issuecomment-1551553299) for discussion)
 
 ## Feature addition schedule:
-- Web support (in testing, see [cybex-dev/feat_web_support](https://github.com/cybex-dev/twilio_voice/tree/feat_web_support))
-- Audio device selection support (select input/output audio devices)
-- Add Bluetooth support (integration)
-- Update plugin to Flutter federated packages
-- Desktop platform support (implementation as JS wrapper/native implementation, early development)
+- Audio device selection support (select input/output audio devices, delayed)
+- Add Bluetooth support (integration, in-progress)
+- Update plugin to Flutter federated packages (step 1 of 2 with Web support merge)
+- Desktop platform support (implementation as JS wrapper/native implementation, Mac development in-testing, Windows/Linux to start development)
 - Unify Android & iOS incoming call screens with predefined parameters to autofill UI elements (in development).
 
 Got a feature you want to add, suggest? File a feature request or PR.
