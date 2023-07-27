@@ -41,7 +41,7 @@ android {
 
 dependencies {
     implementation platform('com.google.firebase:firebase-bom:26.0.0')
-    implementation 'com.twilio:voice-android:5.8.0'
+    implementation 'com.twilio:voice-android:6.1.2'
     implementation 'com.google.firebase:firebase-messaging'
     implementation 'androidx.lifecycle:lifecycle-extensions:2.2.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.0.1'
