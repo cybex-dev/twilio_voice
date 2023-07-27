@@ -266,7 +266,7 @@ class _CallScreenState extends State<CallScreen> {
                     ),
                     onPressed: () {
                       print("Holding call? $isHolding");
-                      TwilioVoice.instance.call.holdCall(shouldHold: !isHolding).then((value) {
+                      TwilioVoice.instance.call.holdCall(holdCall: !isHolding).then((value) {
                         _updateHoldState();
                       });
                     },
