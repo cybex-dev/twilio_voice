@@ -3,35 +3,31 @@ import FlutterMacOS
 import WebKit
 import SwiftUI
 import UserNotifications
-
-
-// Each Twilio.Device / Call gets a seperate evaluate javascript funcrtion
-// For properties, use a simple evaluate javscript function
-// Every listen event requires a seperate evaluate JS function, with an event handller evaluateing each of those using sperate names for each function i.e. messagehanler.on(eventname).postMessage()
-// mediaDevices.getusermedia issues
+import AVFoundation
 
 // Future Work
 // - CallKit (https://developer.apple.com/documentation/callkit) - support in macOS 13.0+
 
 public enum NotificationAction: String {
-    case incoming = "incoming"
-    case accept = "accept"
-    case reject = "reject"
+    case accept = "accept-call"
+    case reject = "reject-call"
 }
 
-public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
-    private var _result: FlutterResult?
-    private var eventSink: FlutterEventSink?
+public enum NotificationCategory: String {
+    case missed = "missed-call"
+    case incoming = "incoming-call"
+}
 
-    let kRegistrationTTLInDays = 365
+public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, TVDeviceDelegate, TVCallDelegate, UNUserNotificationCenterDelegate, WKUIDelegate {
+
+//    private var _result: FlutterResult?
+    private var eventSink: FlutterEventSink?
 
     let kCachedDeviceToken = "CachedDeviceToken"
     let kCachedBindingDate = "CachedBindingDate"
     let kClientList = "TwilioContactList"
     private var clients: [String: String]!
 
-    var identity = "alice"
-    var to: String = "error"
     var defaultCaller = "Unknown Caller"
     var deviceToken: Data? {
         get {
@@ -41,11 +37,23 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             UserDefaults.standard.setValue(newValue, forKey: kCachedDeviceToken)
         }
     }
-    var jsCall: TwilioCall?
-    var jsDevice: TwilioDevice?
-    var webView: TVWebView
-    private var twilioCall: TwilioCall?
-    private var twilioDevice: TwilioDevice?
+    var webView: TVWebView?
+    private var twilioCall: TVCall? = nil {
+        willSet {
+            // dispose old call
+            if let call = twilioCall {
+                call.dispose()
+            }
+        }
+        didSet {
+            // attach event listeners to new call
+            if let call = twilioCall {
+                call.attachEventListeners()
+                call.callDelegate = self
+            }
+        }
+    }
+    private var twilioDevice: TVDevice?
 
     private var test: Bool = false
 
@@ -55,63 +63,48 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         }
     }
 
-    /// Given a file name, loads and returns the content of that file
-    /// - Parameter file: file name
-    /// - Parameter ofType: file extension
-    /// - Returns: content of file
-    private func loadFileContent(file: String, ofType: String) -> String? {
-        let bundle: Bundle? = Bundle(for: TwilioVoicePlugin.self)
-        if let bundle, let filePath = bundle.path(forResource: file, ofType: ofType) {
-            let content: String? = try? String(contentsOfFile: filePath)
-            return content;
-        } else {
-            return nil;
-        }
-    }
-
-    /// Given a javascript file, attempts to load file content then return a WKUserScript object
-    /// - Parameter file: javascript file name
-    /// - Returns: WKUserScript object, nil otherwise
-    private func loadUserScript(file: String) -> WKUserScript? {
-        guard let content = loadFileContent(file: file, ofType: "js") else {
-            print("Failed to load user script file \(file)")
-            return nil
-        }
-
-        return WKUserScript(source: content, injectionTime: .atDocumentEnd, forMainFrameOnly: false)
-    }
-
-    private func loadTwilio(webView: TVWebView) -> Void {
-        if let twilioLib = loadFileContent(file: "Resources/twilio.min", ofType: "js") {
-            webView.evaluateJavaScript(twilioLib) { (any: Any?, error: Error?) in
-                if let error = error {
-                    print("Error loading twilio library: \(error)")
-                }
-            }
-        }
+    private func registerNotificationCategories() {
+        let center = UNUserNotificationCenter.current()
+        let answer = UNNotificationAction(identifier: NotificationAction.accept.rawValue, title: "Accept", options: [.foreground])
+        let reject = UNNotificationAction(identifier: NotificationAction.reject.rawValue, title: "Reject", options: [])
+        let incomingCallCategory = UNNotificationCategory(identifier: NotificationCategory.incoming.rawValue, actions: [answer, reject], intentIdentifiers: [], options: [])
+        center.setNotificationCategories([incomingCallCategory])
     }
 
     public override init() {
-        self.webView = TVWebView(messageHandler: "twilio_voice")
         super.init()
-        self.clients = UserDefaults.standard.object(forKey: kClientList) as? [String: String] ?? [:]
+        webView = TVWebView(messageHandler: "twilio_voice")
+        webView?.uiDelegate = self
+        webView?.configuration.preferences.setValue(true, forKey: "developerExtrasEnabled")
+        Thread.sleep(forTimeInterval: 1)
+        clients = UserDefaults.standard.object(forKey: kClientList) as? [String: String] ?? [:]
+
+        // Register notification categories
+        registerNotificationCategories()
+        UNUserNotificationCenter.current().delegate = self
 
         let app = NSApplication.shared
         guard let window = app.windows.first else {
             fatalError("no mainWindow to grab")
         }
-        guard let viewController = window.contentViewController as? FlutterViewController else {
+        guard let viewController = window.contentViewController else {
+            fatalError("rootViewController hasn't been set")
+        }
+        guard let viewController = viewController as? FlutterViewController else {
             fatalError("rootViewController is not type FlutterViewController")
         }
         let registrar = viewController.registrar(forPlugin: "twilio_voice")
         let eventChannel = FlutterEventChannel(name: "twilio_voice/events", binaryMessenger: registrar.messenger)
         eventChannel.setStreamHandler(self)
-        loadTwilio(webView: webView)
     }
 
 
     deinit {
         // CallKit has an odd API contract where the developer must call invalidate or the CXProvider is leaked.
+        twilioDevice?.dispose()
+        twilioDevice = nil
+        twilioCall?.dispose()
+        twilioCall = nil
     }
 
 
@@ -125,572 +118,382 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         //        registrar.addApplicationDelegate(instance)
     }
 
-    private func attachDeviceListeners(_ device: TwilioDevice) {
-        device.on(ofType: TwilioCall.self, event: .incoming, completionHandler: onDeviceIncoming)
-        device.on(event: .registered, completionHandler: onDeviceRegistered)
-        device.on(event: .unregistered, completionHandler: onDeviceUnregistered)
-        device.on(event: .error, completionHandler: onDeviceError)
-        device.on(event: .tokenWillExpire, completionHandler: onTokenWillExpire)
-    }
-
-    private func detachDeviceListeners(_ device: TwilioDevice) {
-        device.off(event: .incoming)
-        device.off(event: .registered)
-        device.off(event: .unregistered)
-        device.off(event: .error)
-        device.off(event: .tokenWillExpire)
-    }
-
-    private func onDeviceIncoming(call: TwilioCall?, error: String?) {
-        if let error = error {
-            print("Error: \(error)")
-        }
-        let _ = requestMicAccess()
-        if let call = call {
-            let params = call.resolveParams()
-            let from = params.from ?? ""
-            let to = params.to ?? ""
-            logEvents(prefix: "", descriptions: ["Incoming", from, to, "Incoming", formatCustomParams(params: params.customParameters)])
-            logEvents(prefix: "", descriptions: ["Ringing", from, to, "Incoming", formatCustomParams(params: params.customParameters)])
-            showIncomingCallNotification(call: call)
-        }
-    }
-
-    private func onDeviceRegistered(error: String?) {
-        if let error = error {
-            print("Error: \(error)")
-        }
-        print("Device registered for callInvites")
-    }
-
-    private func onDeviceUnregistered(error: String?) {
-        if let error = error {
-            print("Error: \(error)")
-        }
-        print("Device unregistered, won't receive no more callInvites")
-    }
-
-    private func onDeviceError(error: String?) {
-        logEvent(description: error ?? "Unknown Error")
-    }
-
-    private func onTokenWillExpire(error: String?) {
-        if let device = jsDevice {
-            device.token() { s, s2 in
-                if let token = s {
-                    self.logEvents(prefix: "", descriptions: ["DEVICETOKEN", token])
-                }
-            }
-        }
-    }
-
-    private func onCallAccept(call: TwilioCall?, error: String?) {
-        if let error = error {
-            print("Error: \(error)")
-            return
-        }
-
-        guard let call = call else {
-            return
-        }
-        let params = call.resolveParams();
-        let from = params.from ?? ""
-        let to = params.to ?? ""
-        let extra = self.formatCustomParams(params: params.customParameters)
-        self.logEvents(prefix: "", descriptions: [
-            "Answer",
-            from,
-            to,
-            extra,
-        ])
-    }
-
-    private func onCallDisconnect(call: TwilioCall?, error: String?) {
-        if let error = error {
-            print("Error: \(error)")
-            return
-        }
-
-        guard let call = call else {
-            return
-        }
-
-        call.status() { status, error in
-            if let error = error {
-                print("Error: \(error)")
-                return
-            }
-
-            self.attachCallEventListeners(call)
-            if(status == .closed && self.jsCall != nil) {
-                self.logEvent(prefix: "", description: "Call Ended")
-            }
-            self.jsCall = nil
-        }
-    }
-
-    private func onCallCancel(error: String?) {
-        if let error = error {
-            print("Error: \(error)")
-            return
-        }
-
-        guard let call = self.jsCall else {
-            return
-        }
-        let params = call.resolveParams()
-
-        detachCallEventListeners(call)
-        self.jsCall = nil
-
-        if let callSid = params.callSid {
-            cancelNotification(callSid)
-
-            let from = params.from ?? ""
-            let to = params.to ?? ""
-            showMissedCallNotification(from: from, to: to)
-        }
-
-        logEvent(prefix: "", description: "Missed Call")
-        logEvent(prefix: "", description: "Call Ended")
-    }
-
-    private func onCallError(twilioError: String?) {
-        logEvent(description: "Call Error: \(twilioError ?? "Unknown Error")")
-    }
-
-    private func onCallReconnecting(twilioError: String?) {
-        logEvent(description: "Reconnecting")
-    }
-
-    private func onCallReconnected(twilioError: String?) {
-        logEvent(description: "Reconnected")
-    }
-
-    private func onCallStatusChanged(call: TwilioCall?, error: String?) {
-        if let error = error {
-            print("Error: \(error)")
-            return
-        }
-
-        guard let call = call else {
-            return
-        }
-
-        call.status() { status, error in
-            if let error = error {
-                print("Error: \(error)")
-                return
-            }
-
-            if(status == .connected) {
-                self.onCallConnected(call)
-            } else if (status == .ringing) {
-                self.onCallRinging()
-            }
-        }
-    }
-
-    private func onCallConnected(_ call: TwilioCall) {
-        jsCall = call
-
-        let params = call.resolveParams()
-        let from = params.from ?? ""
-        let to = params.to ?? ""
-        call.direction() { direction, error in
-            if let error = error {
-                print("Error: \(error)")
-                return
-            }
-            guard let direction = direction else {
-                return
-            }
-
-            self.logEvents(prefix: "", descriptions: [
-                "Connected",
-                from,
-                to,
-                direction.rawValue.capitalized
-            ])
-        }
-    }
-
-    private func onCallRinging() {
-        guard let call = self.jsCall else {
-            return
-        }
-        let params = call.resolveParams()
-        let from = params.from ?? ""
-        let to = params.to ?? ""
-        call.direction() { direction, error in
-            if let error = error {
-                print("Error: \(error)")
-                return
-            }
-
-            guard let direction = direction?.rawValue.capitalized else {
-                return
-            }
-
-            self.logEvents(prefix: "", descriptions: [
-                "Ringing",
-                from,
-                to,
-                direction,
-            ])
-        }
-    }
-
-    private func onCallReject(error: String?) {
-        if let error = error {
-            print("Error: \(error)")
-            return
-        }
-
-        guard let call = self.jsCall else {
-            return
-        }
-        detachCallEventListeners(call)
-        self.jsCall = nil
-
-        logEvent(prefix: "", description: "Call Rejected")
-    }
-
     private func cancelNotification(_ callSid: String) {
         // Cancel the notification
         let center = UNUserNotificationCenter.current()
+        center.removeDeliveredNotifications(withIdentifiers: [callSid])
         center.removePendingNotificationRequests(withIdentifiers: [callSid])
     }
 
-    private func showIncomingCallNotification(call: TwilioCall) {
-        if requestBackgroundPermissions() {
-            let params = call.resolveParams()
-            let title = resolveCallerName(callParams: params)
-            let body = "Incoming Call"
-
-            showNotification(title: title, subtitle: body, action: .incoming, params: params.customParameters)
-        }
+    private func showIncomingCallNotification(_ from: String, _ customParameters: [String: Any] = [:]) {
+        showNotification(title: from, subtitle: "Incoming Call", action: .incoming, params: customParameters)
     }
 
-    private func resolveCallerName(callParams: CallParams) -> String {
-        let from = callParams.from
-        if (from ?? "").starts(with: "client:") {
-            let clientName = from?.replacingOccurrences(of: "client:", with: "")
-            return clients[clientName ?? defaultCaller] ?? clientName ?? defaultCaller
+    private func resolveCallerName(_ from: String) -> String {
+        if (from).starts(with: "client:") {
+            let clientName = from.replacingOccurrences(of: "client:", with: "")
+            return clients[clientName] ?? clientName
         } else {
-            return from ?? defaultCaller
+            return from
         }
     }
 
-    /// Flutter  method call handler for 'tokens' action
-    /// - Parameter arguments: arguments
-    private func handleTokens(arguments: Dictionary<String, AnyObject>) -> Void {
-        guard let token = arguments["accessToken"] as? String else {
-            let ferror: FlutterError = FlutterError(code: ErrorCodes.MALFORMED_ARGUMENTS, message: "No 'accessToken' argument provided or invalid type", details: nil)
-            _result!(ferror)
-            return
-        }
-
-        logEvent(description: "Attempting to register with twilio")
+    /// Register device token with Twilio. If an active TwilioDevice is found, it attempts to update the token instead. Completion handler completes with true if successful
+    ///
+    /// - Parameter token: device token
+    /// - Parameter completionHandler: completion handler -> (Bool?)
+    private func setTokens(token: String, completionHandler: @escaping OnCompletionValueHandler<Bool>) -> Void {
+        assert(token.isNotEmpty(), "Access token cannot be empty")
 
         let codecs: [String] = ["opus", "pcmu"]
-        let options: DeviceInitOptions = DeviceInitOptions(codecPreferences: codecs, closeProtection: true)
-        twilioDevice = TwilioDevice(token, options: options, webView: webView)
-
+        let options: DeviceInitOptions = DeviceInitOptions(logLevel: 1, codecPreferences: codecs, closeProtection: false, allowIncomingWhileBusy: false)
         if let device = twilioDevice {
-//            attachDeviceListeners(device);
-            device.register() {  error in
-                if let error = error {
-                    print(String(describing: error))
+            device.updateToken(token) { (value) in
+                completionHandler(value ?? false)
+            }
+        } else {
+            if let webView = webView {
+                twilioDevice = TVDevice(token, options: options, webView: webView) { (device, error) in
+                    if let error = error {
+                        print("Error TVDevice:init : \(String(describing: error))")
+                        completionHandler(false)
+                        return
+                    }
+
+                    if let device = self.twilioDevice {
+                        self.twilioDevice = device
+                        device.deviceDelegate = self
+                        device.attachEventListeners();
+                        device.register { error in
+                            if let error = error {
+                                print("Registering Error: \(String(describing: error))")
+                                completionHandler(false)
+                            } else {
+                                completionHandler(true)
+                            }
+                        }
+                    }
                 }
             }
         }
 
-        _result!(true)
     }
 
 
-    /// Flutter method call handler for 'makeCall' action
-    /// - Parameter arguments: arguments
-    private func handleMakeCall(arguments: Dictionary<String, AnyObject>) -> Void {
-        guard let to = arguments[Constants.PARAM_TO] as? String else {
-            let ferror: FlutterError = FlutterError(code: ErrorCodes.MALFORMED_ARGUMENTS, message: "No '\(Constants.PARAM_TO)' argument provided or invalid type", details: nil)
-            _result!(ferror)
-            return
-        }
-        guard let from = arguments[Constants.PARAM_FROM] as? String else {
-            let ferror: FlutterError = FlutterError(code: ErrorCodes.MALFORMED_ARGUMENTS, message: "No '\(Constants.PARAM_FROM)' argument provided or invalid type", details: nil)
-            _result!(ferror)
-            return
-        }
-        // TODO? - set outgoing call parameter?
-//        if let accessToken = arguments["accessToken"] as? String{
-//            print("Found 'accessToken' parameter in 'makeCall' arguments, updating device")
-//            updateToken(accessToken)
-//        }
-        // TODO? - stop active call
-        var params: [String: Any] = [:]
-        arguments.forEach({ (key, value) in
-            if key != Constants.PARAM_TO && key != Constants.PARAM_FROM {
-                params[key] = value
-            }
-        })
+    /// Place outgoing call `from` to `to`. Returns true if successful, false otherwise. Completion handler completes with true if successful
+    ///
+    /// Generally accepted format is e164 (e.g. US number +15555555555)
+    /// alternatively, use 'client:${clientId}' to call a Twilio Client connection
+    ///
+    /// Parameters send to Twilio's REST API endpoint `makeCall` can be passed in [extraOptions];
+    /// Parameters are reduced to this format
+    ///
+    /// ```
+    /// {
+    ///  "From": from,
+    ///  "To": to,
+    ///  ...extraOptions
+    /// }
+    /// ```
+    ///
+    /// - Parameters:
+    ///   - from: caller
+    ///   - to: recipient
+    ///   - extraOptions: extra options
+    ///   - completionHandler: completion handler -> (Bool?)
+    private func place(from: String, to: String, extraOptions: [String: Any]?, completionHandler: @escaping OnCompletionValueHandler<Bool>) -> Void {
+        assert(from.isNotEmpty(), "\(Constants.PARAM_FROM) cannot be empty")
+        assert(to.isNotEmpty(), "\(Constants.PARAM_TO) cannot be empty")
+//        assert(extraOptions?.keys.contains(Constants.PARAM_FROM) ?? true, "\(Constants.PARAM_FROM) cannot be passed in extraOptions")
+//        assert(extraOptions?.keys.contains(Constants.PARAM_TO) ?? true, "\(Constants.PARAM_TO) cannot be passed in extraOptions")
+//        assert(twilioDevice != nil, "Twilio Device must be initialized before making calls")
 
-        makeCall(to: to, from: identity, extraOptions: params) { call, error in
-            if let error = error {
-                print("Error: \(error)")
-                self._result!(false)
-            }
+        logEvent(description: "Making new call")
 
-            if let call = call {
-                self.jsCall = call
-                self._result!(true)
-                self.attachCallEventListeners(call)
+        var params: [String: Any] = [Constants.PARAM_FROM: from, Constants.PARAM_TO: to]
+        if let extraOptions = extraOptions {
+            params.merge(extraOptions) { (_, new) in
+                new
             }
         }
+
+        if let device = twilioDevice {
+            let options = TVDeviceConnectOptions(to: to, from: from, customParameters: params)
+            device.connect(options, assignTo: "_call") { call, s in
+                if let error = s {
+                    print("[TVPlugin:place] Error resolving call params: \(error)")
+                    completionHandler(nil)
+                    return
+                }
+                if let call = call {
+                    self.twilioCall = call
+                    completionHandler(true)
+                    return
+                }
+            }
+        }
     }
 
-    private func attachCallEventListeners(_ call: TwilioCall) {
-        call.on(ofType: TwilioCall.self, event: .accept, completionHandler: onCallAccept)
-        call.on(ofType: TwilioCall.self, event: .disconnect, completionHandler: onCallDisconnect)
-        call.on(event: .cancel, completionHandler: onCallCancel)
-        call.on(event: .reject, completionHandler: onCallReject)
-        call.on(event: .error, completionHandler: onCallError)
-        call.on(event: .reconnecting, completionHandler: onCallReconnecting)
-        call.on(event: .reconnected, completionHandler: onCallReconnected)
-        call.on(event: .status, completionHandler: onCallStatusChanged)
+    /// Toggle mute on active call. Completion handler completes with true if successful.
+    ///
+    /// Not currently implemented in macOS
+    ///
+    /// - Parameter shouldMute: true if should mute, false otherwise
+    /// - Parameter completionHandler: completion handler -> (Bool?)
+    private func toggleMute(_ shouldMute: Bool, completionHandler: @escaping OnCompletionValueHandler<Bool>) -> Void {
+        if let call = twilioCall {
+            call.mute(shouldMute) { error in
+                if let error = error {
+                    print("TVCall mute: \(String(describing: error))")
+                    completionHandler(false)
+                    return
+                }
+                self.logEvent(prefix: "", description: shouldMute ? "Mute" : "Unmute")
+                completionHandler(true)
+            }
+        }
     }
 
-    private func detachCallEventListeners(_ call: TwilioCall) {
-        call.off(event: .accept)
-        call.off(event: .disconnect)
-        call.off(event: .cancel)
-        call.off(event: .reject)
-        call.off(event: .error)
-        call.off(event: .reconnecting)
-        call.off(event: .reconnected)
-        call.off(event: .status)
-    }
-
-    /// Flutter method call handler for 'toggleMute' action
-    /// - Parameter arguments: arguments
-    private func handleToggleMute(arguments: Dictionary<String, AnyObject>) -> Void {
-        guard let muted = arguments["muted"] as? Bool else {
-            let ferror: FlutterError = FlutterError(code: ErrorCodes.MALFORMED_ARGUMENTS, message: "No 'muted' argument provided", details: nil)
-            _result!(ferror)
-            return
-        }
-        // TODO - JS device interface
-        guard let activeCall = self.jsCall else {
-            let ferror: FlutterError = FlutterError(code: ErrorCodes.INTERNAL_STATE_ERROR, message: "No call to be muted", details: nil)
-            _result!(ferror)
-            return
-        }
-        activeCall.mute(shouldMute: muted)
-        logEvent(description: muted ? "Mute" : "Unmute")
-        _result!(true)
-    }
-
-    /// Flutter method call handler for 'toggleSpeaker' action
-    /// - Parameter arguments: arguments
-    private func handleToggleSpeaker(arguments: Dictionary<String, AnyObject>) -> Void {
-        guard let speakerIsOn = arguments["speakerIsOn"] as? Bool else {
-            let ferror: FlutterError = FlutterError(code: ErrorCodes.MALFORMED_ARGUMENTS, message: "No 'speakerIsOn' argument provided", details: nil)
-            _result!(ferror)
-            return
-        }
-        // TODO - JS device interface
-        guard let activeCall = self.jsCall else {
-            let ferror: FlutterError = FlutterError(code: ErrorCodes.INTERNAL_STATE_ERROR, message: "No call to toggle speaker", details: nil)
-            _result!(ferror)
-            return
-        }
-        //        activeCall.isSpeakerOn = speakerIsOn
-        //        toggleAudioRoute(toSpeaker: speakerIsOn)
+    /// Toggle speaker on active call. Completion handler completes with true if successful.
+    ///
+    /// Not currently implemented in macOS
+    ///
+    /// - Parameter speakerIsOn: should toggle to speaker mode, if true
+    /// - Parameter completionHandler: completion handler -> (Bool?)
+    private func toggleSpeaker(_ speakerIsOn: Bool, completionHandler: @escaping OnCompletionValueHandler<Bool>) -> Void {
         logEvent(description: speakerIsOn ? "Speaker On" : "Speaker Off")
-        _result!(true)
+        completionHandler(false)
     }
 
-    /// Flutter method call handler for 'call-sid' action
-    /// - Parameter arguments: arguments
-    private func handleCallSid(arguments: Dictionary<String, AnyObject>) -> Void {
-        // TODO - JS call sid
-        guard let call = self.jsCall else {
-            _result!(nil)
+    /// Get call Sid from active call parameters. Completion handler provides the active call SID or nil if unavailable.
+    ///
+    /// - Parameter completionHandler: completion handler -> (String?)
+    private func callSid(completionHandler: @escaping OnCompletionValueHandler<String>) -> Void {
+        guard let call = twilioCall else {
+            completionHandler(nil)
             return
         }
-        let params = call.resolveParams()
-        _result!(params.callSid)
-    }
 
-    /// Flutter method call handler for 'isOnCall' action
-    /// - Parameter arguments: arguments
-    private func handleIsOnCall(arguments: Dictionary<String, AnyObject>) -> Void {
-        guard let device = jsDevice else {
-            _result!(false)
-            return
-        }
-        device.isBusy() { (result, error) in
+        call.resolveParams { (params, error) in
             if let error = error {
-                print("Error checking if device is busy: \(error)")
-                self._result!(false)
-            } else {
-                self._result!(result)
+                print("[TVPlugin:callSid] Error resolving call params: \(error)")
+            }
+            completionHandler(params?.callSid)
+        }
+    }
+
+    /// Queries twilioCall is active (a convenience function for `self.twilioCall != nil`). Completion handler completes with true if on call.
+    ///
+    /// - Parameter completionHandler: completion handler
+    private func isOnCall(completionHandler: @escaping OnCompletionValueHandler<Bool>) -> Void {
+        guard let device = twilioDevice else {
+            completionHandler(false)
+            return
+        }
+        device.isBusy { (value, error) in
+            if let error = error {
+                print("[TVPlugin:isOnCall] Error checking an active call: \(error)")
+            }
+            completionHandler(value ?? false)
+        }
+    }
+
+    /// Send digits to active call. Completion handler completes with true if successful.
+    ///
+    /// - Parameter digits: digits to send
+    /// - Parameter completionHandler: completion handler -> (Bool?)
+    private func sendDigits(_ digits: String, completionHandler: @escaping OnCompletionValueHandler<Bool>) -> Void {
+        guard let call = twilioCall else {
+            completionHandler(false)
+            return
+        }
+        call.sendDigits(digits: digits) { error in
+            if let error = error {
+                print("[TVPlugin:sendDigits] Error checking if device is busy: \(error)")
+            }
+            completionHandler(error == nil)
+        }
+    }
+
+    /// Holds active call. Completion handler completes with true if successful.
+    ///
+    /// Not currently implemented in macOS
+    ///
+    /// - Parameter shouldHold: true if should hold call, false unholds
+    /// - Parameter completionHandler: completion handler -> (Bool?)
+    private func holdCall(_ shouldHold: Bool, completionHandler: OnCompletionValueHandler<Bool>) -> Void {
+        logEvent(description: shouldHold ? "Hold" : "Unhold")
+        completionHandler(false)
+    }
+
+    /// Answer incoming call. Completion handler completes with true if successful.
+    ///
+    /// - Parameter completionHandler: completion handler -> (Bool?)
+    private func answer(completionHandler: @escaping OnCompletionValueHandler<Bool>) -> Void {
+        guard let call = twilioCall else {
+            completionHandler(false)
+            return
+        }
+
+        call.accept { error in
+            if let error = error {
+                print("[TVPlugin:answer] Error answering call: \(error)")
+            }
+            completionHandler(error == nil)
+        }
+    }
+
+    /// Unregisters an access token and device from Twilio Access Token via JS interop
+    ///
+    /// - Parameters completionHandler: completion handler -> (Bool?)
+    private func unregisterToken(completionHandler: @escaping OnCompletionValueHandler<Bool>) -> Void {
+        guard let device = twilioDevice else {
+            completionHandler(false)
+            return;
+        }
+
+        device.unregister { (error) in
+            if let error = error {
+                print("[TVPlugin::unregisterToken] Error: \(String(describing: error))]")
+            }
+            completionHandler(error == nil)
+        }
+    }
+
+    /// Hang up active call. Completion handler completes with true if successful.
+    ///
+    /// - Parameter completionHandler: completion handler -> (Bool?)
+    private func hangUp(completionHandler: @escaping OnCompletionValueHandler<Bool>) -> Void {
+        guard let activeCall = twilioCall else {
+            completionHandler(false)
+            return
+        }
+        activeCall.status { status, s in
+            if let error = s {
+                print("[TVPlugin:hangUp] Error getting call status: \(error)")
+                completionHandler(false)
+                return
+            } else if let status = status {
+                if status == .ringing {
+                    activeCall.reject { error in
+                        if let error = error {
+                            print("[TVPlugin:hangUp] Error rejecting call: \(error)")
+                        }
+                        completionHandler(error == nil)
+                    }
+                } else {
+                    activeCall.disconnect { error in
+                        if let error = error {
+                            print("[TVPlugin:hangUp] Error disconnecting call: \(error)")
+                        }
+                        completionHandler(error == nil)
+                    }
+                }
             }
         }
     }
 
-    /// Flutter method call handler for 'sendDigits' action
-    /// - Parameter arguments: arguments
-    private func handleSendDigits(arguments: Dictionary<String, AnyObject>) -> Void {
-        guard let digits = arguments["digits"] as? String else {
-            let ferror: FlutterError = FlutterError(code: ErrorCodes.MALFORMED_ARGUMENTS, message: "No 'digits' argument provided", details: nil)
-            _result!(ferror)
-            return
-        }
-        // TODO - JS call interface
-        guard let activeCall = self.jsCall else {
-            let ferror: FlutterError = FlutterError(code: ErrorCodes.INTERNAL_STATE_ERROR, message: "No active call", details: nil)
-            _result!(ferror)
-            return
-        }
-        activeCall.sendDigits(digits: digits);
-        _result!(true)
+    /// Registered a client name & identifier in local storage, interprets incoming call parameters and resolves the caller & recipient ID automatically.
+    ///
+    /// - Parameters:
+    ///   - clientId: client id e.g. "user_1234"
+    ///   - clientName: client human readable name e.g. "John Doe"
+    private func registerClient(_ clientId: String, _ clientName: String) -> Bool {
+        logEvent(description: "Registering client \(clientId):\(clientName)")
+        return updateClient(id: clientId, name: clientName)
     }
 
-    /// Flutter method call handler for 'holdCall' action
-    /// - Parameter arguments: arguments
-    private func handleHoldCall(arguments: Dictionary<String, AnyObject>) -> Void {
-        guard let shouldHold = arguments["shouldHold"] as? Bool else {
-            let ferror: FlutterError = FlutterError(code: ErrorCodes.MALFORMED_ARGUMENTS, message: "No 'shouldHold' argument provided", details: nil)
-            _result!(ferror)
-            return
-        }
-        // TODO - JS call interface
-        guard let activeCall = self.jsCall else {
-            let ferror: FlutterError = FlutterError(code: ErrorCodes.INTERNAL_STATE_ERROR, message: "No active call to hold", details: nil)
-            _result!(ferror)
-            return
-        }
-        logEvent(description: shouldHold ? "Hold" : "Unhold")
-        _result!(true)
+    /// Unregistered a client identifier from local storage.
+    ///
+    /// - Parameter clientId: client id e.g. "user_1234"
+    private func unregisterClient(_ clientId: String) -> Bool {
+        logEvent(description: "Unregistering \(clientId)")
+        return removeClient(id: clientId)
     }
 
-    /// Flutter method call handler for 'answer' action
-    /// - Parameter arguments: arguments
-    private func handleAnswer(arguments: Dictionary<String, AnyObject>) -> Void {
-        // TODO - JS call interface
-        guard let call = self.jsCall else {
-            let ferror: FlutterError = FlutterError(code: ErrorCodes.INTERNAL_STATE_ERROR, message: "No incoming call to answer", details: nil)
-            _result!(ferror)
-            return
+    /// Sets the default caller name for incoming callers. This is displayed if the caller name is not found in local storage or provided by the server.
+    ///
+    /// - Parameter defaultName: new default caller name
+    private func setDefaultCaller(_ defaultName: String) -> Bool {
+        logEvent(description: "defaultCaller is \(defaultName)")
+        defaultCaller = defaultName
+        return updateClient(id: Constants.kDefaultCaller, name: defaultName)
+    }
+
+    /// Queries application's microphone permissions. Completion handler completes with true if microphone is available, false otherwise.
+    ///
+    /// - Parameter completionHandler: completion handler -> (Bool?)
+    private func hasMicPermission(completionHandler: @escaping OnCompletionValueHandler<Bool>) -> Void {
+        logEvent(description: "checkPermissionForMicrophone")
+
+        hasMicAccess { granted, error in
+            if let error = error {
+                print("[TVPlugin:hasMicPermission] Error querying microphone permissions: \(error)")
+            }
+            completionHandler(granted ?? false)
         }
-        call.accept()
-        _result!(true)
     }
 
-    /// Flutter method call handler for 'unregister' action
-    /// - Parameter arguments: arguments
-    private func handleUnregister(arguments: Dictionary<String, AnyObject>) -> Void {
-        let success: Bool = unregisterToken()
-        _result!(success)
-    }
+    /// Requests application microphone permissions. Completion handler completes with true if microphone is available, false otherwise.
+    ///
+    /// - Parameter completionHandler: completion handler -> (Bool?)
+    private func requestMicPermission(completionHandler: @escaping OnCompletionValueHandler<Bool>) -> Void {
+        logEvent(description: "requesting mic permission")
+        completionHandler(false)
 
-    /// Flutter method call handler for 'hangUp' action
-    /// - Parameter arguments: arguments
-    private func handleHangUp(arguments: Dictionary<String, AnyObject>) -> Void {
-        if self.jsCall == nil {
-            let ferror: FlutterError = FlutterError(code: ErrorCodes.INTERNAL_STATE_ERROR, message: "No active call to hang up on", details: nil)
-            _result!(ferror)
-            return
+        requestMicAccess { granted, error in
+            if let error = error {
+                self.logEvent(prefix: "", description: "Microphone permission denied")
+                print("[TVPlugin:hasMicPermission] Error requesting microphone permissions: \(error)")
+            }
+            completionHandler(granted ?? false)
         }
-        _result!(hangUp())
     }
 
-    /// Flutter method call handler for 'registerClient' action
-    /// - Parameter arguments: arguments
-    private func handleRegisterClient(arguments: Dictionary<String, AnyObject>) -> Void {
-        guard let clientId = arguments["id"] as? String else {
-            let ferror: FlutterError = FlutterError(code: ErrorCodes.MALFORMED_ARGUMENTS, message: "Argument 'id' missing or incorrect type", details: nil)
-            _result!(ferror)
-            return
+    /// Queries application's notification permissions. Completion handler completes with true if permissions are available, false otherwise.
+    ///
+    /// - Parameter completionHandler: completion handler -> (Bool?)
+    private func hasBackgroundPermission(completionHandler: @escaping OnCompletionValueHandler<Bool>) -> Void {
+        logEvent(description: "hasBackgroundPermission")
+
+        requiresBackgroundPermissions { granted, error in
+            if let error = error {
+                print("[TVPlugin:hasBackgroundPermission] Error querying background notification permissions: \(error)")
+            }
+            completionHandler(granted ?? false)
         }
-        guard let clientName = arguments["name"] as? String else {
-            let ferror: FlutterError = FlutterError(code: ErrorCodes.MALFORMED_ARGUMENTS, message: "Argument 'name' missing or incorrect type", details: nil)
-            _result!(ferror)
-            return
+    }
+
+    /// Requests application background notification permissions. Completion handler completes with true if permissions are available, false otherwise.
+    ///
+    /// - Parameter completionHandler: completion handler -> (Bool?)
+    private func requestBackgroundPermission(completionHandler: @escaping OnCompletionValueHandler<Bool>) -> Void {
+        logEvent(description: "requesting background permissions")
+
+        requestBackgroundPermissions { granted, error in
+            if let error = error {
+                self.logEvent(prefix: "", description: "Background notification permissions denied")
+                print("[TVPlugin:requestMicPermission] Error requesting background permissions: \(error)")
+            }
+            completionHandler(granted ?? false)
         }
-
-        updateClient(id: clientId, name: clientName)
-        _result!(true)
     }
 
-    /// Flutter method call handler for 'unregisterClient' action
-    /// - Parameter arguments: arguments
-    private func handleUnregisterClient(arguments: Dictionary<String, AnyObject>) -> Void {
-        // TODO - JS Device interop
-        guard let clientId = arguments["id"] as? String else {
-            let ferror: FlutterError = FlutterError(code: ErrorCodes.MALFORMED_ARGUMENTS, message: "Argument 'id' missing or incorrect type", details: nil)
-            _result!(ferror)
-            return
-        }
-
-        _result!(removeClient(id: clientId))
-    }
-
-    /// Flutter method call handler for 'defaultCaller' action
-    /// - Parameter arguments: arguments
-    private func handleDefaultCaller(arguments: Dictionary<String, AnyObject>) -> Void {
-        guard let caller = arguments[Constants.kDefaultCaller] as? String else {
-            let ferror: FlutterError = FlutterError(code: ErrorCodes.MALFORMED_ARGUMENTS, message: "Argument 'defaultCaller' missing or incorrect type", details: nil)
-            _result!(ferror)
-            return
-        }
-        defaultCaller = caller
-        updateClient(id: Constants.kDefaultCaller, name: caller)
-        _result!(true)
-    }
-
-    /// Flutter method call handler for 'hasMicPermission' action
-    /// - Parameter arguments: arguments
-    private func handleHasMicPermission(arguments: Dictionary<String, AnyObject>) -> Void {
-        // TODO - JS Device interop
-        // TODO - check mic permission
-        let permission: Bool = hasMicAccess();
-        _result!(permission)
-    }
-
-    /// Flutter method call handler for 'requestMicPermission' action
-    /// - Parameter arguments: arguments
-    private func handleRequestMicPermission(arguments: Dictionary<String, AnyObject>) -> Void {
-        // TODO - JS Device interop
-
-        // TODO - request permission
-        let permission: Bool = requestMicAccess();
-        _result!(permission)
-    }
-
-    /// Flutter method call handler for 'show-notifications' action
-    /// - Parameter arguments: arguments
-    private func handleShowNotifications(arguments: Dictionary<String, AnyObject>) -> Void {
-        // TODO - JS Device interop
-        // TODO - show notifications
-        guard let show = arguments["show"] as? Bool else {
-            let ferror: FlutterError = FlutterError(code: ErrorCodes.MALFORMED_ARGUMENTS, message: "Argument 'show' missing or incorrect type", details: nil)
-            _result!(ferror)
-            return
-        }
+    /// Set show app notifications (incoming, missed calls, etc).
+    ///
+    /// - Parameter show: true if notifications should be shown, false otherwise
+    /// - Returns: true if successful
+    private func showNotifications(_ show: Bool) -> Bool {
         let prefsShow = UserDefaults.standard.optionalBool(forKey: "show-notifications") ?? true
         if show != prefsShow {
             UserDefaults.standard.setValue(show, forKey: "show-notifications")
         }
-        _result!(true)
+        return true
     }
 
     public func handle(_ flutterCall: FlutterMethodCall, result: @escaping FlutterResult) {
-        _result = result
         guard let arguments = flutterCall.arguments as? Dictionary<String, AnyObject> else {
-            let error: FlutterError = FlutterError(code: ErrorCodes.MALFORMED_ARGUMENTS, message: "Arguments must be a Dictionary<String, AnyObject>", details: nil);
+            let error: FlutterError = FlutterError(code: FlutterErrorCodes.MALFORMED_ARGUMENTS, message: "Arguments must be a Dictionary<String, AnyObject>", details: nil);
             result(error)
             return;
         }
@@ -702,131 +505,238 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
 
         switch method {
         case .tokens:
-            handleTokens(arguments: arguments)
+            guard let token = arguments["accessToken"] as? String else {
+                let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.MALFORMED_ARGUMENTS, message: "No 'accessToken' argument provided or invalid type", details: nil)
+                result(ferror)
+                return
+            }
+            logEvent(description: "Attempting to register with twilio")
+            setTokens(token: token) { success in
+                result(success ?? false)
+            }
             break
+
         case .makeCall:
-            handleMakeCall(arguments: arguments)
+            guard let to = arguments[Constants.PARAM_TO] as? String else {
+                let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.MALFORMED_ARGUMENTS, message: "No '\(Constants.PARAM_TO)' argument provided or invalid type", details: nil)
+                result(ferror)
+                return
+            }
+            guard let from = arguments[Constants.PARAM_FROM] as? String else {
+                let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.MALFORMED_ARGUMENTS, message: "No '\(Constants.PARAM_FROM)' argument provided or invalid type", details: nil)
+                result(ferror)
+                return
+            }
+
+            var params: [String: Any] = [:]
+            arguments.forEach { (key, value) in
+                if key != Constants.PARAM_TO && key != Constants.PARAM_FROM {
+                    params[key] = value
+                }
+            }
+
+            place(from: from, to: to, extraOptions: params) { success in
+                result(success ?? false)
+            }
             break
         case .toggleMute:
-            handleToggleMute(arguments: arguments);
+            guard let muted = arguments["muted"] as? Bool else {
+                let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.MALFORMED_ARGUMENTS, message: "No 'muted' argument provided", details: nil)
+                result(ferror)
+                return
+            }
+
+            guard twilioCall != nil else {
+                let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.INTERNAL_STATE_ERROR, message: "No call to be muted", details: nil)
+                result(ferror)
+                return
+            }
+
+            toggleMute(muted) { muted in
+                result(muted)
+            };
             break
+
         case .toggleSpeaker:
-            handleToggleSpeaker(arguments: arguments);
+            guard let speakerIsOn = arguments["speakerIsOn"] as? Bool else {
+                let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.MALFORMED_ARGUMENTS, message: "No 'speakerIsOn' argument provided", details: nil)
+                result(ferror)
+                return
+            }
+
+            guard twilioCall != nil else {
+                let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.INTERNAL_STATE_ERROR, message: "No call to toggle speaker", details: nil)
+                result(ferror)
+                return
+            }
+
+            toggleSpeaker(speakerIsOn) { success in
+                result(success ?? false)
+            }
             break
+
         case .callSid:
-            handleCallSid(arguments: arguments);
+            guard twilioCall != nil else {
+                result(nil)
+                return
+            }
+
+            callSid { sid in
+                result(sid ?? nil)
+            }
             break
+
         case .isOnCall:
-            handleIsOnCall(arguments: arguments);
+            guard twilioDevice != nil else {
+                result(false)
+                return
+            }
+
+            isOnCall { success in
+                result(success ?? false)
+            }
             break
+
         case .sendDigits:
-            handleSendDigits(arguments: arguments);
+            guard let digits = arguments["digits"] as? String else {
+                let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.MALFORMED_ARGUMENTS, message: "No 'digits' argument provided", details: nil)
+                result(ferror)
+                return
+            }
+
+            guard twilioCall != nil else {
+                result(false)
+                return
+            }
+
+            sendDigits(digits) { success in
+                result(success ?? false)
+            }
             break
+
         case .holdCall:
-            handleHoldCall(arguments: arguments);
+            guard let shouldHold = arguments["shouldHold"] as? Bool else {
+                let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.MALFORMED_ARGUMENTS, message: "No 'shouldHold' argument provided", details: nil)
+                result(ferror)
+                return
+            }
+
+            guard twilioCall != nil else {
+                let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.INTERNAL_STATE_ERROR, message: "No active call to hold", details: nil)
+                result(ferror)
+                return
+            }
+
+            holdCall(shouldHold) { success in
+                result(success ?? false)
+            }
             break
+
         case .answer:
-            handleAnswer(arguments: arguments);
+            guard twilioCall != nil else {
+                let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.INTERNAL_STATE_ERROR, message: "No incoming call to answer", details: nil)
+                result(ferror)
+                return
+            }
+
+            answer { success in
+                result(success ?? false)
+            }
             break
+
         case .unregister:
-            handleUnregister(arguments: arguments);
-            break
-        case .hangUp:
-            handleHangUp(arguments: arguments);
-            break
-        case .registerClient:
-            handleRegisterClient(arguments: arguments);
-            break
-        case .unregisterClient:
-            handleUnregisterClient(arguments: arguments);
-            break
-        case .defaultCaller:
-            handleDefaultCaller(arguments: arguments);
-            break
-        case .hasMicPermission:
-            handleHasMicPermission(arguments: arguments);
-            break
-        case .requestMicPermission:
-            handleRequestMicPermission(arguments: arguments);
-            break
-        case .showNotifications:
-            handleShowNotifications(arguments: arguments);
-            break
-        default:
-            result(false)
-        }
-    }
-
-
-    /// Hang up active call
-    /// - Returns: True if successful
-    private func hangUp() -> Bool {
-        guard let activeCall = self.jsCall else {
-            return false;
-        }
-        activeCall.disconnect()
-        return true
-    }
-
-
-    /// Place a call to 'to'
-    /// - Parameter to: client Id, identifier or number
-    /// - Parameter from: client calling
-    /// - Parameter extraOptions: additional custom call parameters
-    /// - Parameter completionHandler: completion handler
-    /// - Returns: True if call was placed successfully
-    private func makeCall(to: String, from: String, extraOptions: [String: Any]?, completionHandler: @escaping (_ call: TwilioCall?, _ error: String?) -> Void) -> Void {
-        if self.jsCall != nil {
-            print("Active call ongoing, hanging up")
-            if (!hangUp()) {
-                print("Failed to end active call")
+            guard twilioDevice != nil else {
+                result(false)
                 return;
             }
-            self.jsCall = nil
-        }
 
-        guard let device = self.jsDevice else {
-            print("No active JS device")
-            return;
-        }
+            unregisterToken { success in
+                result(success ?? false)
+            }
+            break
 
-        logEvent(description: "Making new call")
-
-        var params : [String: Any] = [Constants.PARAM_TO: to, Constants.PARAM_FROM: self.identity]
-        if let extra = extraOptions {
-            extra.forEach({ (key, value) in
-                params[key] = value
-            })
-        }
-        let options: DeviceConnectOptions = DeviceConnectOptions(params: params)
-        device.connect(options) { call, s in
-            if let error = s {
-                print("Error making call: \(error)")
-                completionHandler(nil, error)
+        case .hangUp:
+            guard twilioCall != nil else {
+                let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.INTERNAL_STATE_ERROR, message: "No active call to hang up on", details: nil)
+                result(ferror)
                 return
             }
-            if let call = call {
-                print("Call successfully placed")
-                self.jsCall = call
-                completionHandler(call, nil)
+
+            hangUp { success in
+                result(success ?? false)
+            }
+            break
+
+        case .registerClient:
+            guard let clientId = arguments["id"] as? String else {
+                let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.MALFORMED_ARGUMENTS, message: "Argument 'id' missing or incorrect type", details: nil)
+                result(ferror)
                 return
             }
-        }
-    }
 
-    /// Unregister Twilio Access Token via JS interop
-    /// - Returns: True if successfully unregistered
-    private func unregisterToken() -> Bool {
-        // TODO - JS device interop
-        guard let device = self.jsDevice else {
-            print("No active JS device")
-            return false;
+            guard let clientName = arguments["name"] as? String else {
+                let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.MALFORMED_ARGUMENTS, message: "Argument 'name' missing or incorrect type", details: nil)
+                result(ferror)
+                return
+            }
+
+            result(registerClient(clientId, clientName))
+            break
+
+        case .unregisterClient:
+            guard let clientId = arguments["id"] as? String else {
+                let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.MALFORMED_ARGUMENTS, message: "Argument 'id' missing or incorrect type", details: nil)
+                result(ferror)
+                return
+            }
+
+            result(unregisterClient(clientId))
+            break
+
+        case .defaultCaller:
+            guard let caller = arguments[Constants.kDefaultCaller] as? String else {
+                let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.MALFORMED_ARGUMENTS, message: "Argument 'defaultCaller' missing or incorrect type", details: nil)
+                result(ferror)
+                return
+            }
+
+            result(setDefaultCaller(caller))
+            break
+
+        case .hasMicPermission:
+            hasMicPermission { success in
+                result(success ?? false)
+            }
+            break
+
+        case .requestMicPermission:
+            requestMicPermission { success in
+                result(success ?? false)
+            }
+            break
+
+        case .requiresBackgroundPermissions:
+            hasBackgroundPermission { success in
+                result(success ?? false)
+            }
+            break
+
+        case .requestBackgroundPermissions:
+            requestBackgroundPermission { success in
+                result(success ?? false)
+            }
+            break
+
+        case .showNotifications:
+            guard let show = arguments["show"] as? Bool else {
+                let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.MALFORMED_ARGUMENTS, message: "Argument 'show' missing or incorrect type", details: nil)
+                result(ferror)
+                return
+            }
+
+            result(showNotifications(show))
+            break
         }
-        // TODO - destroy device? destroy() & set nil
-        device.unregister() { (error) in
-            print(String(describing: error))
-        }
-        return true;
     }
 
     func formatCustomParams(params: [String: Any]?) -> String {
@@ -836,7 +746,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         do {
             let jsonData = try JSONSerialization.data(withJSONObject: customParameters)
             if let jsonStr = String(data: jsonData, encoding: .utf8) {
-                return "|\(jsonStr)"
+                return "\(jsonStr)"
             }
         } catch {
             print("unable to send custom parameters")
@@ -844,50 +754,71 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         return ""
     }
 
-    private func requestMicAccess() -> Bool {
-        // TODO - JS Device interop
-        // TODO - request mic access
-        true
-    }
-
-    private func hasMicAccess() -> Bool {
-        // TODO - JS Device interop
-        // TODO - check mic access
-        true
-    }
-
-    private func requestBackgroundPermissions() -> Bool {
-        // TODO - JS Device interop
-        // TODO - request background permissions
-        true
-    }
-
-    private func requiresBackgroundPermissions() -> Bool {
-        // TODO - JS Device interop
-        // TODO - check background permissions
-        true
-    }
-
-    private func showMissedCallNotification(from: String?, to: String?) {
-        guard UserDefaults.standard.optionalBool(forKey: "show-notifications") ?? true else {
-            return
-        }
-
-        let content = UNMutableNotificationContent()
-        var userName: String?
-        if var from = from {
-            from = from.replacingOccurrences(of: "client:", with: "")
-            content.userInfo = ["type": "twilio-missed-call", Constants.PARAM_FROM: from]
-            if let to = to {
-                content.userInfo[Constants.PARAM_TO] = to
+    private func requestMicAccess(completionHandler: @escaping OnCompletionHandler<Bool>) -> Void {
+        AVCaptureDevice.requestAccess(for: .audio) { granted in
+            if granted {
+                completionHandler(true, nil)
+            } else {
+                completionHandler(false, nil)
             }
-            userName = self.clients[from]
         }
+    }
 
-        let title = userName ?? self.clients[Constants.kDefaultCaller] ?? self.defaultCaller
-        content.title = String(format: NSLocalizedString("notification_missed_call", comment: ""), title)
+    private func hasMicAccess(completionHandler: @escaping OnCompletionHandler<Bool>) -> Void {
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized: // The user has previously granted access to the microphone.
+            completionHandler(true, nil)
+            break
 
-//        showNotification(title: <#T##String##Swift.String#>, action: <#T##String##Swift.String#>, params: <#T##Dictionary<String, Any>##Swift.Dictionary<Swift.String, Any>#>)
+        case .notDetermined: // The user has not yet been asked for microphone access
+            requestMicAccess { (granted, error) in
+                completionHandler(granted, error)
+            }
+            break
+
+        case .denied:
+            completionHandler(false, nil)
+            break
+
+
+        case .restricted: // The user can't grant access due to restrictions.
+            print("Mic Access restricted")
+            completionHandler(false, nil)
+            break
+        default:
+            completionHandler(false, nil)
+            break
+        }
+    }
+
+    private func requestBackgroundPermissions(completionHandler: @escaping OnCompletionHandler<Bool>) -> Void {
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+
+            if let error = error {
+                completionHandler(false, error.localizedDescription)
+            } else {
+                completionHandler(granted, nil)
+            }
+        }
+    }
+
+    private func requiresBackgroundPermissions(completionHandler: @escaping OnCompletionHandler<Bool>) -> Void {
+        let center = UNUserNotificationCenter.current()
+        center.getNotificationSettings { settings in
+            if settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional {
+                completionHandler(true, nil)
+            } else {
+                completionHandler(false, nil)
+            }
+        }
+    }
+
+    // Notify missed call from [From] to [To]
+    private func showMissedCallNotification(from: String?, to: String?) {
+        let caller = resolveCallerName(from ?? "")
+        let params: [String: Any] = [Constants.PARAM_TO: to ?? "", Constants.PARAM_FROM: caller]
+        showNotification(title: caller, subtitle: "Missed Call", action: .missed, params: params)
     }
 
     /// Show notification with title & body, using default trigger (1 second, no repeat)
@@ -896,24 +827,32 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
     ///   - subtitle: Notification body/message
     ///   - uuid: (optional) UUID of notification, else one is generated
     ///   - action: Action to perform when notification is tapped
-    ///   - params: Call parameters
+    ///   - params: additional [UNMutableNotificationContent.userInfo] parameters
     /// - Returns: [Void]
-    private func showNotification(title: String, subtitle: String = "", _ uuid: UUID? = nil, action: NotificationAction, params: Dictionary<String, Any>) -> Void {
+    private func showNotification(title: String, subtitle: String = "", _ uuid: UUID? = nil, action: NotificationCategory, params: Dictionary<String, Any> = [:]) -> Void {
+        guard UserDefaults.standard.optionalBool(forKey: "show-notifications") ?? true else {
+            return
+        }
+
         let notificationCenter = UNUserNotificationCenter.current()
 
         notificationCenter.getNotificationSettings { (settings) in
             if settings.authorizationStatus == .authorized {
+                let data: [String: Any] = [Constants.PARAM_TYPE: action.rawValue].merging(params) { (_, new) in
+                    new
+                };
+                let callSid = data[Constants.PARAM_CALL_SID] as? String
+
                 let content = UNMutableNotificationContent()
                 content.title = title
                 content.subtitle = subtitle
-                content.userInfo = ["type": action].merging(params) { (_, new) in
-                    new
-                }
+                content.userInfo = data
+                content.categoryIdentifier = action.rawValue
 
                 let id: UUID = uuid ?? UUID()
                 let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
                 let request = UNNotificationRequest(
-                        identifier: id.uuidString,
+                        identifier: callSid ?? id.uuidString,
                         content: content,
                         trigger: trigger)
 
@@ -949,18 +888,18 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
     /// Send multiple log events to Flutter plugin handler via the [eventSink]
     /// - Parameters:
     ///   - prefix: prefix e.g. "LOG"
-    ///   - separator: message seperator e.g. "|"
-    ///   - descriptionSeparator: (optional) seperator for descriptions e.g. ","
+    ///   - separator: message separator e.g. "|"
+    ///   - descriptionSeparator: (optional) separator for descriptions e.g. ","
     ///   - descriptions: List of descriptions or events to send
     ///   - isError: true if error
-    private func logEvents(prefix: String = "LOG", separator: String = "|", descriptionSeparator: String? = ",", descriptions: Array<String>, isError: Bool = false) {
-        logEvent(prefix: prefix, separator: separator, description: descriptions.joined(separator: descriptionSeparator ?? ","), isError: isError)
+    private func logEvents(prefix: String = "LOG", separator: String = "|", descriptionSeparator: String = "|", descriptions: Array<String>, isError: Bool = false) {
+        logEvent(prefix: prefix, separator: separator, description: descriptions.joined(separator: descriptionSeparator), isError: isError)
     }
 
     /// Send log event to Flutter plugin handler via the [eventSink]
     /// - Parameters:
     ///   - prefix: prefix e.g. "LOG"
-    ///   - separator: message seperator e.g. "|"
+    ///   - separator: message separator e.g. "|"
     ///   - description: Description or event to send
     ///   - isError: true if error
     private func logEvent(prefix: String = "LOG", separator: String = "|", description: String, isError: Bool = false) {
@@ -970,7 +909,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         }
 
         if isError {
-            let flutterError = FlutterError(code: ErrorCodes.UNAVAILABLE_ERROR, message: description, details: nil)
+            let flutterError = FlutterError(code: FlutterErrorCodes.UNAVAILABLE_ERROR, message: description, details: nil)
             eventSink(flutterError)
         } else {
             var message = "";
@@ -986,29 +925,58 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
 
     public func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
         // TODO(cybex-dev) - Review macOS & iOS code below
-        let userInfo = response.notification.request.content.userInfo
+        let action = response.actionIdentifier
 
-        if let type = userInfo["type"] as? String, type == "twilio-missed-call", let user = userInfo[Constants.PARAM_FROM] as? String {
-            self.to = user
-            if let to = userInfo[Constants.PARAM_TO] as? String {
-                self.identity = to
-            }
-            makeCall(to: to, from: identity, extraOptions: [:]) { (call, error) in
-                if let error = error {
-                    self.logEvent(prefix: "Call Error", description: error, isError: true)
+        if let action = NotificationAction(rawValue: action) {
+            switch action {
+            case .accept:
+                if let twilioCall = twilioCall {
+                    twilioCall.accept { error in
+                        if let error = error {
+                            print("Error: \(error)")
+                        }
+                    }
+                } else {
+                    print("Twilio call not found")
                 }
+                break
+
+            case .reject:
+                if let twilioCall = twilioCall {
+                    twilioCall.reject { error in
+                        if let error = error {
+                            print("Error: \(error)")
+                        }
+                    }
+                } else {
+                    print("Twilio call not found")
+                }
+                break
+            default:
+                print("Notification type not found")
+                completionHandler()
             }
+        } else {
+            print("Notification type not found")
             completionHandler()
-            self.logEvents(prefix: "", descriptions: [])
         }
     }
 
+    /// Handle notification when app is in foreground
     public func userNotificationCenter(_ center: UNUserNotificationCenter,
                                        willPresent notification: UNNotification,
                                        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        let userInfo = notification.request.content.userInfo
-        if let type = userInfo["type"] as? String, type == "twilio-missed-call" {
-            completionHandler([.banner])
+        if let category = NotificationCategory(rawValue: notification.request.content.categoryIdentifier) {
+            switch category {
+            case .incoming:
+                completionHandler([.banner, .sound])
+            case .missed:
+                completionHandler([.banner, .sound])
+            default:
+                completionHandler([])
+            }
+        } else {
+            completionHandler([])
         }
     }
 
@@ -1018,14 +986,17 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
     ///   - id: client identifier e.g. firebase Id
     ///   - name: client human readable name provided the id resolves to
     /// - Returns: [Void]
-    private func updateClient(id: String, name: String) -> Void {
+    private func updateClient(id: String, name: String) -> Bool {
         if id.isEmpty {
-            return;
+            return false
         }
 
         if clients[id] == nil || clients[id] != name {
             clients[id] = name
             UserDefaults.standard.set(clients, forKey: kClientList)
+            return true
+        } else {
+            return false
         }
     }
 
@@ -1046,6 +1017,261 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         UserDefaults.standard.set(clients, forKey: kClientList)
         return true;
     }
+
+    // MARK: - TVDeviceDelegate
+
+    func onDeviceIncoming(_ call: TVCall) {
+        logEvent(description: "Incoming call")
+        twilioCall = call
+        requestMicAccess { _, error in
+            if let error = error {
+                print("Error: \(error)")
+            }
+
+            call.resolveParams { (params, error) in
+                if let error = error {
+                    print("Error: \(error)")
+                }
+                if let params = params {
+                    let from = self.resolveCallerName(params.from ?? "")
+                    let to = params.to ?? ""
+                    self.logEvents(prefix: "", descriptions: ["Incoming", from, to, "Incoming", self.formatCustomParams(params: params.customParameters)])
+                    self.logEvents(prefix: "", descriptions: ["Ringing", from, to, "Incoming", self.formatCustomParams(params: params.customParameters)])
+                    self.showIncomingCallNotification(from, params.customParameters)
+                }
+            }
+        }
+    }
+
+    func onDeviceRegistered() {
+        logEvent(description: "Device registered for call invites")
+    }
+
+    // ignore
+    func onDeviceRegistering() {
+        logEvent(description: "Device registering for call invites")
+    }
+
+    func onDeviceUnregistered() {
+        logEvent(description: "Device unregistered, won't receive any more call invites")
+    }
+
+    func onDeviceTokenWillExpire(_ device: TVDevice) {
+        logEvent(description: "Device token will expire")
+        device.token { (token, error) in
+            if let error = error {
+                print("Error: \(error)")
+            }
+            if let token = token {
+                self.logEvents(prefix: "", descriptions: [Constants.kDEVICETOKEN, token])
+            }
+        }
+    }
+
+    func onDeviceError(_ error: TVError) {
+        logEvent(description: "Device error: \(error.code) \(error.message)")
+    }
+
+    // MARK: - TVCallDelegate
+
+    public func onCallAccept(_ call: TVCall) {
+        call.direction { direction, error in
+            if let error = error {
+                print("Error: \(error)")
+            }
+
+            if let direction = direction, direction == .incoming {
+                call.resolveParams { (params, error) in
+                    if let error = error {
+                        print("Error: \(error)")
+                    }
+                    if let params = params {
+                        let from = params.from ?? ""
+                        let to = params.to ?? ""
+
+                        self.logEvents(prefix: "", descriptions: ["Answer", from, to, self.formatCustomParams(params: params.customParameters)])
+
+                        // Notify incoming call
+                        self.showIncomingCallNotification(from, params.customParameters)
+                    }
+                }
+            }
+        }
+    }
+
+    public func onCallCancel(_ call: TVCall) {
+        // Notify missed call notification
+        call.resolveParams { (params, error) in
+            if let error = error {
+                print("Error: \(error)")
+            }
+
+            if let params = params {
+                if let callSid = params.callSid {
+                    self.cancelNotification(callSid)
+                }
+                let to = self.resolveCallerName(params.from ?? "")
+                let from = self.resolveCallerName(params.to ?? "")
+                self.showMissedCallNotification(from: from, to: to)
+            }
+        }
+
+        if (twilioCall != nil) {
+            twilioCall = nil
+        }
+
+        logEvent(prefix: "", description: "Missed Call")
+        logEvent(prefix: "", description: "Call Ended")
+    }
+
+    public func onCallDisconnect(_ call: TVCall) {
+        call.status { status, error in
+            if let error = error {
+                print("Error: \(error)")
+            }
+
+            call.dispose()
+            if status == .closed && self.twilioCall != nil {
+                self.logEvent(prefix: "", description: "Call Ended")
+            }
+        }
+
+        twilioCall = nil
+    }
+
+    public func onCallError(_ error: TVError) {
+        logEvent(description: "Call Error: \(error.code) \(error.message)")
+    }
+
+    public func onCallReconnecting(_ error: TVError) {
+        logEvent(description: "Reconnecting: \(error.code) \(error.message)")
+    }
+
+    public func onCallReconnected() {
+        logEvent(description: "Reconnected")
+    }
+
+    public func onCallReject() {
+        if twilioCall != nil {
+            twilioCall?.callDelegate = nil
+            twilioCall = nil
+        }
+        logEvent(prefix: "", description: "Call Rejected")
+    }
+
+    public func onCallStatus(_ status: TVCallStatus) {
+        if (status == .connected) {
+            if let call = twilioCall {
+                onCallConnected(call)
+            }
+        } else if (status == .ringing) {
+            onCallRinging()
+        }
+    }
+
+    private func onCallConnected(_ call: TVCall) {
+        twilioCall = call
+        call.resolveParams { params, error in
+            if let error = error {
+                print("Error: \(error)")
+                return
+            }
+            if let params = params {
+                let from = params.from ?? ""
+                let to = params.to ?? ""
+
+                call.direction { direction, error in
+                    if let error = error {
+                        print("Error: \(error)")
+                        return
+                    }
+
+                    guard let direction = direction?.rawValue.capitalized else {
+                        return
+                    }
+
+                    self.logEvents(prefix: "", descriptions: [
+                        "Connected",
+                        from,
+                        to,
+                        direction,
+                    ])
+                }
+            }
+        }
+
+    }
+
+    private func onCallRinging() {
+        guard let call = twilioCall else {
+            return
+        }
+        call.resolveParams { params, error in
+            if let error = error {
+                print("Error: \(error)")
+                return
+            }
+            if let params = params {
+                let from = params.from ?? ""
+                let to = params.to ?? ""
+
+                call.direction { direction, error in
+                    if let error = error {
+                        print("Error: \(error)")
+                        return
+                    }
+
+                    guard let direction = direction?.rawValue.capitalized else {
+                        return
+                    }
+
+                    self.logEvents(prefix: "", descriptions: [
+                        "Ringing",
+                        from,
+                        to,
+                        direction,
+                    ])
+                }
+            }
+        }
+    }
+
+    // MARK -
+
+    public func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.addButton(withTitle: "Ok")
+        alert.alertStyle = NSAlert.Style.informational
+
+        let modalResponse = alert.runModal()
+        let alertButton = modalResponse.rawValue
+        let result = NSApplication.ModalResponse(rawValue: alertButton)
+        completionHandler()
+    }
+
+    public func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.addButton(withTitle: "Confirm")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = NSAlert.Style.informational
+
+        let modalResponse = alert.runModal()
+        let alertButton = modalResponse.rawValue
+        let result = NSApplication.ModalResponse(rawValue: alertButton)
+        completionHandler(result == NSApplication.ModalResponse.alertFirstButtonReturn)
+    }
+
+//    @available(macOS 12.0, *)
+//    public func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping (WKPermissionDecision) -> ()) {
+//        print("\(#function)")
+//    }
+
+    @available(macOS 12.0, *)
+    public func webView(_ webView: WKWebView, decideMediaCapturePermissionsFor origin: WKSecurityOrigin, initiatedBy frame: WKFrameInfo, type: WKMediaCaptureType) async -> WKPermissionDecision {
+        return WKPermissionDecision.grant
+    }
 }
 
 extension UserDefaults {
@@ -1059,46 +1285,14 @@ extension UserDefaults {
 
 extension String {
     func localized(bundle: Bundle = .main, tableName: String = "Localizable") -> String {
-        return NSLocalizedString(self, tableName: tableName, value: "\(self)", comment: "")
+        NSLocalizedString(self, tableName: tableName, value: "\(self)", comment: "")
+    }
+
+    func isNotEmpty() -> Bool {
+        !isEmpty
     }
 }
 
-class ErrorCodes {
 
-    /// Associated with unexpected, malformed or missing arguments
-    static let MALFORMED_ARGUMENTS: String = "arguments";
 
-    /// Used in cases when attempting to modify an object that doesn't exist, is nil or is immutable
-    static let INTERNAL_STATE_ERROR: String = "internal-state-error";
 
-    /// Used in cases when attempting to modify an object that doesn't exist, is nil or is immutable
-    static let UNAVAILABLE_ERROR: String = "unavailable";
-}
-
-class Constants {
-    static let PARAM_FROM: String = "From"
-    static let PARAM_TO: String = "To"
-    static let kDefaultCaller: String = "defaultCaller"
-}
-
-class ActiveCall {
-    var isOnHold: Bool = false
-    var isMuted: Bool = false
-    var sid: String = ""
-
-    init() {
-
-    }
-
-    func sendDigits(digits: String) -> Bool {
-        return true
-    }
-
-    func hangUp() -> Bool {
-        return true
-    }
-
-    func answer() -> Bool {
-        return true
-    }
-}
