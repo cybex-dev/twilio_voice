@@ -134,7 +134,10 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
 
       // source: https://www.twilio.com/docs/api/errors/31603
       // The callee does not wish to participate in the call.
-      if (tokens[1].contains("31603")) {
+      //
+      // https://www.twilio.com/docs/api/errors/31486
+      // The callee is busy.
+      if (tokens[1].contains("31603") || tokens[1].contains("31486")) {
         return CallEvent.declined;
       } else if (tokens.toString().toLowerCase().contains("call rejected")) {
         // Android call reject from string: "LOG|Call Rejected"
