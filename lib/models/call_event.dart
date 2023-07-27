@@ -11,6 +11,8 @@ enum CallEvent {
   mute,
   speakerOn,
   speakerOff,
+  bluetoothOn,
+  bluetoothOff,
   log,
   declined,
   answer,
