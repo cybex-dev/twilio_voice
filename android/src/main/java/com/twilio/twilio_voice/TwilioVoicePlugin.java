@@ -302,29 +302,36 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
 
         @Override
         public void onReceive(Context context, Intent intent) {
+            if(intent == null) {
+                Log.e(TAG, "[VoiceBroadcastReceiver] Received null intent");
+                return;
+            }
             String action = intent.getAction();
+            if(action == null) {
+                Log.e(TAG, "[VoiceBroadcastReceiver] Received null action");
+                return;
+            }
             Log.d(TAG, "Received broadcast for action " + action);
 
-            if (action != null)
-                switch (action) {
-                    case Constants.ACTION_INCOMING_CALL:
-                    case Constants.ACTION_CANCEL_CALL:
-                    case Constants.ACTION_REJECT:
-                    case Constants.ACTION_ACCEPT:
-                    case Constants.ACTION_TOGGLE_MUTE:
-                    case Constants.ACTION_END_CALL:
-                    case Constants.ACTION_RETURN_CALL:
+            switch (action) {
+                case Constants.ACTION_INCOMING_CALL:
+                case Constants.ACTION_CANCEL_CALL:
+                case Constants.ACTION_REJECT:
+                case Constants.ACTION_ACCEPT:
+                case Constants.ACTION_TOGGLE_MUTE:
+                case Constants.ACTION_END_CALL:
+                case Constants.ACTION_RETURN_CALL:
 
-                        /*
-                         * Handle the incoming or cancelled call invite
-                         */
-                        plugin.handleIncomingCallIntent(intent);
-                        break;
-                    default:
-                        Log.d(TAG, "Received broadcast for other action " + action);
-                        break;
+                    /*
+                     * Handle the incoming or cancelled call invite
+                     */
+                    plugin.handleIncomingCallIntent(intent);
+                    break;
+                default:
+                    Log.d(TAG, "Received broadcast for other action " + action);
+                    break;
 
-                }
+            }
         }
     }
 
