@@ -8,6 +8,8 @@ import UserNotifications
 
 public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHandler, PKPushRegistryDelegate, NotificationDelegate, CallDelegate, AVAudioPlayerDelegate, CXProviderDelegate {
     
+    final let defaultCallKitIcon = "callkit_icon"
+    var callKitIcon: String?
 
     var _result: FlutterResult?
     private var eventSink: FlutterEventSink?
@@ -55,9 +57,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         let configuration = CXProviderConfiguration(localizedName: SwiftTwilioVoicePlugin.appName)
         configuration.maximumCallGroups = 1
         configuration.maximumCallsPerCallGroup = 1
-        if let callKitIcon = UIImage(named: "callkit_icon") {
-            configuration.iconTemplateImageData = callKitIcon.pngData()
-        }
+        let defaultIcon = UserDefaults.standard.string(forKey: defaultCallKitIcon) ?? defaultCallKitIcon
         
         clients = UserDefaults.standard.object(forKey: kClientList)  as? [String:String] ?? [:]
         callKitProvider = CXProvider(configuration: configuration)
@@ -67,6 +67,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         super.init()
         
         callKitProvider.setDelegate(self, queue: nil)
+        _ = updateCallKitIcon(icon: defaultIcon)
         
         voipRegistry.delegate = self
         voipRegistry.desiredPushTypes = Set([PKPushType.voIP])
@@ -252,8 +253,34 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             }
             result(true)
             return
+        } else if flutterCall.method == "updateCallKitIcon" {
+            let newIcon = arguments["icon"] as? String ?? defaultCallKitIcon
+            
+            // update icon & persist
+            result(updateCallKitIcon(icon: newIcon))
+            return
         }
         result(true)
+    }
+    
+    /// Updates the CallkitProvider configuration with a new icon, and saves this change to future use.
+    /// - Parameter icon: icon path / name
+    /// - Returns: true if succesful
+    func updateCallKitIcon(icon: String) -> Bool {
+        if let newIcon = UIImage(named: icon) {
+            let configuration = callKitProvider.configuration;
+            
+            // set new callkit icon
+            configuration.iconTemplateImageData = newIcon.pngData()
+            callKitProvider.configuration = configuration
+         
+            // save new icon to persist across sessions
+            UserDefaults.standard.set(icon, forKey: defaultCallKitIcon)
+            
+            return true;
+        }
+        
+        return false;
     }
     
     func makeCall(to: String)
