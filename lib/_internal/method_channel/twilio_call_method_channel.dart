@@ -64,16 +64,31 @@ class MethodChannelTwilioCall extends TwilioCallPlatform {
     return _channel.invokeMethod('holdCall', <String, dynamic>{});
   }
 
+  /// Query's active call holding state
+  Future<bool?> isHolding() {
+    return _channel.invokeMethod('isHolding', <String, dynamic>{});
+  }
+
   /// Toggles mute state to provided value
   @override
   Future<bool?> toggleMute(bool isMuted) {
     return _channel.invokeMethod('toggleMute', <String, dynamic>{"muted": isMuted});
   }
 
+  /// Query's mute status of call, true if call is muted
+  Future<bool?> isMuted() {
+    return _channel.invokeMethod('isMuted', <String, dynamic>{});
+  }
+
   /// Toggles speaker state to provided value
   @override
   Future<bool?> toggleSpeaker(bool speakerIsOn) {
     return _channel.invokeMethod('toggleSpeaker', <String, dynamic>{"speakerIsOn": speakerIsOn});
+  }
+
+  /// Query's speaker output status, true if on loud speaker.
+  Future<bool?> isOnSpeaker() {
+    return _channel.invokeMethod('isOnSpeaker', <String, dynamic>{});
   }
 
   @override
