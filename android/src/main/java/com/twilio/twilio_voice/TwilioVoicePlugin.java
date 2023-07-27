@@ -2,6 +2,7 @@ package com.twilio.twilio_voice;
 
 import androidx.annotation.NonNull;
 
+import com.twilio.audioswitch.*;
 import com.twilio.voice.Call;
 import com.twilio.voice.CallException;
 import com.twilio.voice.CallInvite;
@@ -25,6 +26,7 @@ import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.media.AudioAttributes;
+import android.media.AudioDeviceInfo;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
 import android.os.Build;
@@ -48,6 +50,7 @@ import io.flutter.plugin.common.MethodCall;
 import io.flutter.plugin.common.MethodChannel;
 import io.flutter.plugin.common.MethodChannel.Result;
 import io.flutter.plugin.common.PluginRegistry;
+import kotlin.Unit;
 
 import static java.lang.Boolean.getBoolean;
 
@@ -67,6 +70,7 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
 
     private boolean isReceiverRegistered = false;
     private VoiceBroadcastReceiver voiceBroadcastReceiver;
+    private AudioSwitch audioSwitch;
 
 
     private NotificationManager notificationManager;
@@ -106,6 +110,8 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
 
         plugin.notificationManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         plugin.voiceBroadcastReceiver = new VoiceBroadcastReceiver(plugin);
+        //plugin.audioSwitch = new AudioSwitch(context, true);
+        plugin.audioSwitch = new AudioSwitch(context, false);
         // plugin.registerReceiver();
 
         /*
@@ -353,6 +359,7 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
     @Override
     public void onDetachedFromEngine(@NonNull FlutterPluginBinding binding) {
         Log.d(TAG, "Detatched from Flutter engine");
+        audioSwitch.stop();
         SoundPoolManager.getInstance(context).release();
         context = null;
         methodChannel.setMethodCallHandler(null);
@@ -379,6 +386,7 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
             Log.d(TAG, "Setting up tokens");
             this.accessToken = call.argument("accessToken");
             this.fcmToken = call.argument("deviceToken");
+            startAudioSwitch(true);
             this.registerForCallInvites();
             result.success(true);
         } else if (call.method.equals("sendDigits")) {
@@ -438,6 +446,7 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
             result.success(true);
         } else if (call.method.equals("unregister")) {
             String accessToken = call.argument("accessToken");
+            startAudioSwitch(false);
             this.unregisterForCallInvites(accessToken);
             result.success(true);
         } else if (call.method.equals("makeCall")) {
@@ -626,6 +635,7 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
             @Override
             public void onConnectFailure(Call call, CallException error) {
                 // setAudioFocus(false);
+                audioSwitch.deactivate();
                 Log.d(TAG, "Connect failure");
                 String message = String.format("Call Error: %d, %s", error.getErrorCode(), error.getMessage());
                 Log.e(TAG, message);
@@ -635,7 +645,7 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
 
             @Override
             public void onConnected(Call call) {
-                // setAudioFocus(true);
+                audioSwitch.activate();
                 Log.d(TAG, "onConnected");
 //                eventSink.success("LOG|Connected");
                 activeCall = call;
@@ -660,6 +670,7 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
             @Override
             public void onDisconnected(Call call, CallException error) {
                 // setAudioFocus(false);
+                audioSwitch.deactivate();
                 Log.d(TAG, "Disconnected");
                 if (error != null) {
                     String message = String.format("Call Error: %d, %s", error.getErrorCode(), error.getMessage());
@@ -721,10 +732,46 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
         }
     }
 
+    private boolean isHeadsetOn() {
+        if (audioManager != null) {
+            AudioManager am = audioManager;
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+                return am.isWiredHeadsetOn() || am.isBluetoothScoOn() || am.isBluetoothA2dpOn();
+            } else {
+                AudioDeviceInfo[] devices = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS);
+
+                for (AudioDeviceInfo device : devices) {
+                    if (device.getType() == AudioDeviceInfo.TYPE_WIRED_HEADSET
+                            || device.getType() == AudioDeviceInfo.TYPE_WIRED_HEADPHONES
+                            || device.getType() == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
+                            || device.getType() == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        } else return false;
+    }
+
+    private void startAudioSwitch(boolean start) {
+        /*
+         * Start the audio device selector after the menu is created and update the icon when the
+         * selected audio device changes.
+         */
+        if (start) {
+            audioSwitch.start((audioDevices, audioDevice) -> {
+                //  updateAudioDeviceIcon(audioDevice);
+                return Unit.INSTANCE;
+            });
+        } else
+            audioSwitch.stop();
+    }
+
+
     private void setAudioFocus(boolean setFocus) {
         if (audioManager != null) {
+            int savedAudioMode = audioManager.getMode();
             if (setFocus) {
-                savedAudioMode = audioManager.getMode();
                 // Request audio focus before making any device switch.
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     AudioAttributes playbackAttributes = new AudioAttributes.Builder()
