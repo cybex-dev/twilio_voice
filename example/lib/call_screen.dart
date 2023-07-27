@@ -11,10 +11,12 @@ class CallScreen extends StatefulWidget {
 class _CallScreenState extends State<CallScreen> {
   var speaker = false;
   var mute = false;
+  var isHolding = false;
   var isEnded = false;
 
-  String? message = "Connecting...";
+  String message = "";
   late StreamSubscription<CallEvent> callStateListener;
+
   void listenCall() {
     callStateListener = TwilioVoice.instance.callEventsListener.listen((event) {
       print("voip-onCallStateChanged $event");
@@ -60,7 +62,7 @@ class _CallScreenState extends State<CallScreen> {
         case CallEvent.ringing:
           print("ringing");
           setState(() {
-            message = "Calling...";
+            message = "Ringing...";
           });
           break;
         case CallEvent.declined:
@@ -74,9 +76,12 @@ class _CallScreenState extends State<CallScreen> {
           break;
         case CallEvent.answer:
           print("call answered");
-          setState(() {
-            message = null;
-          });
+          final activeCall = TwilioVoice.instance.call.activeCall;
+          if(activeCall != null && activeCall.callDirection == CallDirection.incoming) {
+            setState(() {
+              message = "Answered";
+            });
+          }
           break;
         case CallEvent.hold:
         case CallEvent.log:
@@ -102,9 +107,41 @@ class _CallScreenState extends State<CallScreen> {
 
   @override
   void initState() {
-    listenCall();
     super.initState();
+    message = "Connecting...";
+    listenCall();
     caller = getCaller();
+    _loadCallState();
+  }
+
+  Future<void> _loadCallState() async {
+    await Future.wait([
+      _updateMuteState(),
+      _updateSpeakerState(),
+      _updateHoldState(),
+    ]);
+  }
+
+  Future<void> _updateMuteState() async {
+    final isMuted = await TwilioVoice.instance.call.isMuted();
+    setState(() {
+      mute = isMuted ?? false;
+    });
+  }
+
+  Future<void> _updateSpeakerState() async {
+    TwilioVoice.instance.call.isOnSpeaker().then((value) {
+      setState(() {
+        speaker = value ?? false;
+      });
+    });
+  }
+
+  Future<void> _updateHoldState() async {
+    final isHolding = await TwilioVoice.instance.call.isHolding();
+    setState(() {
+      this.isHolding = isHolding ?? false;
+    });
   }
 
   @override
@@ -177,7 +214,9 @@ class _CallScreenState extends State<CallScreen> {
                                 //   speaker = !speaker;
                                 // });
                                 TwilioVoice.instance.call
-                                    .toggleSpeaker(!speaker);
+                                    .toggleSpeaker(!speaker).then((value) {
+                                  _updateSpeakerState();
+                                });
                               },
                             ),
                           ),
@@ -208,7 +247,9 @@ class _CallScreenState extends State<CallScreen> {
                               ),
                               onTap: () {
                                 print("mute!");
-                                TwilioVoice.instance.call.toggleMute(!mute);
+                                TwilioVoice.instance.call.toggleMute(!mute).then((value) {
+                                  _updateMuteState();
+                                });
                                 // setState(() {
                                 //   mute = !mute;
                                 // });
@@ -217,6 +258,37 @@ class _CallScreenState extends State<CallScreen> {
                           ),
                         )
                       ]),
+                  TextButton(
+                    style: TextButton.styleFrom(
+                      backgroundColor: isHolding ? Theme.of(context).primaryColor : Colors.white24,
+                      padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24), side: BorderSide(color: Colors.white)),
+                    ),
+                    onPressed: () {
+                      print("Holding call? $isHolding");
+                      TwilioVoice.instance.call.holdCall(holdCall: !isHolding).then((value) {
+                        _updateHoldState();
+                      });
+                    },
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (isHolding)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 4),
+                            child: Icon(
+                              Icons.pause,
+                              color: Colors.white,
+                            ),
+                          ),
+                        Text(
+                          isHolding ? "Call on hold" : "Hold call",
+                          style: TextStyle(color: Colors.white),
+                        ),
+                      ],
+                    ),
+                  ),
                   RawMaterialButton(
                     elevation: 2.0,
                     fillColor: Colors.red,

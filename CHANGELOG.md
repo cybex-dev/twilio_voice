@@ -1,5 +1,8 @@
 ## Next release
 * Feat: [Android] Turn off the screen when a call is active and the head is against the handset. @solid-software (https://solid.software)
+* Feat: [Web] Web support with notifications (via Service Worker) with live example at https://twilio-voice-web.web.app @cybex-dev
+* Feat: [Android, iOS] Add handset call status: `isMuted()`, `isOnSpeaker()` and `isHolding()` @cybex-dev
+* Refactor: Hold call signature changed to `holdCall({bool shouldHold = true})` @cybex-dev
 * Feat: [iOS] Add support for changing callkit icon (future plans to extended this for Flutter assets) @cybex-dev
 
 ## 0.0.9
