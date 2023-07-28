@@ -1024,9 +1024,9 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
                     print("Twilio call not found")
                 }
                 break
-            default:
-                print("Notification type not found")
-                completionHandler()
+//            default:
+//                print("Notification type not found")
+//                completionHandler()
             }
         } else {
             print("Notification type not found")
@@ -1044,8 +1044,8 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
                 completionHandler([.banner, .sound])
             case .missed:
                 completionHandler([.banner, .sound])
-            default:
-                completionHandler([])
+//            default:
+//                completionHandler([])
             }
         } else {
             completionHandler([])
@@ -1318,7 +1318,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
 
         let modalResponse = alert.runModal()
         let alertButton = modalResponse.rawValue
-        let result = NSApplication.ModalResponse(rawValue: alertButton)
+        let _ = NSApplication.ModalResponse(rawValue: alertButton)
         completionHandler()
     }
 
