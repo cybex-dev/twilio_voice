@@ -252,6 +252,26 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
                 self.logEvent(prefix: "", description: shouldMute ? "Mute" : "Unmute")
                 completionHandler(true)
             }
+        } else {
+            completionHandler(false)
+        }
+    }
+
+    /// Check if active call is muted. Completion handler completes with true if successful.
+    ///
+    /// - Parameter completionHandler: completion handler -> (Bool?)
+    private func isMuted(completionHandler: @escaping OnCompletionValueHandler<Bool>) -> Void {
+        if let call = twilioCall {
+            call.isMuted { (value, error) in
+                if let error = error {
+                    print("TVCall isMuted: \(String(describing: error))")
+                    completionHandler(false)
+                    return
+                }
+                completionHandler(value ?? false)
+            }
+        } else {
+            completionHandler(false)
         }
     }
 
@@ -263,6 +283,15 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     /// - Parameter completionHandler: completion handler -> (Bool?)
     private func toggleSpeaker(_ speakerIsOn: Bool, completionHandler: @escaping OnCompletionValueHandler<Bool>) -> Void {
         logEvent(description: speakerIsOn ? "Speaker On" : "Speaker Off")
+        completionHandler(false)
+    }
+
+    /// Query if audio is on speaker. Completion handler completes with true if on speaker.
+    ///
+    /// Not currently implemented in macOS
+    ///
+    /// - Parameter completionHandler: completion handler -> (Bool?)
+    private func isOnSpeaker(completionHandler: @escaping OnCompletionValueHandler<Bool>) -> Void {
         completionHandler(false)
     }
 
@@ -324,6 +353,15 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     /// - Parameter completionHandler: completion handler -> (Bool?)
     private func holdCall(_ shouldHold: Bool, completionHandler: OnCompletionValueHandler<Bool>) -> Void {
         logEvent(description: shouldHold ? "Hold" : "Unhold")
+        completionHandler(false)
+    }
+
+    /// Queries twilioCall is on hold. Completion handler completes with true if on hold.
+    ///
+    /// Not currently implemented in macOS
+    ///
+    /// - Parameter completionHandler: completion handler -> (Bool?)
+    private func isHolding(completionHandler: @escaping OnCompletionValueHandler<Bool>) -> Void {
         completionHandler(false)
     }
 
@@ -558,6 +596,17 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
             };
             break
 
+        case .isMuted:
+            guard twilioCall != nil else {
+                result(false)
+                return
+            }
+
+            isMuted { muted in
+                result(muted ?? false)
+            }
+            break
+
         case .toggleSpeaker:
             guard let speakerIsOn = arguments["speakerIsOn"] as? Bool else {
                 let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.MALFORMED_ARGUMENTS, message: "No 'speakerIsOn' argument provided", details: nil)
@@ -573,6 +622,17 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
 
             toggleSpeaker(speakerIsOn) { success in
                 result(success ?? false)
+            }
+            break
+
+        case .isOnSpeaker:
+            guard twilioCall != nil else {
+                result(false)
+                return
+            }
+
+            isOnSpeaker { speakerIsOn in
+                result(speakerIsOn ?? false)
             }
             break
 
@@ -629,6 +689,17 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
             }
 
             holdCall(shouldHold) { success in
+                result(success ?? false)
+            }
+            break
+
+        case .isHolding:
+            guard twilioCall != nil else {
+                result(false)
+                return
+            }
+
+            isHolding { success in
                 result(success ?? false)
             }
             break
