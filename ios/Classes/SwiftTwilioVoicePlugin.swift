@@ -323,7 +323,8 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     
     func makeCall(to: String)
     {
-        if (self.call != nil && self.call?.state == .connected) {
+        // Cancel the previous call before making another one.
+        if (self.call != nil) {
             self.userInitiatedDisconnect = true
             performEndCallAction(uuid: self.call!.uuid!)            
         } else {
