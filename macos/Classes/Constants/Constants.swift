@@ -11,4 +11,6 @@ class Constants {
     static let PARAM_CLOSE_PROTECTION: String = "closeProtection"
     static let PARAM_ALLOW_INCOMING_WHILE_BUSY: String = "allowIncomingWhileBusy"
     static let kDEVICETOKEN: String = "DEVICETOKEN"
+
+    static let PARAM_CONNECT_PARAMS: String = "params"
 }

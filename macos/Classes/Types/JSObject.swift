@@ -262,6 +262,39 @@ public class JSObject: NSObject, WKScriptMessageHandler {
         webView.evaluateJavaScript(javascript: JS, sourceURL: "assign_\(jsObjectName)_\(method)_args", completionHandler: completionHandler)
     }
 
+    /// Call a method on the javascript object with arguments returning a promise, then assign the result to a JS variable on success or log the error.
+    /// - Parameters:
+    ///   - method: javascript method name
+    ///   - withArgs: arguments to pass to the method (must be JSON encodable)
+    ///   - assignOnSuccess: assign to JS variable on success
+    ///   - completionHandler: completion handler
+    ///
+    /// - Example:
+    /// ```
+    /// _test = await _device.doSomething("123");
+    /// ```
+    func callPromise(method: String, withArgs: [Any], assignOnSuccess: String? = nil, completionHandler: OnCompletionErrorHandler?) {
+        let argsString = JSObject.toArgString(withArgs)
+        let JS = """
+                 if(!!\(jsObjectName) && typeof \(jsObjectName).\(method) === 'function') {
+                    var _ = \(jsObjectName).\(method)(\(argsString)).then((value) => {
+                        \(assignOnSuccess != nil ? "\(assignOnSuccess!) = value;" : "")
+                    }).catch((error) => {
+                        console.error(error);
+                    });
+                 } else {
+                    throw new Error('\(jsObjectName).\(method) is not a function');
+                 }
+                 """
+        webView.evaluateJavaScript(javascript: JS, sourceURL: "assign_\(jsObjectName)_\(method)_args") { (_, error) in
+            if let error = error {
+                completionHandler?(error)
+            } else {
+                completionHandler?(nil)
+            }
+        }
+    }
+
     /// Create a new javascript object
     /// - Parameters:
     ///   - webView: webview

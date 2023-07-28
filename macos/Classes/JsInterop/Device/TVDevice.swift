@@ -73,15 +73,12 @@ public class TVDevice: JSObject, TVDeviceDelegate, JSMessageHandlerDelegate, Dis
     ///   - assignTo: variable name to assign the [TVCall](x-source-tag://TVCall) object to
     ///   - completionHandler: completion handler
     /// - SeeAlso: Twilio [Device.connect](https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#deviceconnectconnectoptions)
-    func connect(_ options: TVDeviceConnectOptions?, assignTo: String = "_call", completionHandler: OnCompletionHandler<TVCall>? = nil) -> Void {
-        let arg = options?.toDictionary() ?? [:]
-        call(method: "connect", withArgs: [arg], assignTo: assignTo, wait: true) { result, error in
+    func connect(_ options: TVDeviceConnectOptions, assignTo: String = "_call", completionHandler: OnCompletionHandler<TVCall>? = nil) -> Void {
+        callPromise(method: "connect", withArgs: [options], assignOnSuccess: assignTo) { error in
             if let error = error {
                 print(error)
                 completionHandler?(nil, error)
-            }
-
-            if result != nil {
+            } else {
                 let call = TVCall(overrideJSObjectName: assignTo, webView: self.webView)
                 call.attachEventListeners()
                 completionHandler?(call, nil)
