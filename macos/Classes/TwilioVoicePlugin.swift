@@ -93,7 +93,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
         guard let viewController = viewController as? FlutterViewController else {
             fatalError("rootViewController is not type FlutterViewController")
         }
-        viewController.view.addSubview(webView!)
+        webView?.alphaValue = 0.0
         let registrar = viewController.registrar(forPlugin: "twilio_voice")
         let eventChannel = FlutterEventChannel(name: "twilio_voice/events", binaryMessenger: registrar.messenger)
         eventChannel.setStreamHandler(self)
