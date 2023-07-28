@@ -1,43 +1,64 @@
 # twilio_voice
 
-Provides an interface to Twilio's Programmable Voice SDK to allow voice-over-IP (VoIP) calling into your Flutter applications.
-This plugin was taken from the original flutter_twilio_voice, as it seems that plugin is no longer maintained, this one is.
+Provides an interface to Twilio's Programmable Voice SDK to allow voice-over-IP (VoIP) calling into
+your Flutter applications.
+This plugin was taken from the original flutter_twilio_voice, as it seems that plugin is no longer
+maintained, this one is.
 
 ## Features
+
 - Receive and place calls from iOS devices, uses callkit to receive calls.
 - Receive and place calls from Android devices, uses custom UI to receive calls.
-- Receive and place calls from MacOS devices, uses custom UI to receive calls (in future & macOS 13.0+, we'll be using CallKit).
+- Receive and place calls from MacOS devices, uses custom UI to receive calls (in future & macOS
+  13.0+, we'll be using CallKit).
 
 ## Feature addition schedule:
-- Web support (in testing, see [cybex-dev/feat_web_support](https://github.com/cybex-dev/twilio_voice/tree/feat_web_support))
+
+- Web support (in testing,
+  see [cybex-dev/feat_web_support](https://github.com/cybex-dev/twilio_voice/tree/feat_web_support))
 - Audio device selection support (select input/output audio devices)
 - Add Bluetooth support (integration)
 - Update plugin to Flutter federated packages
 - Desktop platform support (implementation as JS wrapper/native implementation, early development)
-- Unify Android & iOS incoming call screens with predefined parameters to autofill UI elements (in development).
+- Unify Android & iOS incoming call screens with predefined parameters to autofill UI elements (in
+  development).
 
 Got a feature you want to add, suggest? File a feature request or PR.
 
 ### Android Limitations
 
-As iOS has CallKit, an Apple provided UI for answering calls, there is no default UI for android to receive calls, for this reason a default UI was made. To increase customization, the UI will use a splash_icon.png registered on your res/drawable folder. I haven't found a way to customize colors, if you find one, please submit a pull request.
+As iOS has CallKit, an Apple provided UI for answering calls, there is no default UI for android to
+receive calls, for this reason a default UI was made. To increase customization, the UI will use a
+splash_icon.png registered on your res/drawable folder. I haven't found a way to customize colors,
+if you find one, please submit a pull request.
 
 ### macOS Limitations
 
-1. CallKit support is found in macOS 13.0+ which there is no support for yet. In future, this will be taken into consideration for feature development.
-2. Twilio Voice does not offer a native SDK for macOS, so we're using the Twilio Voice Web SDK (twilio-voice.js, v2.4.0) to provide the functionality. This is a temporary solution until (or even if) Twilio Voice SDK for macOS is released. 
+1. CallKit support is found in macOS 13.0+ which there is no support for yet. In future, this will
+   be taken into consideration for feature development.
+2. Twilio Voice does not offer a native SDK for macOS, so we're using the Twilio Voice Web SDK (
+   twilio-voice.js, v2.4.1-dev) to provide the functionality. This is a temporary solution until (or
+   even if) Twilio Voice SDK for macOS is released.
 
-This limits macOS to not support remote push notifications `.voip` and `.apns` as the web SDK does not support this. Instead, it uses a web socket connection to listen for incoming calls, arguably more efficient vs time but forces the app to be open at all times to receive incoming calls. 
+This limits macOS to not support remote push notifications `.voip` and `.apns` as the web SDK does
+not support this. Instead, it uses a web socket connection to listen for incoming calls, arguably
+more efficient vs time but forces the app to be open at all times to receive incoming calls.
 
 ### Setup
-Please follow Twilio's quickstart setup for each platform, you don't need to write the native code but it will help you understand the basic functionality of setting up your server, registering your iOS app for VOIP, etc.
+
+Please follow Twilio's quickstart setup for each platform, you don't need to write the native code
+but it will help you understand the basic functionality of setting up your server, registering your
+iOS app for VOIP, etc.
 
 ### iOS Setup
 
-To customize the icon displayed on a CallKit call, Open XCode and add a png icon named 'callkit_icon' to your assets.xassets folder
+To customize the icon displayed on a CallKit call, Open XCode and add a png icon named '
+callkit_icon' to your assets.xassets folder
 
 ### Android Setup:
-register in your `AndroidManifest.xml` the service in charge of displaying incoming call notifications:
+
+register in your `AndroidManifest.xml` the service in charge of displaying incoming call
+notifications:
 
 ``` xml
 <Application>
@@ -51,52 +72,99 @@ register in your `AndroidManifest.xml` the service in charge of displaying incom
   </service>
 ```
 
+### MacOS Setup:
+
+The plugin is essentially a [WKWebView](https://developer.apple.com/documentation/webkit/wkwebview)
+wrapper. This makes macOS integration a drop-in solution.
+
+However, you'll need to:
+
+1. add the following to your `Info.plist` file:
+
+``` xml
+<key>NSMicrophoneUsageDescription</key>
+<string>Allow microphone access to make calls</string>
+```
+
+2. include Hardened Runtime entitlements (this is required for App Store distributed MacOS apps):
+
+``` xml
+<key>com.apple.security.audio-input</key>
+<true/>
+
+<!--Optionally for bluetooth support/permissions-->
+<key>com.apple.security.device.bluetooth</key>
+<true/>
+```
+
+Lastly and most importantly,
+
+3. ensure the `index.html` and `twilio.min.js` is bundled inside of `twilio_voice` package (this
+   shouldn't be a problem, but just in case). Found in `twilio_voice.../.../Classes/Resources/*`.
+
+See [this](https://developer.apple.com/documentation/security/notarizing_macos_software_before_distribution#3087727)
+for more information on preparing for publishing your macOS app
 
 ### Usage
 
-The plugin was separated into two classes, the `TwilioVoice.instance` and `TwilioVoice.instance.call`, the first one is in charge of general configuration and the second one is in charge of managing calls.
+The plugin was separated into two classes, the `TwilioVoice.instance`
+and `TwilioVoice.instance.call`, the first one is in charge of general configuration and the second
+one is in charge of managing calls.
 
-Register iOS capabilities 
+Register iOS capabilities
+
 - Add Audio and Voice over IP in background modes
 
 ### TwilioVoice.instance
 
-
 #### Setting the tokens
 
 call `TwilioVoice.instance.setTokens` as soon as your app starts.
-- `accessToken` provided from your server, you can see an example cloud function [here](https://github.com/diegogarciar/twilio_voice/blob/master/functions.js).
+
+- `accessToken` provided from your server, you can see an example cloud
+  function [here](https://github.com/diegogarciar/twilio_voice/blob/master/functions.js).
 - `deviceToken` is automatically handled on iOS, for android you need to pass a FCM token.
 
-call `TwilioVoice.instance.unregister` to unregister from Twilio, if no access token is passed, it will use the token provided in `setTokens` at the same session.
-
-
+call `TwilioVoice.instance.unregister` to unregister from Twilio, if no access token is passed, it
+will use the token provided in `setTokens` at the same session.
 
 ### Call Identifier
-As incoming call UI is shown in background and the App can even be closed when receiving the calls, you can map call identifiers such as `firebaseAuth` userIds to real names, this operation must be done before actually receiving the call. So if you have a chat app, and know the members names, register them so when they call, the call UI can display their names and not their userIds.
 
+As incoming call UI is shown in background and the App can even be closed when receiving the calls,
+you can map call identifiers such as `firebaseAuth` userIds to real names, this operation must be
+done before actually receiving the call. So if you have a chat app, and know the members names,
+register them so when they call, the call UI can display their names and not their userIds.
 
 #### Registering a client
+
 ```
 TwilioVoice.instance.registerClient(String clientId, String clientName)
 ```
 
 #### Unregistering a client
+
 ```
 TwilioVoice.instance.unregisterClient(String clientId)
 ```
 
 #### Default caller
-You can also set a default caller, such as "unknown number" or "chat friend" in case a call comes in from an unregistered client.
+
+You can also set a default caller, such as "unknown number" or "chat friend" in case a call comes in
+from an unregistered client.
 
 ```
 TwilioVoice.instance.setDefaultCallerName(String callerName)
 ```
 
 ### Call Events
-use stream `TwilioVoice.instance.callEventsListener` to receive events from the TwilioSDK such as call events and logs, it is a broadcast so you can listen to it on different parts of your app. Some events might be missed when the app has not launched, please check out the example project to find the workarounds.
+
+use stream `TwilioVoice.instance.callEventsListener` to receive events from the TwilioSDK such as
+call events and logs, it is a broadcast so you can listen to it on different parts of your app. Some
+events might be missed when the app has not launched, please check out the example project to find
+the workarounds.
 
 The events sent are the following
+
 - ringing
 - connected
 - callEnded
@@ -110,17 +178,19 @@ The events sent are the following
 - answer
 
 ## showMissedCallNotifications
-By default a local notification will be shown to the user after missing a call, clicking on the notification will call back the user. To remove this feature, set `showMissedCallNotifications` to `false`.
 
-
+By default a local notification will be shown to the user after missing a call, clicking on the
+notification will call back the user. To remove this feature, set `showMissedCallNotifications`
+to `false`.
 
 ### Calls
 
-
 #### Make a Call
+
 `from` your own identifier
 `to` the id you want to call
 use `extraOptions` to pass additional variables to your server callback function.
+
 ```
  await TwilioVoice.instance.call.place(from:myId, to: clientId, extraOptions)
                    ;
@@ -155,28 +225,37 @@ use `extraOptions` to pass additional variables to your server callback function
 
 ```
 
-
 ### Permissions
 
 #### Microphone
-To receive and place calls you need Microphone permissions, register the microphone permission in your info.plist for iOS.
 
-You can use `TwilioVoice.instance.hasMicAccess` and `TwilioVoice.instance.requestMicAccess` to check and request the permission. Permissions is also automatically requested when receiving a call.
+To receive and place calls you need Microphone permissions, register the microphone permission in
+your info.plist for iOS.
+
+You can use `TwilioVoice.instance.hasMicAccess` and `TwilioVoice.instance.requestMicAccess` to check
+and request the permission. Permissions is also automatically requested when receiving a call.
 
 #### Background calls (Android only on some devices)
-Xiaomi devices, and maybe others, need a special permission to receive background calls. use `TwilioVoice.instance.requiresBackgroundPermissions` to check if your device requires a special permission, if it does, show a rationale explaining the user why you need the permission. Finally call 
-`TwilioVoice.instance.requestBackgroundPermissions` which will take the user to the App Settings page to enable the permission.
 
+Xiaomi devices, and maybe others, need a special permission to receive background calls.
+use `TwilioVoice.instance.requiresBackgroundPermissions` to check if your device requires a special
+permission, if it does, show a rationale explaining the user why you need the permission. Finally
+call
+`TwilioVoice.instance.requestBackgroundPermissions` which will take the user to the App Settings
+page to enable the permission.
 
 ### Localization
-Because some of the UI is in native code, you need to localize those strings natively in your project. You can find in the example project localization for spanish, PRs are welcome for other languages.
+
+Because some of the UI is in native code, you need to localize those strings natively in your
+project. You can find in the example project localization for spanish, PRs are welcome for other
+languages.
 
 ---
 
-
 ## Twilio Setup/Quickstart Help
 
-Twilio makes use of cloud functions to generate access tokens and sends them to your app. Further, Twilio makes use of their own apps called TwiML apps to handle calling functions, etc
+Twilio makes use of cloud functions to generate access tokens and sends them to your app. Further,
+Twilio makes use of their own apps called TwiML apps to handle calling functions, etc
 
 There are 2 major components to get Twilio Setup.
 
@@ -188,10 +267,13 @@ There are 2 major components to get Twilio Setup.
 ### 1) Cloud Functions
 
 Cloud functions can be separated or grouped together. The main 2 components are:
+
 - generate access tokens
 - `make-call` endpoint to actually place the call
 
-You can host both in firebase, in TwiML apps or a mixture. The setup below assumes a mixture, where Firebase Functions hosts the `access-token` for easy integration into Flutter and TwiML hosting the `make-call` function.
+You can host both in firebase, in TwiML apps or a mixture. The setup below assumes a mixture, where
+Firebase Functions hosts the `access-token` for easy integration into Flutter and TwiML hosting
+the `make-call` function.
 
 ## Cloud-Functions-Step-1: Create your TwiML app
 
@@ -204,7 +286,8 @@ Prerequisites
 
 ## Setting up the Application
 
-Grab [this](https://github.com/twilio/voice-quickstart-server-node) project from github, the sample TwiML app.
+Grab [this](https://github.com/twilio/voice-quickstart-server-node) project from github, the sample
+TwiML app.
 
 ```bash
 cp .env.example .env
@@ -220,7 +303,8 @@ Next, we need to install our dependencies from npm:
 npm install
 ```
 
-To make things easier for you, go into the `src/` folder, rename the `server.js` file to `make-call`. This assumes each function will have its own file which for a new project isn't a bad idea.
+To make things easier for you, go into the `src/` folder, rename the `server.js` file to `make-call`
+. This assumes each function will have its own file which for a new project isn't a bad idea.
 
 Then add the following code:
 
@@ -293,7 +377,9 @@ Afterwards, login to twilio using: (b sure to provide Twilio account SID and aut
 twilio login
 ```
 
-We need to generate an app, this will give us an App SID to use later in firebase functions, (see [this](https://github.com/twilio/voice-quickstart-ios#3-create-a-twiml-application-for-the-access-token) more info)
+We need to generate an app, this will give us an App SID to use later in firebase functions, (
+see [this](https://github.com/twilio/voice-quickstart-ios#3-create-a-twiml-application-for-the-access-token)
+more info)
 
 ### Create TwiML app
 
@@ -306,9 +392,12 @@ twilio api:core:applications:create \
 --voice-url="https://my-quickstart-dev.twil.io/make-call"
 ```
 
-This will present you with a application SID in the format ```APxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx```, we will use this later in firebase config and generating push credential keys.
+This will present you with a application SID in the format ```APxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx```,
+we will use this later in firebase config and generating push credential keys.
 
-**Very Important!** The URL given here `https://my-quickstart-dev.twil.io/make-call` won't work for you. Once you deployed your TwiML application (later), a URL is given to you (on first deploy) which you need to copy and paste as your **Request URL** call. If you don't do this, calling won't work!
+**Very Important!** The URL given here `https://my-quickstart-dev.twil.io/make-call` won't work for
+you. Once you deployed your TwiML application (later), a URL is given to you (on first deploy) which
+you need to copy and paste as your **Request URL** call. If you don't do this, calling won't work!
 
 ### Configure environment
 
@@ -320,16 +409,20 @@ next, edit the `.env` file in the format
 ACCOUNT_SID=(insert account SID)
 APP_SID=(insert App SID, found on TwiML app or the APxxxxx key above)
 ```
+
 `API_KEY` and `API_KEY_SECRET` aren't necessary here since we won't be using them
 
 #### Get Push Credential:
 
 **We will generate them a bit later**
 
-- Android FCM: [Android instructions](https://github.com/twilio/voice-quickstart-android#7-create-a-push-credential-using-your-fcm-server-key)
-- Apple APNS: [Apple instructions](https://github.com/twilio/voice-quickstart-ios#6-create-a-push-credential-with-your-voip-service-certificate)
+- Android
+  FCM: [Android instructions](https://github.com/twilio/voice-quickstart-android#7-create-a-push-credential-using-your-fcm-server-key)
+- Apple
+  APNS: [Apple instructions](https://github.com/twilio/voice-quickstart-ios#6-create-a-push-credential-with-your-voip-service-certificate)
 
-You will get a Push Credential SID in the format: `CRxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`, use this in `PUSH_CREDENTIAL_SID`
+You will get a Push Credential SID in the format: `CRxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`, use this
+in `PUSH_CREDENTIAL_SID`
 
 ### Deploying
 
@@ -343,8 +436,9 @@ Navigate to root directory, and deploy using
 twilio serverless:deploy
 ```
 
-**Very Important!**: once complete (if you haven't done so), make sure to add the `make-call` endpoint your Twilio app's `Request URL` in the main Twilio page. This URL will be shown as part of the deployment text. If this isn't done, calling won't work!
-
+**Very Important!**: once complete (if you haven't done so), make sure to add the `make-call`
+endpoint your Twilio app's `Request URL` in the main Twilio page. This URL will be shown as part of
+the deployment text. If this isn't done, calling won't work!
 
 ### Cloud-Functions-Step-2: Setup Firebase & Configuration
 
@@ -360,16 +454,21 @@ Twilio's configurations are stored in `.runtimeconfig.json` which contains:
     "apple_push_credential_debug": "",
     "apple_push_credential_release": ""
 
-_**Note:** this is used for local emulator testing, but you need to deploy these to your firebase function application once you are ready to go live. If you don't, this won't work!_
+_**Note:** this is used for local emulator testing, but you need to deploy these to your firebase
+function application once you are ready to go live. If you don't, this won't work!_
 
-**Push Credentials** are created once (for iOS, Android) and used to generate `access-token`s, a callback function for all Twilio apps to use for their communication.
+**Push Credentials** are created once (for iOS, Android) and used to generate `access-token`s, a
+callback function for all Twilio apps to use for their communication.
 
 ---
 
-Below are the 3 operations you need to run to generate push credentials that should be added into the `.runtimeconfig.json` above
+Below are the 3 operations you need to run to generate push credentials that should be added into
+the `.runtimeconfig.json` above
 
 ##### Android
-To generate Android push credentials, get the Cloud Messaging server key from Firebase FCM, and add it to the following:
+
+To generate Android push credentials, get the Cloud Messaging server key from Firebase FCM, and add
+it to the following:
 
 ```
 twilio api:chat:v2:credentials:create \
@@ -380,13 +479,18 @@ twilio api:chat:v2:credentials:create \
 
 and then place into the field: `android_push_credential` above
 
-This generated a push credential SID in the format `CRxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx` which must be used to generate access tokens for android devices.
+This generated a push credential SID in the format `CRxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx` which must
+be used to generate access tokens for android devices.
 
-see for more info: https://github.com/twilio/voice-quickstart-android#7-create-a-push-credential-using-your-fcm-server-key
+see for more
+info: https://github.com/twilio/voice-quickstart-android#7-create-a-push-credential-using-your-fcm-server-key
 
 ##### iOS
 
-Similar to Android, but more steps including using .p12 certificates. To get these certificates, login into [Apple's developer site](https://developer.apple.com/) and go to the [certificates page](https://developer.apple.com/account/resources/certificates/list). You need to generate a VoIP Services certificate as shown below.
+Similar to Android, but more steps including using .p12 certificates. To get these certificates,
+login into [Apple's developer site](https://developer.apple.com/) and go to
+the [certificates page](https://developer.apple.com/account/resources/certificates/list). You need
+to generate a VoIP Services certificate as shown below.
 
 ![voip_services.png](images/voip_services.png)
 
@@ -396,7 +500,8 @@ Similar to Android, but more steps including using .p12 certificates. To get the
 
 Using sandbox VoIP certificate:
 
-> Export your VoIP Service Certificate as a .p12 file from Keychain Access and extract the certificate and private key from the .p12 file using the openssl command.
+> Export your VoIP Service Certificate as a .p12 file from Keychain Access and extract the
+> certificate and private key from the .p12 file using the openssl command.
 
 ```
 $ openssl pkcs12 -in PATH_TO_YOUR_SANDBOX_P12 -nokeys -out sandbox_cert.pem -nodes
@@ -421,7 +526,8 @@ then place it into the field `apple_push_credential_debug`
 
 Using production VoIP certificate:
 
-> Export your VoIP Service Certificate as a .p12 file from Keychain Access and extract the certificate and private key from the .p12 file using the openssl command.
+> Export your VoIP Service Certificate as a .p12 file from Keychain Access and extract the
+> certificate and private key from the .p12 file using the openssl command.
 
 ```
 $ openssl pkcs12 -in PATH_TO_YOUR_P12 -nokeys -out prod_cert.pem -nodes
@@ -441,7 +547,8 @@ twilio api:chat:v2:credentials:create \
 
 then place it into the field `apple_push_credential_release`
 
-see for more info: https://github.com/twilio/voice-quickstart-ios#6-create-a-push-credential-with-your-voip-service-certificate
+see for more
+info: https://github.com/twilio/voice-quickstart-ios#6-create-a-push-credential-with-your-voip-service-certificate
 
 ---
 
@@ -451,9 +558,10 @@ see for more info: https://github.com/twilio/voice-quickstart-ios#6-create-a-pus
 
 To generate **access-tokens**, the following firebase function is used:
 
-_**Please Note** the default time is 1 hour token validity._ 
+_**Please Note** the default time is 1 hour token validity._
 
-See for more info: https://github.com/twilio/voice-quickstart-android/blob/master/Docs/access-token.md
+See for more
+info: https://github.com/twilio/voice-quickstart-android/blob/master/Docs/access-token.md
 
 **Firebase Cloud Function: access-token**
 
@@ -527,17 +635,23 @@ w
 });
 ```
 
-Add the function above to your Firebase Functions application, see [this](https://firebase.google.com/docs/functions/get-started) for more help on creating a firebase functions project
+Add the function above to your Firebase Functions application,
+see [this](https://firebase.google.com/docs/functions/get-started) for more help on creating a
+firebase functions project
 
-After you are done, deploy your `.runtimeconfig.json`, see [this](https://firebase.google.com/docs/functions/config-env) for more help.
+After you are done, deploy your `.runtimeconfig.json`,
+see [this](https://firebase.google.com/docs/functions/config-env) for more help.
 
-Once done with everything above, deploy your firebase function with this: 
+Once done with everything above, deploy your firebase function with this:
+
 ```bash
 firebase deploy --only functions
 ```
 
-##### Done! 
+##### Done!
 
 Calling should work naturally - just make sure to fetch the token from the endpoint and you can call
 
-See [example](https://github.com/diegogarciar/twilio_voice/blob/master/example/lib/main.dart#L51) code, make sure to change the `voice-accessToken` to your function name, given to you by firebase when deploying (as part of the deploy text)
+See [example](https://github.com/diegogarciar/twilio_voice/blob/master/example/lib/main.dart#L51)
+code, make sure to change the `voice-accessToken` to your function name, given to you by firebase
+when deploying (as part of the deploy text)
