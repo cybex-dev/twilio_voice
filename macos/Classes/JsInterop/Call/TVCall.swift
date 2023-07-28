@@ -145,7 +145,7 @@ public class TVCall: JSObject, TVCallDelegate, JSMessageHandlerDelegate, Disposa
     /// Attach event listeners to JS [TVCall] events. Apply when [TVCall] is placed, or incoming call received via [TVDeviceDelegate.onIncoming]
     /// - SeeAlso Twilio [Call.Events](https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#events)
     func attachEventListeners() {
-
+        print("Attaching event listeners to [TVCall]")
         let events: [TVCallEvent] = [.accept, .cancel, .disconnect, .error, .reconnected, .reconnected, .reject, .status]
         events.map {
                     $0.rawValue
@@ -165,6 +165,9 @@ public class TVCall: JSObject, TVCallDelegate, JSMessageHandlerDelegate, Disposa
     ///
     /// - SeeAlso Twilio [Call.Events](https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#events)
     func detachEventListeners() {
+        print("Detaching event listeners from [TVCall]")
+        detachMessageHandler()
+        return;
         let events: [TVCallEvent] = [.accept, .cancel, .disconnect, .error, .reconnected, .reconnected, .reject, .status]
         events.map {
                     $0.rawValue
@@ -314,10 +317,8 @@ public class TVCall: JSObject, TVCallDelegate, JSMessageHandlerDelegate, Disposa
     // MARK: - Disposable
 
     public func dispose() {
-        // possible race condition here, if the call is destroyed before the events are detached
         if super.handlerAttached {
-            // NOTE(cybex-dev) do not enable
-//            detachEventListeners()
+            detachEventListeners()
         }
         callDelegate = nil
         jsObjectDelegate = nil

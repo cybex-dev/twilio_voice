@@ -49,6 +49,7 @@ public class JSObject: NSObject, WKScriptMessageHandler {
     init(jsObjectName: String, webView: TVWebView, initialize: Bool = false) {
         self.jsObjectName = jsObjectName
         self.webView = webView
+        super.init()
         handlerAttached = false
         if initialize {
             let JS = "var \(jsObjectName);"
@@ -58,8 +59,24 @@ public class JSObject: NSObject, WKScriptMessageHandler {
                 }
             }
         }
+        attachMessageHandler()
     }
 
+    func attachMessageHandler() -> Void {
+        if !handlerAttached {
+            print("[\(jsObjectName)] Attaching message handler")
+            handlerAttached = true
+            webView.configuration.userContentController.add(self, name: jsObjectName)
+        }
+    }
+
+    func detachMessageHandler() -> Void {
+        if handlerAttached {
+            print("[\(jsObjectName)] Detaching message handler")
+            handlerAttached = false
+            webView.configuration.userContentController.removeScriptMessageHandler(forName: jsObjectName)
+        }
+    }
 
     /// Add event listener to JSObject
     /// - Parameters:
@@ -77,6 +94,7 @@ public class JSObject: NSObject, WKScriptMessageHandler {
     /// _device.on('ready', _on_event__device_ready);
     /// ```
     func addEventListener(_ event: String, onTriggeredAction: String? = nil, completionHandler: OnCompletionHandler<Bool>? = nil) {
+        print("[\(jsObjectName)] Adding event listener: \(event)")
         let JS = """
                     var _on_event_\(jsObjectName)_\(event) = function(...args) {
                         log("🔹", `triggering event: \(event) with argsLength: ${args.length}: ${JSON.stringify(args)}`);
@@ -93,10 +111,7 @@ public class JSObject: NSObject, WKScriptMessageHandler {
             if let error = error {
                 completionHandler?(false, error)
             } else {
-                if !self.handlerAttached {
-                    self.handlerAttached = true
-                    self.webView.configuration.userContentController.add(self, name: self.jsObjectName)
-                }
+                self.attachMessageHandler()
                 completionHandler?(result as? Bool, nil)
             }
         }
@@ -115,6 +130,7 @@ public class JSObject: NSObject, WKScriptMessageHandler {
     /// delete _on_event__device_ready;
     /// ```
     func removeEventListener(_ event: String, completionHandler: OnCompletionHandler<Bool>? = nil) {
+        print("[\(jsObjectName)] Removing event listener: \(event)")
         let JS = """
                     log("🔹", 'removeEventListener: \(event)');
                     if (typeof _on_event_\(jsObjectName)_\(event) !== 'undefined') {
@@ -123,8 +139,7 @@ public class JSObject: NSObject, WKScriptMessageHandler {
                     }
                  """
         webView.evaluateJavaScript(javascript: JS, sourceURL: "\(jsObjectName)_removeEventListener(\(event))") { result, error in
-            self.handlerAttached = false
-            self.webView.configuration.userContentController.removeScriptMessageHandler(forName: self.jsObjectName)
+            self.detachMessageHandler()
 
             if let error = error {
                 print("Error removing event listener: \(error)")

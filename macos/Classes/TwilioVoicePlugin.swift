@@ -1117,6 +1117,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
             }
         }
 
+        call.dispose()
         if (twilioCall != nil) {
             twilioCall = nil
         }
@@ -1154,7 +1155,6 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
 
     public func onCallReject() {
         if twilioCall != nil {
-            twilioCall?.callDelegate = nil
             twilioCall = nil
         }
         logEvent(prefix: "", description: "Call Rejected")
