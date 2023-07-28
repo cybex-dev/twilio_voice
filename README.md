@@ -5,23 +5,23 @@ your Flutter applications.
 This plugin was taken from the original flutter_twilio_voice, as it seems that plugin is no longer
 maintained, this one is.
 
+#### Live Example/Samples:
+- [Twilio Voice Web](https://twilio-voice-web.web.app/#/)
+
 ## Features
 
 - Receive and place calls from iOS devices, uses callkit to receive calls.
 - Receive and place calls from Android devices, uses custom UI to receive calls.
+- Receive and place calls from Web (FCM push notification integration not yet supported by Twilio Voice Web, see [here](https://github.com/twilio/twilio-voice.js/pull/159#issuecomment-1551553299) for discussion)
 - Receive and place calls from MacOS devices, uses custom UI to receive calls (in future & macOS
   13.0+, we'll be using CallKit).
 
 ## Feature addition schedule:
-
-- Web support (in testing,
-  see [cybex-dev/feat_web_support](https://github.com/cybex-dev/twilio_voice/tree/feat_web_support))
-- Audio device selection support (select input/output audio devices)
-- Add Bluetooth support (integration)
-- Update plugin to Flutter federated packages
-- Desktop platform support (implementation as JS wrapper/native implementation, early development)
-- Unify Android & iOS incoming call screens with predefined parameters to autofill UI elements (in
-  development).
+- Audio device selection support (select input/output audio devices, delayed)
+- Add Bluetooth support (integration, in-progress)
+- Update plugin to Flutter federated packages (step 1 of 2 with Web support merge)
+- Desktop platform support (implementation as JS wrapper/native implementation, Mac development in-testing, Windows/Linux to start development)
+- Unify Android & iOS incoming call screens with predefined parameters to autofill UI elements (in development).
 
 Got a feature you want to add, suggest? File a feature request or PR.
 
@@ -72,6 +72,48 @@ notifications:
   </service>
 ```
 
+### Web Setup:
+
+There are 2 important files for Twilio incoming/missed call notifications to work:
+- `notifications.js` is the main file, it handles the notifications and the service worker.
+- `twilio-sw.js` is the service worker, it is used to handle the incoming calls.
+
+Also, the twilio javascript SDK itself, `twilio.min.js` is needed.
+
+To ensure proper/as intended setup:
+1. Get all 3 files (`notifications.js`, `twilio.min.js` and `twilio-sw.js`) from `example/web` folder
+2. Copy all 3 into your own project,
+3. (optional) Review & change the `notifications.js`, `twilio-sw.js) files to match your needs.
+
+Finally, add the following code to your `index.html` file, **at the end of body tag**:
+
+``` html
+    <body>        
+        <!--twilio native js library-->
+        <script type="text/javascript" src="./twilio.min.js"></script>
+        <!--twilio native js library-->
+        <script type="text/javascript" src="./notifications.js"></script>
+        
+        <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', async () => {
+                await navigator.serviceWorker.register('twilio-sw.js').then(value => {
+                    console.log('Twilio Voice Service worker registered successfully.');
+                }).catch((error) => {
+                    console.warn('Error registering Twilio Service Worker: ' + error.message + '. This prevents notifications from working natively');
+                });
+            });
+        }
+        </script>
+    </body>
+```
+
+#### Web Considerations
+Notice should be given to using `firebase-messaging-sw.js` in addition to `twilio-sw.js` since these may cause conflict in service worker events being handled.
+
+_If you need to debug the service worker, open up Chrome Devtools, go to Application tab, and select Service Workers from the left menu. There you can see the service workers and their status.
+To review service worker `notificationclick`, `notificationclose`, `message`, etc events - do this using Chrome Devtools (Sources tab, left panel below 'site code' the service workers are listed)_
+
 ### MacOS Setup:
 
 The plugin is essentially a [WKWebView](https://developer.apple.com/documentation/webkit/wkwebview)
@@ -80,26 +122,21 @@ wrapper. This makes macOS integration a drop-in solution.
 However, you'll need to:
 
 1. add the following to your `Info.plist` file:
-
-``` xml
-<key>NSMicrophoneUsageDescription</key>
-<string>Allow microphone access to make calls</string>
-```
-
+    ``` xml
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Allow microphone access to make calls</string>
+    ```
 2. include Hardened Runtime entitlements (this is required for App Store distributed MacOS apps):
+    ``` xml
+   <key>com.apple.security.audio-input</key>
+   <true/>
 
-``` xml
-<key>com.apple.security.audio-input</key>
-<true/>
+    <!--Optionally for bluetooth support/permissions-->
+   <key>com.apple.security.device.bluetooth</key>
+   <true/>
+    ```
 
-<!--Optionally for bluetooth support/permissions-->
-<key>com.apple.security.device.bluetooth</key>
-<true/>
-```
-
-Lastly and most importantly,
-
-3. ensure the `index.html` and `twilio.min.js` is bundled inside of `twilio_voice` package (this
+3. Lastly and most importantly, ensure the `index.html` and `twilio.min.js` is bundled inside of `twilio_voice` package (this
    shouldn't be a problem, but just in case). Found in `twilio_voice.../.../Classes/Resources/*`.
 
 See [this](https://developer.apple.com/documentation/security/notarizing_macos_software_before_distribution#3087727)
@@ -655,3 +692,11 @@ Calling should work naturally - just make sure to fetch the token from the endpo
 See [example](https://github.com/diegogarciar/twilio_voice/blob/master/example/lib/main.dart#L51)
 code, make sure to change the `voice-accessToken` to your function name, given to you by firebase
 when deploying (as part of the deploy text)
+
+
+## Future Work
+- Move package to `federated plugin` structure (see [here](https://flutter.dev/go/federated-plugins) for more info), see reduced overhead advantages covered as motivation (see [here](https://medium.com/flutter/how-to-write-a-flutter-web-plugin-part-2-afdddb69ece6) for more info))
+
+## Updating Twilio Voice JS SDK
+`twilio.js` is no longer hosted via CDNs (see [reference](https://github.com/twilio/twilio-voice.js/blob/master/README.md#cdn)), instead it is hosted via npm / github. See instructions found [here](https://github.com/twilio/twilio-voice.js/blob/master/README.md#github)
+This is automatically added to your `web/index.html` file, as a `<script/>` tag during runtime. See [here](./lib/_internal/twilio_loader.dart) for more info.);

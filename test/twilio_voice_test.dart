@@ -15,4 +15,8 @@ void main() {
   tearDown(() {
     channel.setMockMethodCallHandler(null);
   });
+
+  test("Mock Test", () async {
+    expect(await channel.invokeMethod("42"), equals("42"));
+  });
 }
