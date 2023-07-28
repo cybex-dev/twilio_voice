@@ -6,19 +6,23 @@ import WebKit
 public class TVWebView: WKWebView, WKUIDelegate, WKScriptMessageHandler {
 
     init(messageHandler: String) {
-        let configuration = WKWebViewConfiguration()
-        configuration.userContentController.addUserScript(WKUserScript(source: LoggingMessageHandler.js, injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        configuration.userContentController.add(LoggingMessageHandler(), name: LoggingMessageHandler.handlerName)
-        super.init(frame: CGRect.zero, configuration: configuration)
+        super.init(frame: CGRect.zero, configuration: WKWebViewConfiguration())
 
         let bundle = Bundle(for: TwilioVoicePlugin.self)
         if let url = bundle.url(forResource: "Resources/index", withExtension: "html") {
             loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
         }
+
+        overrideLogging()
     }
 
     required init?(coder: NSCoder) {
         super.init(coder: coder)
+    }
+
+    private func overrideLogging() {
+        configuration.userContentController.addUserScript(WKUserScript(source: LoggingMessageHandler.js, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        configuration.userContentController.add(LoggingMessageHandler(), name: LoggingMessageHandler.handlerName)
     }
 
     /// Default script message handler
