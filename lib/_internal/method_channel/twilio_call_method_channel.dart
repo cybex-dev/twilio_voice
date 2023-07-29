@@ -98,11 +98,11 @@ class MethodChannelTwilioCall extends TwilioCallPlatform {
 
   @override
   Future<bool?> toggleBluetooth({bool bluetoothOn = true}) {
-    return _channel.invokeMethod('toggleSpeaker', <String, dynamic>{"bluetoothOn": bluetoothOn});
+    return _channel.invokeMethod('toggleBluetooth', <String, dynamic>{"bluetoothOn": bluetoothOn});
   }
 
   @override
   Future<bool?> isBluetoothOn() {
-    return _channel.invokeMethod('isOnSpeaker', <String, dynamic>{});
+    return _channel.invokeMethod('isBluetoothOn', <String, dynamic>{});
   }
 }
