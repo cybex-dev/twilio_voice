@@ -147,7 +147,7 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
         if (this.userId.isEmpty) {
           this.userId = user.uid;
         }
-        print("registering client ${userId} [firebase id ${user.uid}]");
+        print("registering client $userId [firebase id ${user.uid}]");
         registerUser();
 
         FirebaseMessaging.instance.requestPermission();
@@ -176,7 +176,7 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
 
     super.initState();
     waitForCall();
-    WidgetsBinding.instance!.addObserver(this);
+    WidgetsBinding.instance.addObserver(this);
 
     final partnerId = "alicesId";
     TwilioVoice.instance.registerClient(partnerId, "Alice");
@@ -278,7 +278,7 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
 
   @override
   void dispose() {
-    WidgetsBinding.instance!.removeObserver(this);
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 

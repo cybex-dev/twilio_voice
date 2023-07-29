@@ -7,21 +7,26 @@ enum CallStatus {
 
   // The media session associated with the call has been established - this depends on 'answerOnBridge' being set to true.
   // If not set to true, the call will be considered 'open' (or connected) once the call is connected to to Twilio.
+  open,
+  // (unofficial) synonymous with `open`
   connected,
 
   // The ICE connection was disconnected and a reconnection has been triggered.
   reconnecting,
 
-  // The ICE connection was disconnected, and has successfully reconnected.
+  // (unofficial) The ICE connection was disconnected, and has successfully reconnected.
   reconnected,
 
   // The callee has been notified of the call but has not yet responded.
   ringing,
 
-  // The recipient has rejected the incoming call.
+  // The call is incoming and hasn't yet been accepted.
+  pending,
+
+  //(unofficial) The recipient has rejected the incoming call.
   rejected,
 
-  // The recipient has answered the incoming call.
+  // (unofficial) The recipient has answered the incoming call.
   answer,
 }
 
@@ -32,6 +37,7 @@ CallStatus parseCallStatus(String status) {
     case "connecting":
       return CallStatus.connecting;
     case "open":
+      return CallStatus.open;
     case "connected":
       return CallStatus.connected;
     case "reconnecting":
@@ -39,8 +45,9 @@ CallStatus parseCallStatus(String status) {
     case "reconnected":
       return CallStatus.reconnected;
     case "ringing":
-    case "pending":
       return CallStatus.ringing;
+    case "pending":
+      return CallStatus.pending;
     case "rejected":
       return CallStatus.rejected;
     case "answer":

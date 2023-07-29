@@ -66,7 +66,7 @@ abstract class SharedPlatformInterface extends PlatformInterface {
     if (prefix.isEmpty) {
       message = description;
     } else {
-      message = "${prefix}${separator}${description}";
+      message = "$prefix$separator$description";
     }
 
     print("Sending event: $message");

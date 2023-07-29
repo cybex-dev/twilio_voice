@@ -37,6 +37,7 @@ enum TwilioCallEvents {
 
 @JS("Twilio.Call")
 class Call extends Twilio {
+  // ignore: unused_element
   external Call._();
 
   external factory Call();
