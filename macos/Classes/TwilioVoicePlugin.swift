@@ -1280,6 +1280,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
             }
         }
 
+        twilioCall?.dispose()
         twilioCall = nil
     }
 
