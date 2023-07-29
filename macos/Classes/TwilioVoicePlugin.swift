@@ -420,7 +420,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
                 completionHandler(false)
                 return
             } else if let status = status {
-                if status == .ringing {
+                if status == .pending {
                     activeCall.reject { error in
                         if let error = error {
                             print("[TVPlugin:hangUp] Error rejecting call: \(error)")
