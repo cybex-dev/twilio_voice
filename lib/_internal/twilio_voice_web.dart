@@ -612,6 +612,18 @@ class Call extends MethodChannelTwilioCall {
     return false;
   }
 
+  /// Not available for web
+  @override
+  Future<bool> toggleBluetooth({bool bluetoothOn = true}) {
+    return Future.value(bluetoothOn);
+  }
+
+  /// Not available for web
+  @override
+  Future<bool> isBluetoothOn() {
+    return Future.value(false);
+  }
+
   /// Not currently implemented for web
   @override
   Future<bool?> toggleSpeaker(bool speakerIsOn) async {
