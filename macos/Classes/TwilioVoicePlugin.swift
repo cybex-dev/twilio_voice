@@ -1274,8 +1274,8 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
                 print("Error: \(error)")
             }
 
-            call.dispose()
-            if status == .closed && self.twilioCall != nil {
+//            if status == .closed && self.twilioCall != nil {
+            if status == .closed {
                 self.logEvent(prefix: "", description: "Call Ended")
             }
         }
