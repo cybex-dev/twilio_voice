@@ -14,7 +14,7 @@ public class TVCallParams: JSONArgumentSerializer {
     init(parameters: [String: Any]) {
         customParameters = parameters
         to = parameters[Constants.PARAM_TO] as? String
-        from = parameters[Constants.PARAM_TO] as? String
+        from = parameters[Constants.PARAM_FROM] as? String
         callSid = parameters[Constants.PARAM_CALL_SID] as? String
     }
 
@@ -23,7 +23,7 @@ public class TVCallParams: JSONArgumentSerializer {
             first
         }
         to = parameters[Constants.PARAM_TO] as? String
-        from = parameters[Constants.PARAM_TO] as? String
+        from = parameters[Constants.PARAM_FROM] as? String
         callSid = parameters[Constants.PARAM_CALL_SID] as? String
     }
 
