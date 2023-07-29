@@ -11,6 +11,8 @@ import AVFoundation
 public enum NotificationAction: String {
     case accept = "accept-call"
     case reject = "reject-call"
+    case returnCall = "return-call"
+    case dismiss = "dismiss"
 }
 
 public enum NotificationCategory: String {
@@ -67,8 +69,12 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
         let center = UNUserNotificationCenter.current()
         let answer = UNNotificationAction(identifier: NotificationAction.accept.rawValue, title: "Accept", options: [.foreground])
         let reject = UNNotificationAction(identifier: NotificationAction.reject.rawValue, title: "Reject", options: [])
-        let incomingCallCategory = UNNotificationCategory(identifier: NotificationCategory.incoming.rawValue, actions: [answer, reject], intentIdentifiers: [], options: [])
-        center.setNotificationCategories([incomingCallCategory])
+        let incomingCallCategory = UNNotificationCategory(identifier: NotificationCategory.incoming.rawValue, actions: [answer, reject], intentIdentifiers: [], hiddenPreviewsBodyPlaceholder: nil, categorySummaryFormat: "Incoming Calls", options: [])
+
+        let dismiss = UNNotificationAction(identifier: NotificationAction.dismiss.rawValue, title: "Dismiss", options: [])
+        let returnCall = UNNotificationAction(identifier: NotificationAction.returnCall.rawValue, title: "Return Call", options: [.foreground])
+        let missedCallCategory = UNNotificationCategory(identifier: NotificationCategory.missed.rawValue, actions: [dismiss, returnCall], intentIdentifiers: [], hiddenPreviewsBodyPlaceholder: nil, categorySummaryFormat: "Missed Calls", options: [])
+        center.setNotificationCategories([incomingCallCategory, missedCallCategory])
     }
 
     public override init() {
@@ -428,6 +434,14 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
                         }
                         completionHandler(error == nil)
                     }
+                }
+            }
+
+            // Cancel incoming call notification
+            activeCall.resolveParams { (params, _) in
+                if let params = params, let callSid = params.callSid {
+                    // Cancel incoming call notification
+                    self.cancelNotification(callSid)
                 }
             }
         }
@@ -905,10 +919,12 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     }
 
     // Notify missed call from [From] to [To]
-    private func showMissedCallNotification(from: String?, to: String?) {
-        let caller = resolveCallerName(from ?? "")
-        let params: [String: Any] = [Constants.PARAM_TO: to ?? "", Constants.PARAM_FROM: caller]
-        showNotification(title: caller, subtitle: "Missed Call", action: .missed, params: params)
+    private func showMissedCallNotification(from: String?, to: String?, params: [String: Any]? = nil) -> Void {
+        let callerName = resolveCallerName(from ?? "")
+        var params: [String: Any] = params ?? [:]
+        params[Constants.PARAM_FROM] = from
+        params[Constants.PARAM_TO] = to ?? ""
+        showNotification(title: callerName, subtitle: "Missed Call", action: .missed, params: params)
     }
 
     /// Show notification with title & body, using default trigger (1 second, no repeat)
@@ -938,6 +954,9 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
                 content.subtitle = subtitle
                 content.userInfo = data
                 content.categoryIdentifier = action.rawValue
+                if #available(macOS 12.0, *) {
+                    content.interruptionLevel = action == .incoming ? .timeSensitive : .active
+                }
 
                 let id: UUID = uuid ?? UUID()
                 let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
@@ -1016,6 +1035,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     public func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
         // TODO(cybex-dev) - Review macOS & iOS code below
         let action = response.actionIdentifier
+        let uuid = response.notification.request.identifier
 
         if let action = NotificationAction(rawValue: action) {
             switch action {
@@ -1042,6 +1062,40 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
                     print("Twilio call not found")
                 }
                 break
+
+            case .dismiss:
+                cancelNotification(uuid)
+                break
+
+            case .returnCall:
+                cancelNotification(uuid)
+
+                // remove notification type from parameters, pass on the rest.
+                var userInfo = response.notification.request.content.userInfo
+                userInfo.removeValue(forKey: Constants.PARAM_TYPE)
+
+                var params: [String: Any] = [:]
+                userInfo.forEach({ (key, value) in
+                    let key = key as! String
+                    params[key] = value
+                })
+
+                let from = params[Constants.PARAM_FROM] as? String
+                let to = params[Constants.PARAM_TO] as? String
+
+                if let from = from, let to = to {
+                    // we swap from and to here because we are returning the call
+                    place(from: to, to: from, extraOptions: params) { success in
+                        if let success = success, success {
+                            print("Successfully placed return call")
+                            self.logEvents(prefix: "", descriptions: ["ReturningCall", from, to, self.formatCustomParams(params: params)])
+                        } else {
+                            print("Failed to place return call")
+                        }
+                    }
+                } else {
+                    print("Failed to place return call, from or to not found")
+                }
 //            default:
 //                print("Notification type not found")
 //                completionHandler()
@@ -1181,8 +1235,10 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
 
                         self.logEvents(prefix: "", descriptions: ["Answer", from, to, self.formatCustomParams(params: params.customParameters)])
 
-                        // Notify incoming call
-                        self.showIncomingCallNotification(from, params.customParameters)
+                        // Cancel incoming call notification
+                        if let callSid = params.callSid {
+                            self.cancelNotification(callSid)
+                        }
                     }
                 }
             }
@@ -1200,17 +1256,14 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
                 if let callSid = params.callSid {
                     self.cancelNotification(callSid)
                 }
-                let to = self.resolveCallerName(params.from ?? "")
-                let from = self.resolveCallerName(params.to ?? "")
-                self.showMissedCallNotification(from: from, to: to)
+                if let from = params.from, let to = params.to {
+                    self.showMissedCallNotification(from: from, to: to, params: params.customParameters)
+                }
             }
         }
 
-        call.dispose()
-        if (twilioCall != nil) {
-            twilioCall = nil
-        }
-
+        twilioCall?.dispose()
+        twilioCall = nil
         logEvent(prefix: "", description: "Missed Call")
         logEvent(prefix: "", description: "Call Ended")
     }
