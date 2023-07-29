@@ -808,7 +808,7 @@ class Call extends MethodChannelTwilioCall {
   void _onCallStatusChanged(String status) {
     CallStatus callStatus = parseCallStatus(status);
 
-    if (callStatus == CallStatus.ringing) {
+    if (callStatus == CallStatus.pending) {
       /// jsCall should not be null here since `CallStatus.incoming` (incoming) or
       /// `CallStatus.connecting` (outgoing) via `place()` has already been fired and set
       _onCallRinging();
