@@ -90,7 +90,7 @@ public class TVDevice: JSObject, TVDeviceDelegate, JSMessageHandlerDelegate {
     /// - Parameter completionHandler: completion handler
     /// - SeeAlso: Twilio [Device.register](https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#deviceregister)
     func register(completionHandler: OnCompletionErrorHandler? = nil) -> Void {
-        call(method: "register") { result, error in
+        call(method: "register", assignTo: "_") { result, error in
             if let error = error {
                 print(error)
                 completionHandler?(error)

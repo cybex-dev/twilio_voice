@@ -15,11 +15,11 @@ public class TVCall: JSObject, TVCallDelegate, JSMessageHandlerDelegate {
     /// - Parameter completionHandler: completion handler
     /// - SeeAlso Twilio [Call.isMuted](https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#callismuted)
     public func isMuted(completionHandler: @escaping OnCompletionHandler<Bool>) {
-        property(ofType: Bool.self, name: "isMuted") { (result, error) in
+        call(method: "isMuted") { (result, error) in
             if let error = error {
                 completionHandler(nil, error)
             } else {
-                completionHandler(result, nil)
+                completionHandler(result as? Bool, nil)
             }
         }
     }
@@ -74,13 +74,13 @@ public class TVCall: JSObject, TVCallDelegate, JSMessageHandlerDelegate {
     /// - Parameter completionHandler: completion handler
     /// - SeeAlso Twilio [Call.direction](https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#calldirection)
     func direction(completionHandler: @escaping OnCompletionHandler<CallDirection>) {
-        property(ofType: CallDirection.self, name: "direction") { (result, error) in
+        property(ofType: String.self, name: "direction") { (result, error) in
             if let error = error {
                 print(error)
                 completionHandler(nil, error)
             }
             if let result = result {
-                completionHandler(result, nil)
+                completionHandler(CallDirection.init(rawValue: result), nil)
             }
         }
     }

@@ -247,7 +247,7 @@ public class JSObject: NSObject, WKScriptMessageHandler, Disposable {
         assert(!(assignTo.isEmpty && wait), "Cannot await on a method call without assigning to a variable. Use call(method:assignTo:completionHandler:) instead.")
         let JS = """
                  if(!!\(jsObjectName) && typeof \(jsObjectName).\(method) === 'function') {
-                    \(assignTo) = \(wait ? "await" : "") \(jsObjectName).\(method)();
+                    var \(assignTo) = \(wait ? "await" : "") \(jsObjectName).\(method)();
                  } else {
                     throw new Error('\(jsObjectName).\(method) is not a function');
                  }
@@ -272,7 +272,7 @@ public class JSObject: NSObject, WKScriptMessageHandler, Disposable {
         let argsString = JSObject.toArgString(withArgs)
         let JS = """
                  if(!!\(jsObjectName) && typeof \(jsObjectName).\(method) === 'function') {
-                    \(assignTo) = \(wait ? "await" : "") \(jsObjectName).\(method)(\(argsString));
+                    var \(assignTo) = \(wait ? "await" : "") \(jsObjectName).\(method)(\(argsString));
                  } else {
                     throw new Error('\(jsObjectName).\(method) is not a function');
                  }
@@ -364,7 +364,8 @@ public class JSObject: NSObject, WKScriptMessageHandler, Disposable {
         webView.evaluateJavaScript(javascript: JS, sourceURL: "new_\(objectName)", completionHandler: completionHandler)
     }
 
-    /// Get a member property value of the javascript object
+    /// Get a member property value of the javascript object. This apples to primitive types that can be cast e.g. String, Int, Bool, etc.
+    ///
     /// - Parameters:
     ///   - name: javascript member name
     ///   - ofType: Type
@@ -400,9 +401,9 @@ public class JSObject: NSObject, WKScriptMessageHandler, Disposable {
     /// ```
     /// delete _device;
     /// ```
-    func delete(objectName: String, completionHandler: @escaping OnCompletionErrorHandler) {
+    func delete(_ objectName: String, _ completionHandler: OnCompletionErrorHandler? = nil) {
         let JS = """
-                 if(\(jsObjectName)) {
+                 if(typeof \(jsObjectName) !== "undefined") {
                     delete \(jsObjectName);
                  } else {
                     throw new Error('\(jsObjectName) is not defined');
@@ -410,9 +411,9 @@ public class JSObject: NSObject, WKScriptMessageHandler, Disposable {
                  """
         webView.evaluateJavaScript(javascript: JS, sourceURL: "dispose_\(objectName)") { result, error in
             if let error = error {
-                completionHandler(error)
+                completionHandler?(error)
             } else {
-                completionHandler(nil)
+                completionHandler?(nil)
             }
         }
     }
