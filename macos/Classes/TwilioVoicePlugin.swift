@@ -1406,14 +1406,9 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
         completionHandler(result == NSApplication.ModalResponse.alertFirstButtonReturn)
     }
 
-//    @available(macOS 12.0, *)
-//    public func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping (WKPermissionDecision) -> ()) {
-//        print("\(#function)")
-//    }
-
     @available(macOS 12.0, *)
     public func webView(_ webView: WKWebView, decideMediaCapturePermissionsFor origin: WKSecurityOrigin, initiatedBy frame: WKFrameInfo, type: WKMediaCaptureType) async -> WKPermissionDecision {
-        return WKPermissionDecision.grant
+        WKPermissionDecision.grant
     }
 }
 

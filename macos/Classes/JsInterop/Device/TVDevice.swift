@@ -182,7 +182,7 @@ public class TVDevice: JSObject, TVDeviceDelegate, JSMessageHandlerDelegate {
     // MARK: - JSMessageHandlerDelegate
 
     func onJSMessageReceived(_ jsObject: JSObject, message: TVScriptMessage) {
-        print("[TVDevice:onJSMessageReceived]: [\(message.name)] \(String(describing: message.body))")
+//        print("[TVDevice:onJSMessageReceived]: [\(message.name)] \(String(describing: message.body))")
 
         if let event = TVDeviceEvent(rawValue: message.type) {
             switch event {

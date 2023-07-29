@@ -269,7 +269,7 @@ public class TVCall: JSObject, TVCallDelegate, JSMessageHandlerDelegate {
     // MARK: - JSMessageHandlerDelegate
 
     func onJSMessageReceived(_ jsObject: JSObject, message: TVScriptMessage) {
-        print("TVCall onJSMessageReceived: [\(message.name)] \(String(describing: message.body))")
+//        print("TVCall onJSMessageReceived: [\(message.name)] \(String(describing: message.body))")
 
         if let event = TVCallEvent(rawValue: message.type) {
             switch event {
