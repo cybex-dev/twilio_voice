@@ -35,9 +35,34 @@ public class TVWebView: WKWebView, WKUIDelegate {
         configuration.userContentController.add(LoggingMessageHandler(), name: LoggingMessageHandler.handlerName)
     }
 
-    /// Default script message handler
-    public func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        print("userContentController didReceive message: \(message)")
+    /// Request microphone permissions via `getUserMedia`. This will first request app microphone permissions, followed by webview permissions.
+    /// App microphone permissions can be checked, however Safari (Webkit Webview) does not allow checking webview permissions though Safari does via `navigator.permissions.query` (https://developer.mozilla.org/en-US/docs/Web/API/Permissions/query)
+    /// Thus, we assume if we have app microphone permissions, the webview also has these same permissions.
+    /// Note: If the user denies app microphone permissions, we will not request webview permissions and will need to rely on the user to manually enable them.
+    ///
+    /// - Parameter: completionHandler: completion handler: true if successfully executed, false otherwise. Permissions are not guaranteed, the return value does not indicate whether the user granted permissions.
+    public func getUserMedia(_ audio: Bool = true, _ video: Bool = false, completionHandler: @escaping OnCompletionHandler<Bool>) -> Void {
+        let JS = """
+                  var _mediaStream = undefined;
+                  if (typeof navigator.mediaDevices !== "undefined" && typeof navigator.mediaDevices.getUserMedia === "function") {
+                    var _ = navigator.mediaDevices.getUserMedia({audio: \(audio), video: \(video)}).then(function (stream) {
+                        log('Got user media stream');
+                        _mediaStream = stream;
+                    }).catch(function (err) {
+                        log('Failed to get user media stream: ' + err);
+                    });
+                  } else {
+                    log('navigator.mediaDevices or navigator.mediaDevices.getUserMedia not supported. Are you running this in a secure context?');
+                  }
+                 """
+        self.evaluateJavaScript(javascript: JS, sourceURL: "getUserMedia") { (result, error) in
+            if let error = error {
+                print("Error requesting user media permissions: \(error)")
+                completionHandler(false, error)
+            } else {
+                completionHandler(true, nil)
+            }
+        }
     }
 
     /// Evaluate javascript in the WKWebView, with debug sourceURL

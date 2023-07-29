@@ -460,6 +460,8 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     }
 
     /// Queries application's microphone permissions. Completion handler completes with true if microphone is available, false otherwise.
+    /// Note: if this returns true, this does not mean the webview (the important one) does in fact have access to the microphone.
+    /// If denied permission here (webview), the webview will not have access and should be changed within Safari browser.
     ///
     /// - Parameter completionHandler: completion handler -> (Bool?)
     private func hasMicPermission(completionHandler: @escaping OnCompletionValueHandler<Bool>) -> Void {
@@ -826,14 +828,29 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
         return ""
     }
 
+    /// Request mic permissions via WKWebView's getUserMedia function, as this is required for Twilio Voice SDK to work.
+    ///
+    /// - Parameter completionHandler: true if successfully executed, false otherwise
     private func requestMicAccess(completionHandler: @escaping OnCompletionHandler<Bool>) -> Void {
-        AVCaptureDevice.requestAccess(for: .audio) { granted in
-            if granted {
-                completionHandler(true, nil)
-            } else {
-                completionHandler(false, nil)
-            }
+        // NOTE(cybex-dev)
+        // Since Safari doesn't expose the Notifications API, we are unable to detect if the user has already granted mic permissions.
+        // Further, getUserMedia() will prompt the user for mic permissions, we will just assume that the user has not granted permissions yet.
+        // Thus, we will always ask for 'getUserMedia' permissions, and then check if the user has granted permissions to the mic.
+        // This isn't a reliable workaround, but should work for most cases.
+
+        // AVCaptureDevice.requestAccess(for: .audio) { granted in
+        //     if granted {
+        //         completionHandler(true, nil)
+        //     } else {
+        //         completionHandler(false, nil)
+        //     }
+        // }
+        guard let webView = webView else {
+            completionHandler(false, nil)
+            return
         }
+
+        webView.getUserMedia(completionHandler: completionHandler)
     }
 
     private func hasMicAccess(completionHandler: @escaping OnCompletionHandler<Bool>) -> Void {
