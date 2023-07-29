@@ -7,6 +7,8 @@ public enum TwilioVoiceChannelMethods: String {
     case isMuted = "isMuted"
     case toggleSpeaker = "toggleSpeaker"
     case isOnSpeaker = "isOnSpeaker"
+    case toggleBluetooth = "toggleBluetooth"
+    case isBluetoothOn = "isBluetoothOn"
     case callSid = "call-sid"
     case isOnCall = "isOnCall"
     case sendDigits = "sendDigits"

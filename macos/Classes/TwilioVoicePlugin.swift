@@ -653,6 +653,27 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
             }
             break
 
+        case .toggleBluetooth:
+            // Not supported on macOS
+            guard let speakerIsOn = arguments["bluetoothOn"] as? Bool else {
+                let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.MALFORMED_ARGUMENTS, message: "No 'bluetoothOn' argument provided", details: nil)
+                result(ferror)
+                return
+            }
+
+            // TODO: toggle bluetooth
+            // toggleAudioRoute(toSpeaker: speakerIsOn)
+            guard let eventSink = eventSink else {
+                return
+            }
+            logEvents(description: bluetoothOn ? "Bluetooth On" : "Bluetooth Off")
+            break;
+
+        case .isBluetoothOn:
+            // Not supported on macOS
+            result(false)
+            break
+
         case .callSid:
             guard twilioCall != nil else {
                 result(nil)
