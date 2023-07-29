@@ -2,15 +2,25 @@ import FlutterMacOS
 import Foundation
 import WebKit
 
-/// [TVWebViewConfiguration] providing a [WKUserContentController] with a default message handler and custom evaluateJavaScript function.
-public class TVWebView: WKWebView, WKUIDelegate, WKScriptMessageHandler {
+public class TVWebView: WKWebView, WKUIDelegate {
 
-    init(messageHandler: String) {
+    var loggingEnabled: Bool = false
+
+    init(messageHandler: String, loggingEnabled: Bool = false) {
         super.init(frame: CGRect.zero, configuration: WKWebViewConfiguration())
+        self.loggingEnabled = loggingEnabled
 
         let bundle = Bundle(for: TwilioVoicePlugin.self)
         if let url = bundle.url(forResource: "Resources/index", withExtension: "html") {
             loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+        } else {
+            NSLog("""
+
+                  WARNING! - Unable to load index.html from bundle. This will prevent proper functionality of this plugin.
+                    Please ensure the index.html & associated resources files are included in the plugin bundle.
+                  See Twilio Voice Plugin README for more information regarding loading these resources.
+
+                  """)
         }
 
         overrideLogging()
@@ -44,17 +54,21 @@ public class TVWebView: WKWebView, WKUIDelegate, WKScriptMessageHandler {
             javascript = "//# sourceURL=\(sourceURL).js\n" + javascript
         }
 
-        if(javascript.last(where: { !$0.isWhitespace }) != ";" && javascript.last(where: { !$0.isWhitespace }) != "}") {
-            NSLog("[JS] WARNING: [sourceURL: \(sourceURL ?? "?")] evaluateJavascript does not end with a semicolon or a closing bracket, adding a semicolon.")
+        if (javascript.last(where: { !$0.isWhitespace }) != ";" && javascript.last(where: { !$0.isWhitespace }) != "}") {
+            if self.loggingEnabled {
+                NSLog("[JS] WARNING: [sourceURL: \(sourceURL ?? "?")] evaluateJavascript does not end with a semicolon or a closing bracket, adding a semicolon.")
+            }
             javascript += ";"
         }
 //        NSLog("[JS] exec: \(javascript)")
 
         evaluateJavaScript(javascript) { (any, error) in
             if (error != nil) {
-                NSLog("[JS] ERROR: evaluateJavascript error: \(String(describing: error))")
-                NSLog("[JS] ERROR: evaluateJavascript javascript: \(javascript)")
-                NSLog("[JS] ERROR: evaluateJavascript sourceURL: \(sourceURL ?? "?")")
+                if self.loggingEnabled {
+                    NSLog("[JS] ERROR: evaluateJavascript error: \(String(describing: error))")
+                    NSLog("[JS] ERROR: evaluateJavascript javascript: \(javascript)")
+                    NSLog("[JS] ERROR: evaluateJavascript sourceURL: \(sourceURL ?? "?")")
+                }
                 completionHandler(nil, String(describing: error))
             } else {
                 completionHandler(any, nil)
@@ -63,7 +77,9 @@ public class TVWebView: WKWebView, WKUIDelegate, WKScriptMessageHandler {
     }
 
     deinit {
-        print("deinit");
+        if self.loggingEnabled {
+            NSLog("TVWebView deinit")
+        }
     }
 
 }
