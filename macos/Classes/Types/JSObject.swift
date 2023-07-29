@@ -22,11 +22,12 @@ protocol JSMessageHandlerDelegate: AnyObject {
 
 public class JSObject: NSObject, WKScriptMessageHandler, Disposable {
 
+    // message handlers that are currently active (by way of `window.webkit.messageHandlers[{handlerName}]`)
+    static var activeMessageHandlers: [String] = []
+
     private let handlerName: String = "handlerName"
     private let type: String = "type"
     private let args: String = "args"
-    // message handler flag (since no check function exists) in webkit library
-    var handlerAttached: Bool = false
 
     public var jsObjectName: String
     var webView: TVWebView
@@ -50,7 +51,6 @@ public class JSObject: NSObject, WKScriptMessageHandler, Disposable {
         self.jsObjectName = jsObjectName
         self.webView = webView
         super.init()
-        handlerAttached = false
         if initialize {
             let JS = "var \(jsObjectName);"
             webView.evaluateJavaScript(javascript: JS, sourceURL: "\(jsObjectName)_init") { result, error in
@@ -63,17 +63,22 @@ public class JSObject: NSObject, WKScriptMessageHandler, Disposable {
     }
 
     func attachMessageHandler() -> Void {
-        if !handlerAttached {
+        if !JSObject.activeMessageHandlers.contains(jsObjectName) {
             print("[\(jsObjectName)] Attaching message handler")
-            handlerAttached = true
+            JSObject.activeMessageHandlers.append(jsObjectName)
             webView.configuration.userContentController.add(self, name: jsObjectName)
         }
     }
 
+    // LAST: adding eventHandlers but we also have message handlers (webkit)
+    // event handlers are so we don't add another of the same events (this can be handled in JS)
+    // message handlers are so we don't add another of the same message handler (this will cause a crash)
+    // Problem:
+
     func detachMessageHandler() -> Void {
-        if handlerAttached {
+        if JSObject.activeMessageHandlers.contains(jsObjectName) {
             print("[\(jsObjectName)] Detaching message handler")
-            handlerAttached = false
+            JSObject.activeMessageHandlers.removeAll(where: { $0 == jsObjectName })
             webView.configuration.userContentController.removeScriptMessageHandler(forName: jsObjectName)
         }
     }
@@ -95,8 +100,15 @@ public class JSObject: NSObject, WKScriptMessageHandler, Disposable {
     /// ```
     func addEventListener(_ event: String, onTriggeredAction: String? = nil, completionHandler: OnCompletionHandler<Bool>? = nil) {
         print("[\(jsObjectName)] Adding event listener: \(event)")
+        let eventName = "_on_event_\(jsObjectName)_\(event)"
+//        guard !JSObject.activeEventHandlers.contains(where: { key, value in key == jsObjectName && value == event }) else {
+//            completionHandler?(true, "Event listener already exists, skipping.")
+//            return
+//        }
+
         let JS = """
-                    var _on_event_\(jsObjectName)_\(event) = function(...args) {
+                    
+                    var \(eventName) = function(...args) {
                         log("🔹", `triggering event: \(event) with argsLength: ${args.length}: ${JSON.stringify(args)}`);
                         \(onTriggeredAction != nil ? "\(onTriggeredAction!);" : "");
                         if(args.length === 1 && args[0] === undefined) {
@@ -105,7 +117,7 @@ public class JSObject: NSObject, WKScriptMessageHandler, Disposable {
                         }
                         window.webkit.messageHandlers.\(jsObjectName).postMessage({'\(handlerName)': '\(jsObjectName)', '\(type)': '\(event)', '\(args)': JSON.stringify(args)});
                     }
-                    \(jsObjectName).on('\(event)', _on_event_\(jsObjectName)_\(event)); true;
+                    \(jsObjectName).on('\(event)', \(eventName)); true;
                  """
         webView.evaluateJavaScript(javascript: JS, sourceURL: "\(jsObjectName)_addEventListener(\(event))") { result, error in
             if let error = error {
@@ -131,11 +143,17 @@ public class JSObject: NSObject, WKScriptMessageHandler, Disposable {
     /// ```
     func removeEventListener(_ event: String, completionHandler: OnCompletionHandler<Bool>? = nil) {
         print("[\(jsObjectName)] Removing event listener: \(event)")
+        let eventName = "_on_event_\(jsObjectName)_\(event)"
+//        guard JSObject.activeEventHandlers.contains(where: { key, value in key == jsObjectName && value == event }) else {
+//            completionHandler?(true, "Event listener not found, skipping.")
+//            return
+//        }
+
         let JS = """
                     log("🔹", 'removeEventListener: \(event)');
-                    if (typeof _on_event_\(jsObjectName)_\(event) !== 'undefined') {
-                        \(jsObjectName).off('\(event)', _on_event_\(jsObjectName)_\(event));
-                        delete _on_event_\(jsObjectName)_\(event); true;
+                    if (typeof \(eventName) !== 'undefined') {
+                        \(jsObjectName).off('\(event)', \(eventName));
+                        delete \(eventName); true;
                     }
                  """
         webView.evaluateJavaScript(javascript: JS, sourceURL: "\(jsObjectName)_removeEventListener(\(event))") { result, error in
@@ -427,5 +445,6 @@ public class JSObject: NSObject, WKScriptMessageHandler, Disposable {
 
     public func dispose() {
         delete(jsObjectName)
+        JSObject.activeMessageHandlers.removeAll(where: { $0 == jsObjectName })
     }
 }
