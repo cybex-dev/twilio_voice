@@ -20,7 +20,7 @@ protocol JSMessageHandlerDelegate: AnyObject {
 
 // TODO(cybex-dev) - add callaAsyncJavascript for true promise resolve/reject w/ return values in `call` functions
 
-public class JSObject: NSObject, WKScriptMessageHandler {
+public class JSObject: NSObject, WKScriptMessageHandler, Disposable {
 
     private let handlerName: String = "handlerName"
     private let type: String = "type"
@@ -421,5 +421,11 @@ public class JSObject: NSObject, WKScriptMessageHandler {
                     }
                 }
                 .joined(separator: ", ")
+    }
+
+    // MARK - Disposable
+
+    public func dispose() {
+        delete(jsObjectName)
     }
 }

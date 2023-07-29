@@ -2,7 +2,7 @@ import Foundation
 import WebKit
 
 /// Object describing a Twilio Call. Implement protocol [TVCallDelegate](x-source-tag://TVCallDelegate) to receive call events.
-public class TVCall: JSObject, TVCallDelegate, JSMessageHandlerDelegate, Disposable {
+public class TVCall: JSObject, TVCallDelegate, JSMessageHandlerDelegate {
 
     weak var callDelegate: TVCallDelegate?
 
@@ -316,16 +316,15 @@ public class TVCall: JSObject, TVCallDelegate, JSMessageHandlerDelegate, Disposa
 
     // MARK: - Disposable
 
-    public func dispose() {
-        if super.handlerAttached {
-            detachEventListeners()
-        }
+    public override func dispose() {
+        detachEventListeners()
         callDelegate = nil
         jsObjectDelegate = nil
+        // clean up JS object
+        super.dispose()
     }
 
     deinit {
         print("TVCall deinit")
-        dispose()
     }
 }

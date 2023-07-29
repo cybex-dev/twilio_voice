@@ -8,7 +8,7 @@ public class EventMessageHandler: NSObject, WKScriptMessageHandler {
 }
 
 /// Object describing a Twilio Device. Integrate [TVDeviceDelegate](x-source-tag://TVDeviceDelegate) to receive device events.
-public class TVDevice: JSObject, TVDeviceDelegate, JSMessageHandlerDelegate, Disposable {
+public class TVDevice: JSObject, TVDeviceDelegate, JSMessageHandlerDelegate {
 
     weak var deviceDelegate: TVDeviceDelegate?
 
@@ -217,14 +217,13 @@ public class TVDevice: JSObject, TVDeviceDelegate, JSMessageHandlerDelegate, Dis
 
     // MARK: - Disposable
 
-    public func dispose() {
-        // possible race condition here, if the device is destroyed before the events are detached
+    public override func dispose() {
         unregister()
-        if handlerAttached {
-            detachEventListeners()
-        }
+        detachEventListeners()
         deviceDelegate = nil
         jsObjectDelegate = nil
+        // clean up JS object
+        delete(jsObjectName)
     }
 
     deinit {
