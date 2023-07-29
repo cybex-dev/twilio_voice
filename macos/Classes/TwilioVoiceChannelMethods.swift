@@ -1,0 +1,26 @@
+import Foundation
+
+public enum TwilioVoiceChannelMethods: String {
+    case tokens = "tokens"
+    case makeCall = "makeCall"
+    case toggleMute = "toggleMute"
+    case isMuted = "isMuted"
+    case toggleSpeaker = "toggleSpeaker"
+    case isOnSpeaker = "isOnSpeaker"
+    case callSid = "call-sid"
+    case isOnCall = "isOnCall"
+    case sendDigits = "sendDigits"
+    case holdCall = "holdCall"
+    case isHolding = "isHolding"
+    case answer = "answer"
+    case unregister = "unregister"
+    case hangUp = "hangUp"
+    case registerClient = "registerClient"
+    case unregisterClient = "unregisterClient"
+    case defaultCaller = "defaultCaller"
+    case hasMicPermission = "hasMicPermission"
+    case requestMicPermission = "requestMicPermission"
+    case requiresBackgroundPermissions = "requiresBackgroundPermissions"
+    case requestBackgroundPermissions = "requestBackgroundPermissions"
+    case showNotifications = "show-notifications"
+}

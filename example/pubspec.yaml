@@ -31,6 +31,7 @@ dependencies:
   cupertino_icons: ^1.0.3
 
 dev_dependencies:
+  flutter_lints: ^2.0.2
   flutter_test:
     sdk: flutter
 

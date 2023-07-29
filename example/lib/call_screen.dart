@@ -153,6 +153,9 @@ class _CallScreenState extends State<CallScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+        appBar: AppBar(
+          title: Text("Call Screen"),
+        ),
         backgroundColor: Theme.of(context).colorScheme.secondary,
         body: Container(
           child: SafeArea(

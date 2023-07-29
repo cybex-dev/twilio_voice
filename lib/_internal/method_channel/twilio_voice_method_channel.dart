@@ -162,7 +162,7 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
         // iOS call reject froms tring: "LOG|provider:performEndCallAction: rejecting call"
         return CallEvent.declined;
       } else if (tokens[1].contains("Call Rejected")) {
-        // web call reject from string: "Call Rejected"
+        // macOS / web call reject from string: "Call Rejected"
         return CallEvent.declined;
       }
       return CallEvent.log;
