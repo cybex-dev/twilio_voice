@@ -80,7 +80,6 @@ public class TVDevice: JSObject, TVDeviceDelegate, JSMessageHandlerDelegate {
                 completionHandler?(nil, error)
             } else {
                 let call = TVCall(overrideJSObjectName: assignTo, webView: self.webView)
-                call.attachEventListeners()
                 completionHandler?(call, nil)
             }
         }
