@@ -1314,7 +1314,6 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     }
 
     private func onCallConnected(_ call: TVCall) {
-        twilioCall = call
         call.resolveParams { params, error in
             if let error = error {
                 print("Error: \(error)")
