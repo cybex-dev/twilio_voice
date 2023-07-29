@@ -168,6 +168,21 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             let isOnSpeaker: Bool = isSpeakerOn();
             result(isOnSpeaker);
         }
+        else if flutterCall.method == "toggleBluetooth"
+        {
+            guard let bluetoothOn = arguments["bluetoothOn"] as? Bool else {return}
+            // TODO: toggle bluetooth
+            // toggleAudioRoute(toSpeaker: speakerIsOn)
+            guard let eventSink = eventSink else {
+                return
+            }
+            eventSink(bluetoothOn ? "Bluetooth On" : "Bluetooth Off")
+        }
+        else if flutterCall.method == "isBluetoothOn"
+        {
+            let isBluetoothOn: Bool = isBluetoothOn();
+            result(isBluetoothOn);
+        }
         else if flutterCall.method == "call-sid"
         {
             result(self.call == nil ? nil : self.call!.sid);
@@ -701,8 +716,12 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         }
         return false;
     }
-    
-    
+
+    // TODO
+    func isBluetoothOn() -> Bool {
+        return false;
+    }
+
     // MARK: AVAudioSession
     func toggleAudioRoute(toSpeaker: Bool) {
         // The mode set by the Voice SDK is "VoiceChat" so the default audio route is the built-in receiver. Use port override to switch the route.
