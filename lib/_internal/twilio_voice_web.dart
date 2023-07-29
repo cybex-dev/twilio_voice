@@ -808,35 +808,14 @@ class Call extends MethodChannelTwilioCall {
   void _onCallStatusChanged(String status) {
     CallStatus callStatus = parseCallStatus(status);
 
-    switch (callStatus) {
-      case CallStatus.closed:
-        // TODO: Handle this case.
-        break;
-      case CallStatus.connected:
-        if (_jsCall != null) {
-          _onCallConnected(_jsCall!);
-        }
-        break;
-      case CallStatus.reconnecting:
-        // TODO: Handle this case.
-        break;
-      case CallStatus.reconnected:
-        // TODO: Handle this case.
-        break;
-      case CallStatus.connecting:
-      // Added missing Ringing for outgoing calls
-      case CallStatus.ringing:
-
-        /// jsCall should not be null here since `CallStatus.incoming` (incoming) or
-        /// `CallStatus.connecting` (outgoing) via `place()` has already been fired and set
-        _onCallRinging();
-        break;
-      case CallStatus.rejected:
-        // TODO: Handle this case.
-        break;
-      case CallStatus.answer:
-        // TODO: Handle this case.
-        break;
+    if (callStatus == CallStatus.pending) {
+      /// jsCall should not be null here since `CallStatus.incoming` (incoming) or
+      /// `CallStatus.connecting` (outgoing) via `place()` has already been fired and set
+      _onCallRinging();
+    } else if (callStatus == CallStatus.connected) {
+      if (_jsCall != null) {
+        _onCallConnected(_jsCall!);
+      }
     }
   }
 
