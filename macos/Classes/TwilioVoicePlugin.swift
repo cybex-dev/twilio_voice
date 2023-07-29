@@ -1300,7 +1300,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
         if twilioCall != nil {
             twilioCall = nil
         }
-        logEvent(prefix: "", description: "Call Rejected")
+        logEvent(description: "Call Rejected")
     }
 
     public func onCallStatus(_ status: TVCallStatus) {
