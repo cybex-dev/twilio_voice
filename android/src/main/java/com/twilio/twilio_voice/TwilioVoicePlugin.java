@@ -193,6 +193,8 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
                                 .params(params)
                                 .build();
                         this.activeCall = Voice.connect(this.activity, connectOptions, this.callListener);
+                    } else {
+                        Log.d(TAG, "handleIncomingCallIntent: no microphone permissions to return call");
                     }
                     break;
                 default:
