@@ -21,6 +21,7 @@ import android.app.Activity;
 import android.app.NotificationManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
@@ -33,6 +34,7 @@ import android.os.Build;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
+import androidx.appcompat.app.AlertDialog;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import androidx.lifecycle.Lifecycle;
@@ -61,6 +63,8 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
     private static final String TAG = "TwilioVoicePlugin";
     public static final String TwilioPreferences = "com.twilio.twilio_voicePreferences";
     private static final int MIC_PERMISSION_REQUEST_CODE = 1;
+
+    private static final int BLUETOOTH_PERMISSION_REQUEST_CODE = 2;
     static boolean hasStarted = false;
 
     private String accessToken;
@@ -176,7 +180,7 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
                     break;
                 case Constants.ACTION_RETURN_CALL:
 
-                    if(this.checkPermissionForMicrophone()){
+                    if (this.checkPermission(Manifest.permission.RECORD_AUDIO)) {
                         final HashMap<String, String> params = new HashMap<>();
 
                         String to = intent.getStringExtra(Constants.CALL_FROM);
@@ -510,11 +514,21 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
             }
             result.success(added);
         } else if (call.method.equals("hasMicPermission")) {
-            result.success(this.checkPermissionForMicrophone());
+            result.success(this.checkPermission(Manifest.permission.RECORD_AUDIO));
         } else if (call.method.equals("requestMicPermission")) {
             sendPhoneCallEvents("LOG|requesting mic permission");
-            if (!this.checkPermissionForMicrophone()) {
+            if (!this.checkPermission(Manifest.permission.RECORD_AUDIO)) {
                 boolean hasAccess = this.requestPermissionForMicrophone();
+                result.success(hasAccess);
+            } else {
+                result.success(true);
+            }
+        } else if (call.method.equals("hasBluetoothPermission")) {
+            result.success(this.checkPermission(Manifest.permission.BLUETOOTH));
+        } else if (call.method.equals("requestBluetoothPermission")) {
+            sendPhoneCallEvents("LOG|requesting bluetooth permissions");
+            if (!this.checkPermission(Manifest.permission.BLUETOOTH)) {
+                boolean hasAccess = this.requestPermissionForBluetooth();
                 result.success(hasAccess);
             } else {
                 result.success(true);
@@ -821,23 +835,54 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
         }
     }
 
-    private boolean checkPermissionForMicrophone() {
-        sendPhoneCallEvents("LOG|checkPermissionForMicrophone");
-        int resultMic = ContextCompat.checkSelfPermission(this.context, Manifest.permission.RECORD_AUDIO);
+    private boolean checkPermission(String permissionName) {
+        sendPhoneCallEvents("LOG|checkPermissionFor" + permissionName);
+        int resultMic = ContextCompat.checkSelfPermission(this.context, permissionName);
         return resultMic == PackageManager.PERMISSION_GRANTED;
     }
 
     private boolean requestPermissionForMicrophone() {
-        sendPhoneCallEvents("LOG|requestPermissionForMicrophone");
-        if (ActivityCompat.shouldShowRequestPermissionRationale(this.activity, Manifest.permission.RECORD_AUDIO)) {
-            sendPhoneCallEvents("RequestMicrophoneAccess");
-            return false;
-        } else {
-            ActivityCompat.requestPermissions(this.activity,
-                    new String[]{Manifest.permission.RECORD_AUDIO},
-                    MIC_PERMISSION_REQUEST_CODE);
+        return requestPermissionOrShowRationale(this.activity, "Microphone", "Microphone permission is required to make or receive phone calls.", Manifest.permission.RECORD_AUDIO, MIC_PERMISSION_REQUEST_CODE);
+    }
+
+    /**
+     * Requests permission for bluetooth, or shows rationale if the user has denied/not granted permissions yet.
+     *
+     * @return true if the user has given permission for bluetooth, false otherwise.
+     */
+    private boolean requestPermissionForBluetooth() {
+        return requestPermissionOrShowRationale(this.activity, "Bluetooth", "Bluetooth permission is required to access bluetooth headset for calls.", Manifest.permission.BLUETOOTH, BLUETOOTH_PERMISSION_REQUEST_CODE);
+    }
+
+    private boolean requestPermissionOrShowRationale(Activity activity, String permissionName, String description, String manifestPermission, int requestCode) {
+        if (checkPermission(manifestPermission)) {
             return true;
         }
+        sendPhoneCallEvents("LOG|requestPermissionFor" + permissionName);
+        if (ActivityCompat.shouldShowRequestPermissionRationale(activity, manifestPermission)) {
+            DialogInterface.OnClickListener clickListener = (dialog, which) -> {
+                ActivityCompat.requestPermissions(activity, new String[]{manifestPermission}, requestCode);
+            };
+            DialogInterface.OnDismissListener dismissListener = dialog -> {
+                sendPhoneCallEvents("Request" + permissionName + "Access");
+            };
+            showPermissionRationaleDialog(activity, permissionName + " Permissions", description, clickListener, dismissListener);
+            return false;
+        } else {
+            ActivityCompat.requestPermissions(activity, new String[]{manifestPermission}, requestCode);
+            return true;
+        }
+    }
+
+    private void showPermissionRationaleDialog(Context context, String title, String message, DialogInterface.OnClickListener onClickListener, DialogInterface.OnDismissListener onDismissListener) {
+        sendPhoneCallEvents("LOG|showRationaleForPermission");
+        AlertDialog.Builder builder = new AlertDialog.Builder(context);
+        builder.setTitle(title);
+        builder.setMessage(message);
+        builder.setPositiveButton(android.R.string.ok, onClickListener);
+        builder.setNegativeButton(android.R.string.cancel, null);
+        builder.setOnDismissListener(onDismissListener);
+        builder.show();
     }
 
     private boolean isAppVisible() {
