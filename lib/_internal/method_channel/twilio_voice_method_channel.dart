@@ -218,6 +218,8 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
         return CallEvent.speakerOn;
       case 'Speaker Off':
         return CallEvent.speakerOff;
+      // case 'Audio Switch':
+      //   return CallEvent.audioSwitch;
       default:
         print('$state is not a valid CallState.');
         throw ArgumentError('$state is not a valid CallState.');

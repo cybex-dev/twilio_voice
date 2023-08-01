@@ -5,6 +5,7 @@ buildscript {
     repositories {
         google()
         jcenter()
+        mavenCentral()
     }
 
     dependencies {
@@ -16,13 +17,14 @@ rootProject.allprojects {
     repositories {
         google()
         jcenter()
+        mavenCentral()
     }
 }
 
 apply plugin: 'com.android.library'
 
 android {
-    compileSdkVersion 30
+    compileSdkVersion 33
 
     compileOptions {
         sourceCompatibility 1.8
@@ -41,9 +43,10 @@ android {
 
 dependencies {
     implementation platform('com.google.firebase:firebase-bom:26.0.0')
-    implementation 'com.twilio:voice-android:5.8.0'
+    implementation 'com.twilio:voice-android:6.1.2'
     implementation 'com.google.firebase:firebase-messaging'
     implementation 'androidx.lifecycle:lifecycle-extensions:2.2.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.0.1'
+    implementation 'com.twilio:audioswitch:1.1.4'
 }
 
