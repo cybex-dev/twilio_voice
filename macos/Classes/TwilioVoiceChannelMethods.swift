@@ -22,6 +22,8 @@ public enum TwilioVoiceChannelMethods: String {
     case defaultCaller = "defaultCaller"
     case hasMicPermission = "hasMicPermission"
     case requestMicPermission = "requestMicPermission"
+    case hasBluetoothPermission = "hasBluetoothPermission"
+    case requestBluetoothPermission = "requestBluetoothPermission"
     case requiresBackgroundPermissions = "requiresBackgroundPermissions"
     case requestBackgroundPermissions = "requestBackgroundPermissions"
     case showNotifications = "show-notifications"

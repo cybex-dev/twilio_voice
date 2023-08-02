@@ -655,7 +655,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
 
         case .toggleBluetooth:
             // Not supported on macOS
-            guard let speakerIsOn = arguments["bluetoothOn"] as? Bool else {
+            guard let bluetoothOn = arguments["bluetoothOn"] as? Bool else {
                 let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.MALFORMED_ARGUMENTS, message: "No 'bluetoothOn' argument provided", details: nil)
                 result(ferror)
                 return
@@ -666,7 +666,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
             guard let eventSink = eventSink else {
                 return
             }
-            logEvents(description: bluetoothOn ? "Bluetooth On" : "Bluetooth Off")
+            logEvent(description: bluetoothOn ? "Bluetooth On" : "Bluetooth Off")
             break;
 
         case .isBluetoothOn:
@@ -823,6 +823,14 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
             requestMicPermission { success in
                 result(success ?? false)
             }
+            break
+
+        case .hasBluetoothPermission:
+            result(true)
+            break
+
+        case .requestBluetoothPermission:
+            result(true)
             break
 
         case .requiresBackgroundPermissions:
@@ -1134,9 +1142,9 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
         if let category = NotificationCategory(rawValue: notification.request.content.categoryIdentifier) {
             switch category {
             case .incoming:
-                completionHandler([.banner, .sound])
+                completionHandler([.alert, .banner, .sound])
             case .missed:
-                completionHandler([.banner, .sound])
+                completionHandler([.alert, .banner, .sound])
 //            default:
 //                completionHandler([])
             }
