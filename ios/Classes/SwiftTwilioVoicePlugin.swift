@@ -299,6 +299,12 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                 result(false)
             }
             return
+        } else if flutterCall.method == "hasBluetoothPermission" {
+            result(true)
+            return
+        }else if flutterCall.method == "requestBluetoothPermission"{
+            result(true)
+            return
         } else if flutterCall.method == "show-notifications" {
             guard let show = arguments["show"] as? Bool else{return}
             let prefsShow = UserDefaults.standard.optionalBool(forKey: "show-notifications") ?? true
