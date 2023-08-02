@@ -17,8 +17,8 @@ maintained, this one is.
   13.0+, we'll be using CallKit).
 
 ## Feature addition schedule:
-- Audio device selection support (select input/output audio devices, delayed)
-- Add Bluetooth support (integration, in-progress)
+- Audio device selection support (select input/output audio devices, in-progress)
+- Add Bluetooth support (permissions only, will merge with audio device selection)
 - Update plugin to Flutter federated packages (step 1 of 2 with Web support merge)
 - Desktop platform support (implementation as JS wrapper/native implementation, Mac development in-testing, Windows/Linux to start development)
 - Unify Android & iOS incoming call screens with predefined parameters to autofill UI elements (in development).

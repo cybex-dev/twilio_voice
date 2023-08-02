@@ -151,6 +151,7 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
         registerUser();
 
         FirebaseMessaging.instance.requestPermission();
+        TwilioVoice.instance.requestBluetoothPermissions();
         // FirebaseMessaging.instance.configure(
         //     onMessage: (Map<String, dynamic> message) {
         //   print("onMessage");

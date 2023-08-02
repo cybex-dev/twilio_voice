@@ -23,7 +23,7 @@
 * [twilio_voice_mimp:0.0.12) iOS XCODE failed
 * [twilio_voice_mimp:0.0.11) iOS Podspecs were failing
 * [twilio_voice_mimp:0.0.10) **German Localization in Android
-* Feat: [Android] Add check and request Bluetooth permissions @cybex-dev
+* Feat: Add check and request Bluetooth permissions @cybex-dev
 
 ## 0.0.9
 * Feat: forwarded callInvite custom parameters to flutter

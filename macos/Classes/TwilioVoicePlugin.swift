@@ -653,6 +653,27 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
             }
             break
 
+        case .toggleBluetooth:
+            // Not supported on macOS
+            guard let bluetoothOn = arguments["bluetoothOn"] as? Bool else {
+                let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.MALFORMED_ARGUMENTS, message: "No 'bluetoothOn' argument provided", details: nil)
+                result(ferror)
+                return
+            }
+
+            // TODO: toggle bluetooth
+            // toggleAudioRoute(toSpeaker: speakerIsOn)
+            guard let eventSink = eventSink else {
+                return
+            }
+            logEvent(description: bluetoothOn ? "Bluetooth On" : "Bluetooth Off")
+            break;
+
+        case .isBluetoothOn:
+            // Not supported on macOS
+            result(false)
+            break
+
         case .callSid:
             guard twilioCall != nil else {
                 result(nil)
@@ -802,6 +823,14 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
             requestMicPermission { success in
                 result(success ?? false)
             }
+            break
+
+        case .hasBluetoothPermission:
+            result(true)
+            break
+
+        case .requestBluetoothPermission:
+            result(true)
             break
 
         case .requiresBackgroundPermissions:
@@ -1113,9 +1142,9 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
         if let category = NotificationCategory(rawValue: notification.request.content.categoryIdentifier) {
             switch category {
             case .incoming:
-                completionHandler([.banner, .sound])
+                completionHandler([.alert, .banner, .sound])
             case .missed:
-                completionHandler([.banner, .sound])
+                completionHandler([.alert, .banner, .sound])
 //            default:
 //                completionHandler([])
             }

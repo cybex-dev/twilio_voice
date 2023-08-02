@@ -92,6 +92,21 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
     return _channel.invokeMethod('requestMicPermission', {});
   }
 
+  /// Checks if device has bluetooth permissions
+  /// Only available on Android
+  /// Defaults to false
+  @override
+  Future<bool> hasBluetoothPermissions() {
+    return _channel.invokeMethod<bool?>('hasBluetoothPermission', {}).then<bool>((bool? value) => value ?? false);
+  }
+
+  /// Request bluetooth permissions
+  /// Only available on Android
+  @override
+  Future<bool?> requestBluetoothPermissions() {
+    return _channel.invokeMethod('requestBluetoothPermission', {});
+  }
+
   /// Set iOS call kit icon
   ///
   /// This allows for CallKit customization: setting the last button (bottom right) of the callkit.
@@ -218,6 +233,10 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
         return CallEvent.speakerOn;
       case 'Speaker Off':
         return CallEvent.speakerOff;
+      case 'Bluetooth On':
+        return CallEvent.bluetoothOn;
+      case 'Bluetooth Off':
+        return CallEvent.bluetoothOff;
       // case 'Audio Switch':
       //   return CallEvent.audioSwitch;
       default:

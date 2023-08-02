@@ -416,7 +416,11 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
         } else if (call.method.equals("toggleSpeaker")) {
 
             boolean speakerIsOn = call.argument("speakerIsOn");
-            // if(speakerIsOn == null) return;
+//            if(speakerIsOn && audioManager.isBluetoothScoOn()) {
+//                audioManager.setBluetoothScoOn(false);
+//                sendPhoneCallEvents("Bluetooth Off");
+//            }
+
             audioManager.setSpeakerphoneOn(speakerIsOn);
             sendPhoneCallEvents(speakerIsOn ? "Speaker On" : "Speaker Off");
 
@@ -424,6 +428,23 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
         } else if (call.method.equals("isOnSpeaker")) {
             boolean isSpeakerOn = audioManager.isSpeakerphoneOn();
             result.success(isSpeakerOn);
+        } else if (call.method.equals("toggleBluetooth")) {
+//            boolean bluetoothOn = call.argument("bluetoothOn");
+//
+//            // if we want bluetooth on and speaker is on, turn off speaker first then toggle bluetooth
+//            if(bluetoothOn && audioManager.isSpeakerphoneOn()) {
+//                audioManager.setSpeakerphoneOn(false);
+//                sendPhoneCallEvents("Speaker Off");
+//            }
+//
+//            audioManager.setBluetoothScoOn(bluetoothOn);
+//            sendPhoneCallEvents(bluetoothOn ? "Bluetooth On" : "Bluetooth Off");
+
+            result.success(true);
+        } else if (call.method.equals("isBluetoothOn")) {
+//            Log.d(TAG, "Is bluetooth on invoked");
+//            result.success(audioManager.isBluetoothScoOn());
+            result.success(true);
         } else if (call.method.equals("toggleMute")) {
           boolean muted = call.argument("muted");
             Log.d(TAG, "Muting call");

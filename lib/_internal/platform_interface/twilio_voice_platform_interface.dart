@@ -64,6 +64,19 @@ abstract class TwilioVoicePlatform extends SharedPlatformInterface {
   /// Request microphone permission
   Future<bool?> requestMicAccess();
 
+  /// Checks if device has bluetooth permissions
+  /// Only available on Android
+  /// Defaults to false
+  Future<bool> hasBluetoothPermissions();
+
+  /// Request bluetooth permissions
+  /// To use bluetooth, you need to add the following to your `AndroidManifest.xml`
+  ///
+  /// `<uses-permission android:name="android.permission.BLUETOOTH" />`
+  ///
+  /// Only available on Android
+  Future<bool?> requestBluetoothPermissions();
+
   /// Set iOS call kit icon
   ///
   /// This allows for CallKit customization: setting the last button (bottom right) of the callkit.

@@ -46,6 +46,7 @@ public class BackgroundCallJavaActivity extends AppCompatActivity {
     private TextView tvCallStatus;
     private ImageView btnMute;
     private ImageView btnOutput;
+//    private ImageView btnBluetooth;
     private ImageView btnHangUp;
 
     @Override
@@ -58,6 +59,7 @@ public class BackgroundCallJavaActivity extends AppCompatActivity {
         tvCallStatus = (TextView) findViewById(R.id.tvCallStatus);
         btnMute = (ImageView) findViewById(R.id.btnMute);
         btnOutput = (ImageView) findViewById(R.id.btnOutput);
+//        btnBluetooth = (ImageView) findViewById(R.id.btnBluetooth);
         btnHangUp = (ImageView) findViewById(R.id.btnHangUp);
 
         KeyguardManager kgm = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
@@ -175,11 +177,47 @@ public class BackgroundCallJavaActivity extends AppCompatActivity {
             @Override
             public void onClick(View v) {
                 AudioManager audioManager = (AudioManager) getApplicationContext().getSystemService(Context.AUDIO_SERVICE);
-                boolean isOnSpeaker = !audioManager.isSpeakerphoneOn();
+                boolean isOnSpeaker = audioManager.isSpeakerphoneOn();
+                if(isOnSpeaker) {
+                    audioManager.setSpeakerphoneOn(false);
+                } else {
+//                    if(audioManager.isBluetoothScoOn()){
+//                        audioManager.setBluetoothScoOn(false);
+//                        audioManager.stopBluetoothSco();
+//                        applyFabState(btnBluetooth, false);
+//                    }
+                    audioManager.setSpeakerphoneOn(true);
+                }
+                isOnSpeaker = !isOnSpeaker;
                 audioManager.setSpeakerphoneOn(isOnSpeaker);
                 applyFabState(btnOutput, isOnSpeaker);
             }
         });
+//        btnBluetooth.setOnClickListener(new View.OnClickListener() {
+//            @Override
+//            public void onClick(View v) {
+//                AudioManager audioManager = (AudioManager) getApplicationContext().getSystemService(Context.AUDIO_SERVICE);
+//                if(!audioManager.isBluetoothScoAvailableOffCall()){
+//                    Toast.makeText(getApplicationContext(), "Bluetooth SCO is not available", Toast.LENGTH_SHORT).show();
+//                    return;
+//                }
+//                boolean isBluetoothOn = audioManager.isBluetoothScoOn();
+//                if (isBluetoothOn) {
+//                    audioManager.setBluetoothScoOn(false);
+//                    audioManager.stopBluetoothSco();
+//                } else {
+//                    if(audioManager.isSpeakerphoneOn()){
+//                        audioManager.setSpeakerphoneOn(false);
+//                        applyFabState(btnOutput, false);
+//                    }
+//                    audioManager.setBluetoothScoOn(true);
+//                    audioManager.startBluetoothSco();
+//                }
+//                isBluetoothOn = !isBluetoothOn;
+//                audioManager.setBluetoothScoOn(isBluetoothOn);
+//                applyFabState(btnBluetooth, isBluetoothOn);
+//            }
+//        });
 
     }
 
