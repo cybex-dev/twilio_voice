@@ -92,6 +92,21 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
     return _channel.invokeMethod('requestMicPermission', {});
   }
 
+  /// Checks if device has bluetooth permissions
+  /// Only available on Android
+  /// Defaults to false
+  @override
+  Future<bool> hasBluetoothPermissions() {
+    return _channel.invokeMethod<bool?>('hasBluetoothPermission', {}).then<bool>((bool? value) => value ?? false);
+  }
+
+  /// Request bluetooth permissions
+  /// Only available on Android
+  @override
+  Future<bool?> requestBluetoothPermissions() {
+    return _channel.invokeMethod('requestBluetoothPermission', {});
+  }
+
   /// Set iOS call kit icon
   ///
   /// This allows for CallKit customization: setting the last button (bottom right) of the callkit.
