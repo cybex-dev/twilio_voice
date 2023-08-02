@@ -55,6 +55,14 @@ iOS app for VOIP, etc.
 To customize the icon displayed on a CallKit call, Open XCode and add a png icon named '
 callkit_icon' to your assets.xassets folder
 
+see [[Notes]](https://github.com/diegogarciar/twilio_voice/blob/master/NOTES.md#ios--macos) for more information
+
+### macOS Setup
+
+Drop in addition.
+
+see [[Limitations]](https://github.com/diegogarciar/twilio_voice/blob/master/NOTES.md#macos) and [[Notes]](https://github.com/diegogarciar/twilio_voice/blob/master/NOTES.md#ios--macos) for more information.
+
 ### Android Setup:
 
 register in your `AndroidManifest.xml` the service in charge of displaying incoming call
@@ -71,6 +79,8 @@ notifications:
       </intent-filter>
   </service>
 ```
+
+see [[Notes]](https://github.com/diegogarciar/twilio_voice/blob/master/NOTES.md#android) for more information.
 
 ### Web Setup:
 
