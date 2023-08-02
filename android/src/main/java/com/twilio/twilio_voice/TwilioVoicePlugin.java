@@ -2,6 +2,7 @@ package com.twilio.twilio_voice;
 
 import androidx.annotation.NonNull;
 
+import com.twilio.audioswitch.*;
 import com.twilio.voice.Call;
 import com.twilio.voice.CallException;
 import com.twilio.voice.CallInvite;
@@ -20,17 +21,20 @@ import android.app.Activity;
 import android.app.NotificationManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.media.AudioAttributes;
+import android.media.AudioDeviceInfo;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
 import android.os.Build;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
+import androidx.appcompat.app.AlertDialog;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import androidx.lifecycle.Lifecycle;
@@ -48,6 +52,7 @@ import io.flutter.plugin.common.MethodCall;
 import io.flutter.plugin.common.MethodChannel;
 import io.flutter.plugin.common.MethodChannel.Result;
 import io.flutter.plugin.common.PluginRegistry;
+import kotlin.Unit;
 
 import static java.lang.Boolean.getBoolean;
 
@@ -58,6 +63,8 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
     private static final String TAG = "TwilioVoicePlugin";
     public static final String TwilioPreferences = "com.twilio.twilio_voicePreferences";
     private static final int MIC_PERMISSION_REQUEST_CODE = 1;
+
+    private static final int BLUETOOTH_PERMISSION_REQUEST_CODE = 2;
     static boolean hasStarted = false;
 
     private String accessToken;
@@ -67,6 +74,7 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
 
     private boolean isReceiverRegistered = false;
     private VoiceBroadcastReceiver voiceBroadcastReceiver;
+    private AudioSwitch audioSwitch;
 
 
     private NotificationManager notificationManager;
@@ -106,6 +114,8 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
 
         plugin.notificationManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         plugin.voiceBroadcastReceiver = new VoiceBroadcastReceiver(plugin);
+        //plugin.audioSwitch = new AudioSwitch(context, true);
+        plugin.audioSwitch = new AudioSwitch(context, false);
         // plugin.registerReceiver();
 
         /*
@@ -170,7 +180,7 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
                     break;
                 case Constants.ACTION_RETURN_CALL:
 
-                    if(this.checkPermissionForMicrophone()){
+                    if (this.checkPermission(Manifest.permission.RECORD_AUDIO)) {
                         final HashMap<String, String> params = new HashMap<>();
 
                         String to = intent.getStringExtra(Constants.CALL_FROM);
@@ -183,6 +193,8 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
                                 .params(params)
                                 .build();
                         this.activeCall = Voice.connect(this.activity, connectOptions, this.callListener);
+                    } else {
+                        Log.d(TAG, "handleIncomingCallIntent: no microphone permissions to return call");
                     }
                     break;
                 default:
@@ -296,29 +308,36 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
 
         @Override
         public void onReceive(Context context, Intent intent) {
+            if(intent == null) {
+                Log.e(TAG, "[VoiceBroadcastReceiver] Received null intent");
+                return;
+            }
             String action = intent.getAction();
+            if(action == null) {
+                Log.e(TAG, "[VoiceBroadcastReceiver] Received null action");
+                return;
+            }
             Log.d(TAG, "Received broadcast for action " + action);
 
-            if (action != null)
-                switch (action) {
-                    case Constants.ACTION_INCOMING_CALL:
-                    case Constants.ACTION_CANCEL_CALL:
-                    case Constants.ACTION_REJECT:
-                    case Constants.ACTION_ACCEPT:
-                    case Constants.ACTION_TOGGLE_MUTE:
-                    case Constants.ACTION_END_CALL:
-                    case Constants.ACTION_RETURN_CALL:
+            switch (action) {
+                case Constants.ACTION_INCOMING_CALL:
+                case Constants.ACTION_CANCEL_CALL:
+                case Constants.ACTION_REJECT:
+                case Constants.ACTION_ACCEPT:
+                case Constants.ACTION_TOGGLE_MUTE:
+                case Constants.ACTION_END_CALL:
+                case Constants.ACTION_RETURN_CALL:
 
-                        /*
-                         * Handle the incoming or cancelled call invite
-                         */
-                        plugin.handleIncomingCallIntent(intent);
-                        break;
-                    default:
-                        Log.d(TAG, "Received broadcast for other action " + action);
-                        break;
+                    /*
+                     * Handle the incoming or cancelled call invite
+                     */
+                    plugin.handleIncomingCallIntent(intent);
+                    break;
+                default:
+                    Log.d(TAG, "Received broadcast for other action " + action);
+                    break;
 
-                }
+            }
         }
     }
 
@@ -353,6 +372,7 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
     @Override
     public void onDetachedFromEngine(@NonNull FlutterPluginBinding binding) {
         Log.d(TAG, "Detatched from Flutter engine");
+        audioSwitch.stop();
         SoundPoolManager.getInstance(context).release();
         context = null;
         methodChannel.setMethodCallHandler(null);
@@ -379,6 +399,7 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
             Log.d(TAG, "Setting up tokens");
             this.accessToken = call.argument("accessToken");
             this.fcmToken = call.argument("deviceToken");
+            startAudioSwitch(true);
             this.registerForCallInvites();
             result.success(true);
         } else if (call.method.equals("sendDigits")) {
@@ -459,6 +480,7 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
             result.success(true);
         } else if (call.method.equals("unregister")) {
             String accessToken = call.argument("accessToken");
+            startAudioSwitch(false);
             this.unregisterForCallInvites(accessToken);
             result.success(true);
         } else if (call.method.equals("makeCall")) {
@@ -515,11 +537,21 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
             }
             result.success(added);
         } else if (call.method.equals("hasMicPermission")) {
-            result.success(this.checkPermissionForMicrophone());
+            result.success(this.checkPermission(Manifest.permission.RECORD_AUDIO));
         } else if (call.method.equals("requestMicPermission")) {
             sendPhoneCallEvents("LOG|requesting mic permission");
-            if (!this.checkPermissionForMicrophone()) {
+            if (!this.checkPermission(Manifest.permission.RECORD_AUDIO)) {
                 boolean hasAccess = this.requestPermissionForMicrophone();
+                result.success(hasAccess);
+            } else {
+                result.success(true);
+            }
+        } else if (call.method.equals("hasBluetoothPermission")) {
+            result.success(this.checkPermission(Manifest.permission.BLUETOOTH));
+        } else if (call.method.equals("requestBluetoothPermission")) {
+            sendPhoneCallEvents("LOG|requesting bluetooth permissions");
+            if (!this.checkPermission(Manifest.permission.BLUETOOTH)) {
+                boolean hasAccess = this.requestPermissionForBluetooth();
                 result.success(hasAccess);
             } else {
                 result.success(true);
@@ -647,6 +679,7 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
             @Override
             public void onConnectFailure(Call call, CallException error) {
                 // setAudioFocus(false);
+                audioSwitch.deactivate();
                 Log.d(TAG, "Connect failure");
                 String message = String.format("Call Error: %d, %s", error.getErrorCode(), error.getMessage());
                 Log.e(TAG, message);
@@ -656,7 +689,7 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
 
             @Override
             public void onConnected(Call call) {
-                // setAudioFocus(true);
+                audioSwitch.activate();
                 Log.d(TAG, "onConnected");
 //                eventSink.success("LOG|Connected");
                 activeCall = call;
@@ -681,6 +714,7 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
             @Override
             public void onDisconnected(Call call, CallException error) {
                 // setAudioFocus(false);
+                audioSwitch.deactivate();
                 Log.d(TAG, "Disconnected");
                 if (error != null) {
                     String message = String.format("Call Error: %d, %s", error.getErrorCode(), error.getMessage());
@@ -742,10 +776,46 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
         }
     }
 
+    private boolean isHeadsetOn() {
+        if (audioManager != null) {
+            AudioManager am = audioManager;
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+                return am.isWiredHeadsetOn() || am.isBluetoothScoOn() || am.isBluetoothA2dpOn();
+            } else {
+                AudioDeviceInfo[] devices = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS);
+
+                for (AudioDeviceInfo device : devices) {
+                    if (device.getType() == AudioDeviceInfo.TYPE_WIRED_HEADSET
+                            || device.getType() == AudioDeviceInfo.TYPE_WIRED_HEADPHONES
+                            || device.getType() == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
+                            || device.getType() == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        } else return false;
+    }
+
+    private void startAudioSwitch(boolean start) {
+        /*
+         * Start the audio device selector after the menu is created and update the icon when the
+         * selected audio device changes.
+         */
+        if (start) {
+            audioSwitch.start((audioDevices, audioDevice) -> {
+                //  updateAudioDeviceIcon(audioDevice);
+                return Unit.INSTANCE;
+            });
+        } else
+            audioSwitch.stop();
+    }
+
+
     private void setAudioFocus(boolean setFocus) {
         if (audioManager != null) {
+            int savedAudioMode = audioManager.getMode();
             if (setFocus) {
-                savedAudioMode = audioManager.getMode();
                 // Request audio focus before making any device switch.
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     AudioAttributes playbackAttributes = new AudioAttributes.Builder()
@@ -788,23 +858,54 @@ public class TwilioVoicePlugin implements FlutterPlugin, MethodChannel.MethodCal
         }
     }
 
-    private boolean checkPermissionForMicrophone() {
-        sendPhoneCallEvents("LOG|checkPermissionForMicrophone");
-        int resultMic = ContextCompat.checkSelfPermission(this.context, Manifest.permission.RECORD_AUDIO);
+    private boolean checkPermission(String permissionName) {
+        sendPhoneCallEvents("LOG|checkPermissionFor" + permissionName);
+        int resultMic = ContextCompat.checkSelfPermission(this.context, permissionName);
         return resultMic == PackageManager.PERMISSION_GRANTED;
     }
 
     private boolean requestPermissionForMicrophone() {
-        sendPhoneCallEvents("LOG|requestPermissionForMicrophone");
-        if (ActivityCompat.shouldShowRequestPermissionRationale(this.activity, Manifest.permission.RECORD_AUDIO)) {
-            sendPhoneCallEvents("RequestMicrophoneAccess");
-            return false;
-        } else {
-            ActivityCompat.requestPermissions(this.activity,
-                    new String[]{Manifest.permission.RECORD_AUDIO},
-                    MIC_PERMISSION_REQUEST_CODE);
+        return requestPermissionOrShowRationale(this.activity, "Microphone", "Microphone permission is required to make or receive phone calls.", Manifest.permission.RECORD_AUDIO, MIC_PERMISSION_REQUEST_CODE);
+    }
+
+    /**
+     * Requests permission for bluetooth, or shows rationale if the user has denied/not granted permissions yet.
+     *
+     * @return true if the user has given permission for bluetooth, false otherwise.
+     */
+    private boolean requestPermissionForBluetooth() {
+        return requestPermissionOrShowRationale(this.activity, "Bluetooth", "Bluetooth permission is required to access bluetooth headset for calls.", Manifest.permission.BLUETOOTH, BLUETOOTH_PERMISSION_REQUEST_CODE);
+    }
+
+    private boolean requestPermissionOrShowRationale(Activity activity, String permissionName, String description, String manifestPermission, int requestCode) {
+        if (checkPermission(manifestPermission)) {
             return true;
         }
+        sendPhoneCallEvents("LOG|requestPermissionFor" + permissionName);
+        if (ActivityCompat.shouldShowRequestPermissionRationale(activity, manifestPermission)) {
+            DialogInterface.OnClickListener clickListener = (dialog, which) -> {
+                ActivityCompat.requestPermissions(activity, new String[]{manifestPermission}, requestCode);
+            };
+            DialogInterface.OnDismissListener dismissListener = dialog -> {
+                sendPhoneCallEvents("Request" + permissionName + "Access");
+            };
+            showPermissionRationaleDialog(activity, permissionName + " Permissions", description, clickListener, dismissListener);
+            return false;
+        } else {
+            ActivityCompat.requestPermissions(activity, new String[]{manifestPermission}, requestCode);
+            return true;
+        }
+    }
+
+    private void showPermissionRationaleDialog(Context context, String title, String message, DialogInterface.OnClickListener onClickListener, DialogInterface.OnDismissListener onDismissListener) {
+        sendPhoneCallEvents("LOG|showRationaleForPermission");
+        AlertDialog.Builder builder = new AlertDialog.Builder(context);
+        builder.setTitle(title);
+        builder.setMessage(message);
+        builder.setPositiveButton(android.R.string.ok, onClickListener);
+        builder.setNegativeButton(android.R.string.cancel, null);
+        builder.setOnDismissListener(onDismissListener);
+        builder.show();
     }
 
     private boolean isAppVisible() {

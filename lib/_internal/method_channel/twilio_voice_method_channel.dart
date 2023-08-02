@@ -237,6 +237,8 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
         return CallEvent.bluetoothOn;
       case 'Bluetooth Off':
         return CallEvent.bluetoothOff;
+      // case 'Audio Switch':
+      //   return CallEvent.audioSwitch;
       default:
         print('$state is not a valid CallState.');
         throw ArgumentError('$state is not a valid CallState.');

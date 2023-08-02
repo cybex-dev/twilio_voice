@@ -86,6 +86,11 @@ class MethodChannelTwilioCall extends TwilioCallPlatform {
     return _channel.invokeMethod('toggleSpeaker', <String, dynamic>{"speakerIsOn": speakerIsOn});
   }
 
+  /// Switches Audio Device
+  /*Future<String?> switchAudio({String audioDevice = "auto}) {
+    return _channel.invokeMethod('switchAudio', <String, dynamic>{"audioDevice": audioDevice});
+  }*/
+
   /// Query's speaker output status, true if on loud speaker.
   Future<bool?> isOnSpeaker() {
     return _channel.invokeMethod('isOnSpeaker', <String, dynamic>{});
