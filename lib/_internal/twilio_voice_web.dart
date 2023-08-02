@@ -363,6 +363,20 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
     }
   }
 
+  /// Request bluetooth permissions.
+  /// Not supported on web.
+  @override
+  Future<bool?> requestBluetoothPermissions() async {
+    return true;
+  }
+
+  /// Queries browser for bluetooth permissions.
+  /// Not supported on web.
+  @override
+  Future<bool> hasBluetoothPermissions() async {
+    return true;
+  }
+
   /// Request notifications permission. Returns true if permission is granted, false otherwise.
   /// Documentation: https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/permissions/request
   @override
