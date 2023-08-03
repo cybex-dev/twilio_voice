@@ -23,14 +23,14 @@ import 'local_storage_web/local_storage_web.dart';
 import 'method_channel/twilio_call_method_channel.dart';
 import 'method_channel/twilio_voice_method_channel.dart';
 
-class TwilioSW {
-  TwilioSW._() {
+class TwilioSWInterface {
+  TwilioSWInterface._() {
     _setupServiceWorker();
   }
 
-  static TwilioSW _instance = TwilioSW._();
+  static final TwilioSWInterface _instance = TwilioSWInterface._();
 
-  static TwilioSW get instance => _instance;
+  static TwilioSWInterface get instance => _instance;
 
   html.ServiceWorkerContainer? _webServiceWorkerContainerDelegate;
   html.ServiceWorker? _webServiceWorkerDelegate;
@@ -91,7 +91,7 @@ class TwilioSW {
 }
 
 class NotificationService {
-  TwilioSW _twilioSW = TwilioSW.instance;
+  TwilioSWInterface _twilioSW = TwilioSWInterface.instance;
 
   NotificationService._();
 
@@ -216,7 +216,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
     // loadTwilio();
 
     // setup SW listener
-    final sw = TwilioSW.instance;
+    final sw = TwilioSWInterface.instance;
     sw._setupServiceWorker();
     sw.onMessageReceived = _handleServiceWorkerMessage;
   }
@@ -402,7 +402,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
     try {
       device?.unregister();
       _detachDeviceListeners(device!);
-      TwilioSW.instance.destroy();
+      TwilioSWInterface.instance.destroy();
       return true;
     } catch (e) {
       print("Failed to unregister device: $e");
@@ -982,7 +982,7 @@ class Call extends MethodChannelTwilioCall {
         'tag': callSid,
       },
     };
-    TwilioSW.instance.send(message);
+    TwilioSWInterface.instance.send(message);
   }
 }
 
