@@ -32,9 +32,9 @@ self.addEventListener('activate', (event) => {
 });
 
 // disabled due to Chrome no-op warning
-self.addEventListener('fetch', (event) => {
-   _log(`fetch event [${event.request.url}]`, event);
-});
+//self.addEventListener('fetch', (event) => {
+//   _log(`fetch event [${event.request.url}]`, event);
+//});
 
 self.addEventListener('install', (event) => {
     _log('install event, skip waiting', event);
