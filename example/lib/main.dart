@@ -1,22 +1,39 @@
-import 'dart:convert';
+import 'dart:async';
 import 'dart:io';
 
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:twilio_voice/twilio_voice.dart';
+import 'package:twilio_voice_example/screens/ui_call_screen.dart';
+import 'package:twilio_voice_example/screens/ui_registration_screen.dart';
 
-import 'call_screen.dart';
+import 'api.dart';
+import 'screens/call_screen.dart';
+
+enum RegistrationMethod {
+  env,
+  local,
+  firebase;
+
+  static RegistrationMethod? fromString(String? value) {
+    if (value == null) return null;
+    return RegistrationMethod.values.firstWhere((element) => element.name == value);
+  }
+
+  static RegistrationMethod? loadFromEnvironment() {
+    const value = String.fromEnvironment("REGISTRATION_METHOD");
+    return fromString(value);
+  }
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   if (kIsWeb) {
     // Add firebase config here
-    final options = FirebaseOptions(
+    final options = const FirebaseOptions(
       apiKey: '',
       appId: '',
       messagingSenderId: '',
@@ -32,275 +49,221 @@ void main() async {
     // For Android, iOS - Firebase will search for google-services.json in android/app directory or GoogleService-Info.plist in ios/Runner directory respectively.
     await Firebase.initializeApp();
   }
-  return runApp(MyApp());
+
+  final app = App(registrationMethod: RegistrationMethod.loadFromEnvironment() ?? RegistrationMethod.local);
+  return runApp(MaterialApp(home: app));
 }
 
-class MyApp extends StatelessWidget {
+class App extends StatefulWidget {
+  final RegistrationMethod registrationMethod;
+
+  const App({super.key, this.registrationMethod = RegistrationMethod.local});
+
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(home: DialScreen());
-  }
+  State<App> createState() => _AppState();
 }
 
-class DialScreen extends StatefulWidget {
-  @override
-  _DialScreenState createState() => _DialScreenState();
-}
-
-class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
+class _AppState extends State<App> {
   String userId = "";
+
+  /// Flag showing if TwilioVoice plugin has been initialised
   bool twilioInit = false;
 
-  registerUser() {
-    print("voip- service init");
-    // if (TwilioVoice.instance.deviceToken != null) {
-    //   print("device token changed");
-    // }
+  /// Flag showing registration status (for registering or re-registering on token change)
+  var authRegistered = false;
+
+  //#region #region Register with Twilio
+  void register() {
+    print("voip-service registration");
 
     // Use for locally provided token generator e.g. Twilio's quickstarter project: https://github.com/twilio/voice-quickstart-server-node
     if (!kIsWeb) {
-      setState(() {
-        twilioInit = true;
-      });
-      registerLocal();
-    }
-    // Or use firebase function to generate token, with function name 'voice-accessToken'.
-    // register();
-
-    TwilioVoice.instance.setOnDeviceTokenChanged((token) {
-      print("voip-device token changed");
-      if (!kIsWeb) {
-        registerLocal();
-        // register();
+      // if not web, we use the requested registration method
+      switch (widget.registrationMethod) {
+        case RegistrationMethod.env:
+          _registerFromEnvironment();
+          break;
+        case RegistrationMethod.local:
+          _registerLocal();
+          break;
+        case RegistrationMethod.firebase:
+          _registerFirebase();
+          break;
       }
-    });
+    } else {
+      // for web, we always show the initialisation screen
+    }
   }
 
-  Future<bool?> registerWithAccessToken(String identity, String token) async {
-    print("voip-registering with token ");
+  /// Registers [accessToken] with TwilioVoice plugin, acquires a device token from FirebaseMessaging and registers with TwilioVoice plugin.
+  Future<bool> _registerAccessToken(String accessToken) async {
+    print("voip-registering access token");
 
-    userId = identity;
-    String? androidToken;
-    if (!kIsWeb && Platform.isAndroid) {
-      androidToken = await FirebaseMessaging.instance.getToken();
-      print("androidToken is " + androidToken!);
-    }
-    return TwilioVoice.instance.setTokens(accessToken: token, deviceToken: androidToken);
-  }
-
-  registerLocal() async {
-    print("voip-registering with token ");
-    print("GET http://localhost:3000/token");
-
-    final uri = Uri.http("localhost:3000", "/token");
-    final result = await http.get(uri);
-    if (result.statusCode >= 200 && result.statusCode < 300) {
-      print("Error requesting token from server [${uri.toString()}]");
-      print(result.body);
-      return;
-    }
-    final data = jsonDecode(result.body);
-    final identity = data["identity"];
-    userId = identity;
-    final token = data["token"];
-    String? androidToken;
-    if (!kIsWeb && Platform.isAndroid) {
-      androidToken = await FirebaseMessaging.instance.getToken();
-      print("androidToken is " + androidToken!);
-    }
-    TwilioVoice.instance.setTokens(accessToken: token, deviceToken: androidToken);
-  }
-
-  register() async {
-    print("voip-registtering with token ");
-    print("voip-calling voice-accessToken");
-    final function = FirebaseFunctions.instance.httpsCallable("voice-accessToken");
-
-    final data = {
-      "platform": Platform.isIOS ? "iOS" : "Android",
-    };
-
-    final result = await function.call(data);
-    print("voip-result");
-    print(result.data);
     String? androidToken;
     if (Platform.isAndroid || kIsWeb) {
       androidToken = await FirebaseMessaging.instance.getToken();
       print("androidToken is " + androidToken!);
     }
-    TwilioVoice.instance.setTokens(accessToken: result.data, deviceToken: androidToken);
+    final result = await TwilioVoice.instance.setTokens(accessToken: accessToken, deviceToken: androidToken);
+    return result ?? false;
   }
 
-  var registered = false;
+  //#region #region Register from Environment
+  /// Use this method to register with a environment variables: RECIPIENT, ID, TOKEN
+  /// RECIPIENT - the recipient of the call
+  /// ID - the identity of the caller
+  /// TOKEN - the access token
+  ///
+  /// To access this, run with `--dart-define=RECIPIENT=alicesId --dart-define=ID=bobsId --dart-define=TOKEN=ey... --dart-define=REGISTRATION_METHOD=env`
+  Future<bool> _registerFromEnvironment() async {
+    // Load config via --dart-define if available
+    String? myId = const String.fromEnvironment("ID");
+    String? myToken = const String.fromEnvironment("TOKEN");
+    if (myId.isEmpty) myId = null;
+    if (myToken.isEmpty) myToken = null;
 
-  waitForLogin() {
+    print("voip-registering with environment variables");
+    if (myId == null || myToken == null) {
+      print("Failed to register with environment variables, please provide ID and TOKEN");
+      return false;
+    }
+    userId = myId;
+    return _registerAccessToken(myToken);
+  }
+  //#endregion
+
+  //#region #region Register from Credentials
+  /// Use this method to register with provided credentials
+  Future<bool> _registerFromCredentials(String identity, String token) async {
+    userId = identity;
+    return _registerAccessToken(token);
+  }
+  //#endregion
+
+  //#region #region Register with local provider
+  /// Use this method to register with a local token generator
+  /// To access this, run with `--dart-define=REGISTRATION_METHOD=local`
+  Future<bool>  _registerLocal() async {
+    print("voip-registering with local token generator");
+    final result = await generateLocalAccessToken();
+    if (result == null) {
+      print("Failed to register with local token generator");
+      return false;
+    }
+    userId = result.identity;
+    return _registerAccessToken(result.accessToken);
+  }
+  //#endregion
+
+  //#region #region Register with Firebase provider
+  void _listenForFirebaseLogin() {
     final auth = FirebaseAuth.instance;
     auth.authStateChanges().listen((user) async {
       // print("authStateChanges $user");
       if (user == null) {
         print("user is anonomous");
         await auth.signInAnonymously();
-      } else if (!registered) {
-        registered = true;
+      } else if (!authRegistered) {
+        authRegistered = true;
         // Note, you can either use Firebase provided [user.uid] or one provided from e.g. localhost:3000/token endpoint returning:
         // {token: "ey...", identity: "user123"}
-        if (this.userId.isEmpty) {
-          this.userId = user.uid;
+        if (userId.isEmpty) {
+          userId = user.uid;
         }
         print("registering client $userId [firebase id ${user.uid}]");
-        registerUser();
-
-        FirebaseMessaging.instance.requestPermission();
-        TwilioVoice.instance.requestBluetoothPermissions();
-        // FirebaseMessaging.instance.configure(
-        //     onMessage: (Map<String, dynamic> message) {
-        //   print("onMessage");
-        //   print(message);
-        //   return;
-        // }, onLaunch: (Map<String, dynamic> message) {
-        //   print("onLaunch");
-        //   print(message);
-        //   return;
-        // }, onResume: (Map<String, dynamic> message) {
-        //   print("onResume");
-        //   print(message);
-        //   return;
-        // });
+        _registerFirebase();
       }
     });
   }
 
+  /// Use this method to register with a firebase token generator
+  /// To access this, run with `--dart-define=REGISTRATION_METHOD=firebase`
+  Future<bool>  _registerFirebase() async {
+    if(!authRegistered) {
+      _listenForFirebaseLogin();
+      return false;
+    }
+    print("voip-registering with firebase token generator");
+    final result = await generateFirebaseAccessToken();
+    if (result == null) {
+      print("Failed to register with firebase token generator");
+      return false;
+    }
+    userId = result.identity;
+    return _registerAccessToken(result.accessToken);
+  }
+  //#endregion
+
+  //#endregion
+
   @override
   void initState() {
     super.initState();
-    waitForLogin();
 
-    super.initState();
-    waitForCall();
-    WidgetsBinding.instance.addObserver(this);
+    TwilioVoice.instance.setOnDeviceTokenChanged((token) {
+      print("voip-device token changed");
+      if (!kIsWeb) {
+        register();
+      }
+    });
+
+    listenForEvents();
 
     final partnerId = "alicesId";
     TwilioVoice.instance.registerClient(partnerId, "Alice");
+    TwilioVoice.instance.requestReadPhoneStatePermission();
+    TwilioVoice.instance.requestMicAccess();
+    TwilioVoice.instance.requestCallPhonePermission();
   }
 
-  checkActiveCall() async {
-    final isOnCall = await TwilioVoice.instance.call.isOnCall();
-    print("checkActiveCall $isOnCall");
-    if (isOnCall &&
-        !hasPushedToCall &&
-        TwilioVoice.instance.call.activeCall!.callDirection ==
-            CallDirection.incoming) {
-      print("user is on call");
-      pushToCallScreen();
-    }
-  }
+  /// Listen for call events
+  void listenForEvents() {
+    TwilioVoice.instance.callEventsListener.listen((event) {
+      print("voip-onCallStateChanged $event");
 
-  var hasPushedToCall = false;
-
-  void waitForCall() {
-    checkActiveCall();
-    TwilioVoice.instance.callEventsListener
-      ..listen((event) {
-        print("voip-onCallStateChanged $event");
-
-        switch (event) {
-          case CallEvent.answer:
-            //at this point android is still paused
-            if (kIsWeb ||
-                Platform.isIOS && state == null ||
-                state == AppLifecycleState.resumed) {
-              pushToCallScreen();
-            }
-            break;
-          case CallEvent.incoming:
-            // applies to web only
-            if (kIsWeb) {
-              final activeCall = TwilioVoice.instance.call.activeCall;
-              if (activeCall != null && activeCall.callDirection == CallDirection.incoming) {
-                _showWebIncomingCallDialog();
-              }
-            }
-            break;
-          case CallEvent.ringing:
+      switch (event) {
+        case CallEvent.incoming:
+          // applies to web only
+          if (kIsWeb || Platform.isAndroid) {
             final activeCall = TwilioVoice.instance.call.activeCall;
-            if (activeCall != null) {
-              final customData = activeCall.customParams;
-              if (customData != null) {
-                print("voip-customData $customData");
-              }
+            if (activeCall != null && activeCall.callDirection == CallDirection.incoming) {
+              _showWebIncomingCallDialog();
             }
-            break;
-          case CallEvent.declined:
-            final activeCall = TwilioVoice.instance.call.activeCall;
-            if(activeCall != null) {
-              TwilioVoice.instance.call.hangUp().then((value) {
-                hasPushedToCall = false;
-              });
-            } else {
-              hasPushedToCall = false;
+          }
+          break;
+        case CallEvent.ringing:
+          final activeCall = TwilioVoice.instance.call.activeCall;
+          if (activeCall != null) {
+            final customData = activeCall.customParams;
+            if (customData != null) {
+              print("voip-customData $customData");
             }
-            break;
-          case CallEvent.connected:
-            if (kIsWeb) {
-              if (state == null || state == AppLifecycleState.resumed) {
-                pushToCallScreen();
-              }
-            } else if (Platform.isAndroid &&
-                TwilioVoice.instance.call.activeCall!.callDirection ==
-                    CallDirection.incoming) {
-              if (state != AppLifecycleState.resumed) {
-                TwilioVoice.instance.showBackgroundCallUI();
-              } else if (state == null || state == AppLifecycleState.resumed) {
-                pushToCallScreen();
-              }
-            }
-            break;
-          case CallEvent.callEnded:
-            hasPushedToCall = false;
-            break;
-          case CallEvent.returningCall:
-            pushToCallScreen();
-            break;
-          default:
-            break;
-        }
-      });
+          }
+          break;
+        default:
+          break;
+      }
+    });
   }
 
-  AppLifecycleState? state;
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    this.state = state;
-    print("didChangeAppLifecycleState");
-    if (state == AppLifecycleState.resumed) {
-      checkActiveCall();
-    }
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
-  }
-
+  /// Place a call to [clientIdentifier]
   Future<void> _onPerformCall(String clientIdentifier) async {
     if (!await (TwilioVoice.instance.hasMicAccess())) {
       print("request mic access");
       TwilioVoice.instance.requestMicAccess();
       return;
     }
+    TwilioVoice.instance.requestBluetoothPermissions();
     print("starting call to $clientIdentifier");
-    TwilioVoice.instance.call.place(to: clientIdentifier, from: userId);
-    pushToCallScreen();
+    TwilioVoice.instance.call.place(to: clientIdentifier, from: userId, extraOptions: {"_TWI_SUBJECT": "Company Name"});
   }
 
   Future<void> _onRegisterWithToken(String token, [String? identity]) async {
-    final _identity = identity ?? "??";
-    return registerWithAccessToken(_identity, token).then((value) {
-      if (value == null || !value) {
+    return _registerFromCredentials( identity ?? "Unknown", token).then((value) {
+      if (!value) {
         showDialog(
           context: context,
-          builder: (context) => AlertDialog(
+          builder: (context) => const AlertDialog(
             title: Text("Error"),
             content: Text("Failed to register for calls"),
           ),
@@ -317,18 +280,18 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Plugin example app'),
+        title: const Text("Plugin example app"),
       ),
       body: SafeArea(
         child: Center(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
+            padding: const EdgeInsets.symmetric(horizontal: 8),
             child: twilioInit
-                ? _CallUI(
+                ? UICallScreen(
                     userId: userId,
                     onPerformCall: _onPerformCall,
                   )
-                : _RegisterTwilioUi(
+                : UIRegistrationScreen(
                     onRegister: _onRegisterWithToken,
                   ),
           ),
@@ -337,29 +300,21 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
     );
   }
 
+  /// Show incoming call dialog for web and Android
   void _showWebIncomingCallDialog() async {
     final activeCall = TwilioVoice.instance.call.activeCall!;
     final action = await showIncomingCallScreen(context, activeCall);
     if (action == true) {
       print("accepting call");
       TwilioVoice.instance.call.answer();
-      pushToCallScreen();
     } else {
       print("rejecting call");
       TwilioVoice.instance.call.hangUp();
     }
   }
 
-  void pushToCallScreen() {
-    if (hasPushedToCall) {
-      return;
-    }
-    hasPushedToCall = true;
-    Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(fullscreenDialog: true, builder: (context) => CallScreen()));
-  }
-
   Future<bool?> showIncomingCallScreen(BuildContext context, ActiveCall activeCall) async {
-    if (!kIsWeb) {
+    if (!kIsWeb && !Platform.isAndroid) {
       print("showIncomingCallScreen only for web");
       return false;
     }
@@ -369,17 +324,17 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: Text("Incoming Call"),
+          title: const Text("Incoming Call"),
           content: Text("Incoming call from ${activeCall.from}"),
           actions: [
             TextButton(
-              child: Text("Accept"),
+              child: const Text("Accept"),
               onPressed: () {
                 Navigator.of(context).pop(true);
               },
             ),
             TextButton(
-              child: Text("Reject"),
+              child: const Text("Reject"),
               onPressed: () {
                 Navigator.of(context).pop(false);
               },
@@ -387,116 +342,6 @@ class _DialScreenState extends State<DialScreen> with WidgetsBindingObserver {
           ],
         );
       },
-    );
-  }
-}
-
-typedef PerformCall = Future<void> Function(String clientIdentifier);
-
-class _CallUI extends StatefulWidget {
-  final String userId;
-  final PerformCall onPerformCall;
-
-  const _CallUI({Key? key, required this.userId, required this.onPerformCall}) : super(key: key);
-
-  @override
-  State<_CallUI> createState() => _CallUIState();
-}
-
-class _CallUIState extends State<_CallUI> {
-  late TextEditingController _controller = TextEditingController();
-  late GlobalKey<FormFieldState<String>> _identifierKey = GlobalKey<FormFieldState<String>>();
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        TextFormField(
-          key: _identifierKey,
-          controller: _controller,
-          validator: (value) {
-            if (value == null || value.isEmpty) {
-              return "Please enter a client identifier";
-            }
-            return null;
-          },
-          decoration: InputDecoration(labelText: 'Client Identifier or Phone Number'),
-        ),
-        SizedBox(
-          height: 10,
-        ),
-        Text("My Identity: ${widget.userId}}"),
-        SizedBox(
-          height: 10,
-        ),
-        ElevatedButton(
-          child: Text("Make Call"),
-          onPressed: () {
-            if (!_identifierKey.currentState!.validate()) {
-              return;
-            }
-            final identity = _controller.text;
-            widget.onPerformCall(identity);
-          },
-        ),
-      ],
-    );
-  }
-}
-
-typedef OnRegister = Future<void> Function(String accessToken, [String? identity]);
-
-class _RegisterTwilioUi extends StatefulWidget {
-  final OnRegister onRegister;
-
-  const _RegisterTwilioUi({
-    Key? key,
-    required this.onRegister,
-  }) : super(key: key);
-
-  @override
-  State<_RegisterTwilioUi> createState() => _RegisterTwilioUiState();
-}
-
-class _RegisterTwilioUiState extends State<_RegisterTwilioUi> {
-  late TextEditingController _accessTokenController = TextEditingController();
-  late TextEditingController _identityController = TextEditingController();
-  late GlobalKey<FormFieldState<String>> _accessTokenKey = GlobalKey<FormFieldState<String>>();
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        TextFormField(
-          controller: _identityController,
-          decoration: InputDecoration(labelText: 'My Identity'),
-        ),
-        SizedBox(
-          height: 10,
-        ),
-        TextFormField(
-          key: _accessTokenKey,
-          validator: (value) => value == null || value.isEmpty ? "Access Token is required" : null,
-          controller: _accessTokenController,
-          decoration: InputDecoration(labelText: 'Access Token'),
-        ),
-        SizedBox(
-          height: 10,
-        ),
-        ElevatedButton(
-          child: Text("Register for calls"),
-          onPressed: () async {
-            if (!_accessTokenKey.currentState!.validate()) {
-              return;
-            }
-            final identity = _identityController.text;
-            final token = _accessTokenController.text;
-            widget.onRegister(token, identity);
-          },
-        ),
-      ],
     );
   }
 }
