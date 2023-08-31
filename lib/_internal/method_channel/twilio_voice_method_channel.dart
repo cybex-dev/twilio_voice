@@ -209,9 +209,10 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
   }
 
   /// Android-only, shows background call UI
+  /// Deprecated, has no effect
   @override
   Future<bool?> showBackgroundCallUI() {
-    return _channel.invokeMethod("backgroundCallUI", {});
+    return Future.value(true);
   }
 
   @override

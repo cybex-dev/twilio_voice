@@ -25,6 +25,7 @@
 * [twilio_voice_mimp:0.0.10) **German Localization in Android
 * Feat: Add check and request Bluetooth permissions @cybex-dev
 * Removed (Deprecated) `requiresBackgroundPermissions` & `requestBackgroundPermissions` as they are no longer needed for background UI screens. @cybex-dev
+* Removed (Deprecated) `showBackgroundCallUi` as it is no longer needed for background UI screens. (this might be reinstated in future, depending on feature requests) @cybex-dev
 
 ## 0.0.9
 * Feat: forwarded callInvite custom parameters to flutter
