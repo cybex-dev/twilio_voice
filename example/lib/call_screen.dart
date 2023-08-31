@@ -1,7 +1,5 @@
 import 'dart:async';
-import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:twilio_voice/twilio_voice.dart';
 
@@ -234,47 +232,47 @@ class _CallScreenState extends State<CallScreen> {
                             ),
                           ),
                         ),
-                        Material(
-                          type: MaterialType
-                              .transparency, //Makes it usable on any background color, thanks @IanSmith
-                          child: Ink(
-                            decoration: BoxDecoration(
-                              border:
-                                  Border.all(color: Colors.white, width: 1.0),
-                              color: mute
-                                  ? Theme.of(context).colorScheme.secondary
-                                  : Colors.white24,
-                              shape: BoxShape.circle,
-                            ),
-                            child: InkWell(
-                              //This keeps the splash effect within the circle
-                              borderRadius: BorderRadius.circular(
-                                  1000.0), //Something large to ensure a circle
-                              child: Padding(
-                                padding: EdgeInsets.all(20.0),
-                                child: Icon(
-                                  Icons.bluetooth,
-                                  size: 40.0,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              onTap: () {
-                                // BLuetooth functionality is not supported on web or macos
-                                if(kIsWeb || Platform.isMacOS) {
-                                  return;
-                                }
-                                final newState = !isBluetoothOn;
-                                print("bluetooth? ${newState ? "on" : "off"}");
-                                TwilioVoice.instance.call.toggleBluetooth(bluetoothOn: newState).then((value) {
-                                  _updateBluetoothState();
-                                });
-                                // setState(() {
-                                //   mute = !mute;
-                                // });
-                              },
-                            ),
-                          ),
-                        ),
+                        // Material(
+                        //   type: MaterialType
+                        //       .transparency, //Makes it usable on any background color, thanks @IanSmith
+                        //   child: Ink(
+                        //     decoration: BoxDecoration(
+                        //       border:
+                        //           Border.all(color: Colors.white, width: 1.0),
+                        //       color: mute
+                        //           ? Theme.of(context).colorScheme.secondary
+                        //           : Colors.white24,
+                        //       shape: BoxShape.circle,
+                        //     ),
+                        //     child: InkWell(
+                        //       //This keeps the splash effect within the circle
+                        //       borderRadius: BorderRadius.circular(
+                        //           1000.0), //Something large to ensure a circle
+                        //       child: Padding(
+                        //         padding: EdgeInsets.all(20.0),
+                        //         child: Icon(
+                        //           Icons.bluetooth,
+                        //           size: 40.0,
+                        //           color: Colors.white,
+                        //         ),
+                        //       ),
+                        //       onTap: () {
+                        //         // BLuetooth functionality is not supported on web or macos
+                        //         if(kIsWeb || Platform.isMacOS) {
+                        //           return;
+                        //         }
+                        //         final newState = !isBluetoothOn;
+                        //         print("bluetooth? ${newState ? "on" : "off"}");
+                        //         TwilioVoice.instance.call.toggleBluetooth(bluetoothOn: newState).then((value) {
+                        //           _updateBluetoothState();
+                        //         });
+                        //         // setState(() {
+                        //         //   mute = !mute;
+                        //         // });
+                        //       },
+                        //     ),
+                        //   ),
+                        // ),
                         Material(
                           type: MaterialType
                               .transparency, //Makes it usable on any background color, thanks @IanSmith
