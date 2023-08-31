@@ -51,18 +51,47 @@ abstract class TwilioVoicePlatform extends SharedPlatformInterface {
   /// Checks if device needs background permission
   ///
   /// Android only, xiamoi devices need special permission to show background call UI
+  @Deprecated('custom call UI not used anymore, has no effect')
   Future<bool> requiresBackgroundPermissions();
 
   /// Requests background permission
   ///
   /// Android only, takes user to android settings to accept background permissions
+  @Deprecated('custom call UI not used anymore, has no effect')
   Future<bool?> requestBackgroundPermissions();
+
+  /// Checks if device has a registered phone account
+  ///
+  /// Android only
+  Future<bool> hasRegisteredPhoneAccount();
+
+  /// Register phone account with TelecomManager
+  ///
+  /// Android only
+  Future<bool?> registerPhoneAccount();
+
+  /// Open phone account settings
+  ///
+  /// Android only
+  Future<bool?> openPhoneAccountSettings();
+
+  /// Checks if device has call phone permission
+  Future<bool> hasCallPhonePermission();
+
+  /// Request call phone permissions
+  Future<bool?> requestCallPhonePermission();
 
   /// Checks if device has microphone permission
   Future<bool> hasMicAccess();
 
   /// Request microphone permission
   Future<bool?> requestMicAccess();
+
+  /// Checks if device has read phone state permission
+  Future<bool> hasReadPhoneStatePermission();
+
+  /// Request read phone state permission
+  Future<bool?> requestReadPhoneStatePermission();
 
   /// Checks if device has bluetooth permissions
   /// Only available on Android
@@ -105,6 +134,7 @@ abstract class TwilioVoicePlatform extends SharedPlatformInterface {
   Future<bool?> setDefaultCallerName(String callerName);
 
   /// Android-only, shows background call UI
+  @Deprecated('custom call UI not used anymore, has no effect')
   Future<bool?> showBackgroundCallUI();
 
   /// Sends call events

@@ -61,7 +61,7 @@ class MethodChannelTwilioCall extends TwilioCallPlatform {
   /// In future, native mobile will also respect the [holdCall] value.
   @override
   Future<bool?> holdCall({bool holdCall = true}) {
-    return _channel.invokeMethod('holdCall', <String, dynamic>{});
+    return _channel.invokeMethod('holdCall', <String, dynamic>{"shouldHold": holdCall});
   }
 
   /// Query's active call holding state

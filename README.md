@@ -11,26 +11,27 @@ maintained, this one is.
 ## Features
 
 - Receive and place calls from iOS devices, uses callkit to receive calls.
-- Receive and place calls from Android devices, uses custom UI to receive calls.
+- Receive and place calls from Android devices, uses ~~custom UI~~ Native call screen to receive calls.
 - Receive and place calls from Web (FCM push notification integration not yet supported by Twilio Voice Web, see [here](https://github.com/twilio/twilio-voice.js/pull/159#issuecomment-1551553299) for discussion)
 - Receive and place calls from MacOS devices, uses custom UI to receive calls (in future & macOS
   13.0+, we'll be using CallKit).
 
 ## Feature addition schedule:
-- Audio device selection support (select input/output audio devices, in-progress)
-- Add Bluetooth support (permissions only, will merge with audio device selection)
+- Audio device selection support (select input/output audio devices, on-hold)
 - Update plugin to Flutter federated packages (step 1 of 2 with Web support merge)
-- Desktop platform support (implementation as JS wrapper/native implementation, Mac development in-testing, Windows/Linux to start development)
-- Unify Android & iOS incoming call screens with predefined parameters to autofill UI elements (in development).
+- Desktop platform support (implementation as JS wrapper/native implementation, Windows/Linux to start development)
 
 Got a feature you want to add, suggest? File a feature request or PR.
 
 ### Android Limitations
 
-As iOS has CallKit, an Apple provided UI for answering calls, there is no default UI for android to
+~~As iOS has CallKit, an Apple provided UI for answering calls, there is no default UI for android to
 receive calls, for this reason a default UI was made. To increase customization, the UI will use a
 splash_icon.png registered on your res/drawable folder. I haven't found a way to customize colors,
-if you find one, please submit a pull request.
+if you find one, please submit a pull request.~~
+
+Android provides a native UI by way of the `ConnectionService`. Twilio has made an attempt at this implementation
+however it is fully realized in this package.
 
 ### macOS Limitations
 
@@ -70,15 +71,31 @@ notifications:
 
 ``` xml
 <Application>
-  .....
-  <service
-      android:name="com.twilio.twilio_voice.fcm.VoiceFirebaseMessagingService"
-      android:stopWithTask="false">
-      <intent-filter>
-          <action android:name="com.google.firebase.MESSAGING_EVENT" />
-      </intent-filter>
-  </service>
+ .....
+ <service
+ android:name="com.twilio.twilio_voice.fcm.VoiceFirebaseMessagingService"
+ android:stopWithTask="false">
+<intent-filter> <action android:name="com.google.firebase.MESSAGING_EVENT" />
+</intent-filter> </service>
 ```
+
+With the implementation of runtime permissions, Android has made several changes over the SDK versions. Since Android 13, to allow showing notifications, the permissions `android.permission.POST_NOTIFICATIONS` has been added and integrated into the plugin.  This is required to show notifications on Android 13+ devices. Read more about it [here](https://developer.android.com/develop/ui/views/notifications/notification-permission)
+
+There are a few (additional) permissions added to use the `ConnectionService`, several permissions are required to enable this functionality (see example app). There permissions are:
+- `android.permission.BIND_TELECOM_CONNECTION_SERVICE`: required to bind to the `ConnectionService`
+- `android.permission.READ_PHONE_STATE`: required to read the phone state (to determine if a call is active)
+- `android.permission.CALL_PHONE`: required to access the ConnectionService and make/receive calls
+
+Further, registering of [PhoneAccount](https://developer.android.com/reference/android/telecom/PhoneAccount)'s are essential to the functionality. This is integrated into the plugin - however it should be noted if the `PhoneAccount` is not registered nor the `Call Account` is not activated, the plugin will not work. See [here](https://developer.android.com/reference/android/telecom/PhoneAccount) for more information regarding `PhoneAccount`s and [here]() for `Calling Account`s.
+
+To open the `Call Account` settings, use the following code:
+```dart
+   TwilioVoice.instance.openPhoneAccountSettings();
+```
+
+alternatively, this could be found in Phone App settings -> Other/Advanced Call Settings -> Calling Accounts -> Twilio Voice (toggle switch)
+
+(if there is a method to programmatically open this, please submit a PR)
 
 see [[Notes]](https://github.com/diegogarciar/twilio_voice/blob/master/NOTES.md#android) for more information.
 
@@ -284,12 +301,14 @@ and request the permission. Permissions is also automatically requested when rec
 
 #### Background calls (Android only on some devices)
 
-Xiaomi devices, and maybe others, need a special permission to receive background calls.
+~~Xiaomi devices, and maybe others, need a special permission to receive background calls.
 use `TwilioVoice.instance.requiresBackgroundPermissions` to check if your device requires a special
 permission, if it does, show a rationale explaining the user why you need the permission. Finally
 call
 `TwilioVoice.instance.requestBackgroundPermissions` which will take the user to the App Settings
-page to enable the permission.
+page to enable the permission.~~
+
+Deprecated in 0.10.0, as it is no longer needed. Custom UI has been replaced with native UI.
 
 ### Localization
 
@@ -664,7 +683,7 @@ exports.accessToken = functions.https.onCall((payload, context) => {
         outgoingApplicationSid,
         pushCredentialSid: pushCredSid,
     });
-w
+
     // Create an access token which we will sign and return to the client,
     // containing the grant we just created
     const token = new AccessToken(accountSid, apiKey, apiSecret);
@@ -676,7 +695,8 @@ w
 
     // return json object
     return {
-        "jwt_token": token.toJwt(),
+        "token": token.toJwt(),
+        "identity": userId,
         "expiry_date": dateTime.getTime()
     };
 });

@@ -3,8 +3,8 @@
 ### Android
 
 **Package Information:**
-> minSdkVersion: 21
-> compileSdkVersion: 33
+> minSdkVersion: 26
+> compileSdkVersion: 34
 
 **Gradle:**
 > gradle-wrapper: 8.2.1-all
