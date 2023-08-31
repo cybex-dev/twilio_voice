@@ -11,7 +11,16 @@ import 'package:twilio_voice_example/screens/ui_call_screen.dart';
 import 'package:twilio_voice_example/screens/ui_registration_screen.dart';
 
 import 'api.dart';
-import 'screens/call_screen.dart';
+
+extension IterableExtension<E> on Iterable<E> {
+  /// Extension on [Iterable]'s [firstWhere] that returns null if no element is found instead of throwing an exception.
+  E? firstWhereOrNull(bool Function(E element) test, {E Function()? orElse}) {
+    for (E element in this) {
+      if (test(element)) return element;
+    }
+    return (orElse == null) ? null : orElse();
+  }
+}
 
 enum RegistrationMethod {
   env,
@@ -20,7 +29,7 @@ enum RegistrationMethod {
 
   static RegistrationMethod? fromString(String? value) {
     if (value == null) return null;
-    return RegistrationMethod.values.firstWhere((element) => element.name == value);
+    return RegistrationMethod.values.firstWhereOrNull((element) => element.name == value);
   }
 
   static RegistrationMethod? loadFromEnvironment() {
@@ -130,6 +139,7 @@ class _AppState extends State<App> {
     userId = myId;
     return _registerAccessToken(myToken);
   }
+
   //#endregion
 
   //#region #region Register from Credentials
@@ -138,12 +148,13 @@ class _AppState extends State<App> {
     userId = identity;
     return _registerAccessToken(token);
   }
+
   //#endregion
 
   //#region #region Register with local provider
   /// Use this method to register with a local token generator
   /// To access this, run with `--dart-define=REGISTRATION_METHOD=local`
-  Future<bool>  _registerLocal() async {
+  Future<bool> _registerLocal() async {
     print("voip-registering with local token generator");
     final result = await generateLocalAccessToken();
     if (result == null) {
@@ -153,6 +164,7 @@ class _AppState extends State<App> {
     userId = result.identity;
     return _registerAccessToken(result.accessToken);
   }
+
   //#endregion
 
   //#region #region Register with Firebase provider
@@ -178,8 +190,8 @@ class _AppState extends State<App> {
 
   /// Use this method to register with a firebase token generator
   /// To access this, run with `--dart-define=REGISTRATION_METHOD=firebase`
-  Future<bool>  _registerFirebase() async {
-    if(!authRegistered) {
+  Future<bool> _registerFirebase() async {
+    if (!authRegistered) {
       _listenForFirebaseLogin();
       return false;
     }
@@ -192,6 +204,7 @@ class _AppState extends State<App> {
     userId = result.identity;
     return _registerAccessToken(result.accessToken);
   }
+
   //#endregion
 
   //#endregion
@@ -259,7 +272,7 @@ class _AppState extends State<App> {
   }
 
   Future<void> _onRegisterWithToken(String token, [String? identity]) async {
-    return _registerFromCredentials( identity ?? "Unknown", token).then((value) {
+    return _registerFromCredentials(identity ?? "Unknown", token).then((value) {
       if (!value) {
         showDialog(
           context: context,

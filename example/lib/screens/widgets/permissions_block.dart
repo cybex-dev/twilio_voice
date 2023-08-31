@@ -5,9 +5,8 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:twilio_voice/twilio_voice.dart';
-
-import '../../widgets/permission_tile.dart';
-import '../../widgets/state_toggle.dart';
+import 'package:twilio_voice_example/screens/widgets/permission_tile.dart';
+import 'package:twilio_voice_example/screens/widgets/state_toggle.dart';
 
 class PermissionsBlock extends StatefulWidget {
   const PermissionsBlock({super.key});
