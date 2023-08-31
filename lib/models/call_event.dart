@@ -14,9 +14,9 @@ enum CallEvent {
   bluetoothOn,
   bluetoothOff,
   log,
+  permission,
   declined,
   answer,
   missedCall,
   returningCall,
-  audioSwitch,
 }
