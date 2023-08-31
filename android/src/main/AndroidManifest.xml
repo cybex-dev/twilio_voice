@@ -1,22 +1,18 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.twilio.twilio_voice">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.twilio.twilio_voice">
 
-  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-  <uses-permission android:name="android.permission.DISABLE_KEYGUARD" />
-  <uses-permission android:name="android.permission.RECORD_AUDIO" />
-  <uses-permission android:name="android.permission.VIBRATE" />
-  <uses-permission android:name="android.permission.WAKE_LOCK" />
-  <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
-  <uses-permission android:name="android.permission.BLUETOOTH" />
-  <application>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.DISABLE_KEYGUARD" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.BLUETOOTH" />
 
-    <service android:enabled="true" android:name=".IncomingCallNotificationService"
-        android:exported="false">
-      <intent-filter>
-        <action android:name="ACTION_ACCEPT" />
-        <action android:name="ACTION_REJECT" />
-      </intent-filter>
-    </service>
-    <meta-data android:name="flutterEmbedding" android:value="2" />
-  </application>
+    <application>
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+    </application>
 
 </manifest>
