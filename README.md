@@ -284,12 +284,14 @@ and request the permission. Permissions is also automatically requested when rec
 
 #### Background calls (Android only on some devices)
 
-Xiaomi devices, and maybe others, need a special permission to receive background calls.
+~~Xiaomi devices, and maybe others, need a special permission to receive background calls.
 use `TwilioVoice.instance.requiresBackgroundPermissions` to check if your device requires a special
 permission, if it does, show a rationale explaining the user why you need the permission. Finally
 call
 `TwilioVoice.instance.requestBackgroundPermissions` which will take the user to the App Settings
-page to enable the permission.
+page to enable the permission.~~
+
+Deprecated in 0.10.0, as it is no longer needed. Custom UI has been replaced with native UI.
 
 ### Localization
 

@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:twilio_voice/_internal/platform_interface/twilio_call_platform_interface.dart';
 import 'package:twilio_voice/twilio_voice.dart';
@@ -67,6 +68,7 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
   /// Checks if device needs background permission
   ///
   /// Android only, xiamoi devices need special permission to show background call UI
+  @Deprecated('custom call UI not used anymore, has no effect')
   @override
   Future<bool> requiresBackgroundPermissions() {
     return _channel.invokeMethod<bool?>('requiresBackgroundPermissions', {}).then<bool>((bool? value) => value ?? false);
@@ -75,6 +77,7 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
   /// Requests background permission
   ///
   /// Android only, takes user to android settings to accept background permissions
+  @Deprecated('custom call UI not used anymore, has no effect')
   @override
   Future<bool?> requestBackgroundPermissions() {
     return _channel.invokeMethod('requestBackgroundPermissions', {});
