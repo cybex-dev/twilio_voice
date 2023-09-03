@@ -67,14 +67,14 @@ class FirebaseMessagingService : FirebaseMessagingService(), MessageListener {
     //region MessageListener
     @SuppressLint("MissingPermission")
     override fun onCallInvite(callInvite: CallInvite) {
-        // send broadcast to TVConnectionService
+        // send broadcast to TVConnectionService, we notify the TelecomManager about incoming call
         Intent(applicationContext, TVConnectionService::class.java).apply {
             action = TVConnectionService.ACTION_INCOMING_CALL
             putExtra(TVConnectionService.EXTRA_INCOMING_CALL_INVITE, callInvite)
             applicationContext.startService(this)
         }
 
-        // send broadcast to TVBroadcastReceiver
+        // send broadcast to TVBroadcastReceiver, we notify Flutter about incoming call
         Intent(applicationContext, TVBroadcastReceiver::class.java).apply {
             action = TVBroadcastReceiver.ACTION_INCOMING_CALL
             putExtra(TVBroadcastReceiver.EXTRA_CALL_INVITE, callInvite)
@@ -92,8 +92,4 @@ class FirebaseMessagingService : FirebaseMessagingService(), MessageListener {
         }
     }
     //endregion
-
-//    private fun sendBroadcastIntent(intent: Intent) {
-//        LocalBroadcastManager.getInstance(applicationContext).sendBroadcast(intent)
-//    }
 }
