@@ -18,7 +18,7 @@ import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.twilio.twilio_voice.R
 import com.twilio.twilio_voice.call.TVCallParameters
 import com.twilio.twilio_voice.call.TVCallParametersImpl
-import com.twilio.twilio_voice.messaging.FirebaseMessagingService
+import com.twilio.twilio_voice.fcm.VoiceFirebaseMessagingService
 import com.twilio.twilio_voice.receivers.TVBroadcastReceiver
 import com.twilio.twilio_voice.storage.Storage
 import com.twilio.twilio_voice.storage.StorageImpl
@@ -42,7 +42,7 @@ class TVConnectionService : ConnectionService() {
 
         //region ACTIONS_* Constants
         /**
-         * Action used with [FirebaseMessagingService] to notify of incoming calls
+         * Action used with [VoiceFirebaseMessagingService] to notify of incoming calls
          */
         const val ACTION_CALL_INVITE: String = "ACTION_CALL_INVITE"
 

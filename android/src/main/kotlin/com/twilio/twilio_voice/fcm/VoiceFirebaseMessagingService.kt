@@ -1,4 +1,4 @@
-package com.twilio.twilio_voice.messaging
+package com.twilio.twilio_voice.fcm
 
 import android.annotation.SuppressLint
 import android.content.Intent
@@ -16,10 +16,10 @@ import com.twilio.voice.CancelledCallInvite
 import com.twilio.voice.MessageListener
 import com.twilio.voice.Voice
 
-class FirebaseMessagingService : FirebaseMessagingService(), MessageListener {
+class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageListener {
 
     companion object {
-        private const val TAG = "FirebaseMessagingService"
+        private const val TAG = "VoiceFirebaseMessagingService"
 
         /**
          * Action used with [EXTRA_TOKEN] to send the FCM token to the TwilioVoicePlugin
