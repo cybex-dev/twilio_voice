@@ -221,12 +221,13 @@ class _AppState extends State<App> {
     });
 
     listenForEvents();
+    register();
 
     final partnerId = "alicesId";
     TwilioVoice.instance.registerClient(partnerId, "Alice");
-    TwilioVoice.instance.requestReadPhoneStatePermission();
-    TwilioVoice.instance.requestMicAccess();
-    TwilioVoice.instance.requestCallPhonePermission();
+    // TwilioVoice.instance.requestReadPhoneStatePermission();
+    // TwilioVoice.instance.requestMicAccess();
+    // TwilioVoice.instance.requestCallPhonePermission();
   }
 
   /// Listen for call events

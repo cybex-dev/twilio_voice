@@ -39,19 +39,19 @@ class _PermissionsBlockState extends State<PermissionsBlock> {
     });
   }
 
-  bool _hasBluetoothPermission = false;
-
-  set setBluetoothPermission(bool value) {
-    setState(() {
-      _hasBluetoothPermission = value;
-    });
-  }
-
   bool _hasReadPhoneStatePermission = false;
 
   set setReadPhoneStatePermission(bool value) {
     setState(() {
       _hasReadPhoneStatePermission = value;
+    });
+  }
+
+  bool _hasReadPhoneNumbersPermission = false;
+
+  set setReadPhoneNumbersPermission(bool value) {
+    setState(() {
+      _hasReadPhoneNumbersPermission = value;
     });
   }
 
@@ -158,7 +158,6 @@ class _PermissionsBlockState extends State<PermissionsBlock> {
   void _updatePermissions() {
     // get all permission states
     _tv.hasMicAccess().then((value) => setMicPermission = value);
-    _tv.hasBluetoothPermissions().then((value) => setBluetoothPermission = value);
     _tv.hasReadPhoneStatePermission().then((value) => setReadPhoneStatePermission = value);
     FirebaseMessaging.instance.requestPermission().then((value) => setBackgroundPermission = value.authorizationStatus == AuthorizationStatus.authorized);
     _tv.hasRegisteredPhoneAccount().then((value) => setPhoneAccountRegistered = value);
@@ -242,16 +241,6 @@ class _PermissionsBlockState extends State<PermissionsBlock> {
               },
             ),
 
-            PermissionTile(
-              icon: Icons.bluetooth,
-              title: "Bluetooth",
-              granted: _hasBluetoothPermission,
-              onRequestPermission: () async {
-                await _tv.requestBluetoothPermissions();
-                setBluetoothPermission = await _tv.hasBluetoothPermissions();
-              },
-            ),
-
             // if android
             if (Platform.isAndroid)
               PermissionTile(
@@ -261,18 +250,6 @@ class _PermissionsBlockState extends State<PermissionsBlock> {
                 onRequestPermission: () async {
                   await _tv.requestReadPhoneStatePermission();
                   setReadPhoneStatePermission = await _tv.hasReadPhoneStatePermission();
-                },
-              ),
-
-            // if android
-            if (Platform.isAndroid)
-              PermissionTile(
-                icon: Icons.phone_android,
-                title: "Call Phone",
-                granted: _hasCallPhonePermission,
-                onRequestPermission: () async {
-                  await _tv.requestCallPhonePermission();
-                  setCallPhonePermission = await _tv.hasCallPhonePermission();
                 },
               ),
 
