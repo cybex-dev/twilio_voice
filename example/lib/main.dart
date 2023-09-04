@@ -81,6 +81,9 @@ class _AppState extends State<App> {
   /// Flag showing registration status (for registering or re-registering on token change)
   var authRegistered = false;
 
+  /// Flag showing if incoming call dialog is showing
+  var showingIncomingCallDialog = false;
+
   //#region #region Register with Twilio
   void register() async {
     print("voip-service registration");
@@ -261,6 +264,18 @@ class _AppState extends State<App> {
             }
           }
           break;
+        case CallEvent.connected:
+        case CallEvent.callEnded:
+        case CallEvent.declined:
+        case CallEvent.answer:
+          if (kIsWeb || Platform.isAndroid) {
+            final nav = Navigator.of(context);
+            if (nav.canPop() && showingIncomingCallDialog) {
+              nav.pop();
+              showingIncomingCallDialog = false;
+            }
+          }
+          break;
         default:
           break;
       }
@@ -274,7 +289,6 @@ class _AppState extends State<App> {
       TwilioVoice.instance.requestMicAccess();
       return;
     }
-    TwilioVoice.instance.requestBluetoothPermissions();
     print("starting call to $clientIdentifier");
     TwilioVoice.instance.call.place(to: clientIdentifier, from: userId, extraOptions: {"_TWI_SUBJECT": "Company Name"});
   }
@@ -323,14 +337,17 @@ class _AppState extends State<App> {
 
   /// Show incoming call dialog for web and Android
   void _showWebIncomingCallDialog() async {
+    showingIncomingCallDialog = true;
     final activeCall = TwilioVoice.instance.call.activeCall!;
     final action = await showIncomingCallScreen(context, activeCall);
     if (action == true) {
       print("accepting call");
       TwilioVoice.instance.call.answer();
-    } else {
+    } else if (action == false) {
       print("rejecting call");
       TwilioVoice.instance.call.hangUp();
+    } else {
+      print("no action");
     }
   }
 
