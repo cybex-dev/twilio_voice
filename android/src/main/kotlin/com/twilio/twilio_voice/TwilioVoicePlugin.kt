@@ -690,9 +690,12 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                             return;
                         }
 
-                        val hasPhoneAccount =
-                            tm.hasCallCapableAccount(ctx, TVConnectionService::class.java.name)
-                        result.success(hasPhoneAccount)
+                        // Get phone account handle
+                        val phoneAccountHandle = tm.getPhoneAccountHandle(ctx)
+
+                        // Get PhoneAccount, if null it's not registered
+                        val phoneAccount = tm.getPhoneAccount(phoneAccountHandle)
+                        result.success(phoneAccount != null)
                     } ?: run {
                         Log.e(TAG, "Context is null, cannot check if registered phone account")
                         result.success(false)
