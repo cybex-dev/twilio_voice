@@ -16,6 +16,7 @@ import com.twilio.twilio_voice.types.ContextExtension.appName
 import com.twilio.twilio_voice.types.ContextExtension.hasReadPhoneNumbersPermission
 import com.twilio.twilio_voice.types.ContextExtension.hasReadPhoneStatePermission
 import com.twilio.twilio_voice.R
+import com.twilio.twilio_voice.call.TVParameters
 
 object TelecomManagerExtension {
 
@@ -49,7 +50,7 @@ object TelecomManagerExtension {
         val phoneAccount = PhoneAccount.builder(phoneAccountHandle, label)
             .setCapabilities(PhoneAccount.CAPABILITY_CALL_PROVIDER or PhoneAccount.CAPABILITY_CONNECTION_MANAGER or PhoneAccount.CAPABILITY_CALL_SUBJECT)
             .setShortDescription(description)
-            .addSupportedUriScheme(PhoneAccount.SCHEME_TEL)
+            .addSupportedUriScheme(TVConnectionService.TWI_SCHEME)
             .build()
 
         registerPhoneAccount(phoneAccount)
