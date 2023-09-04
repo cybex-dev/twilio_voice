@@ -1,8 +1,0 @@
-# Project TODO
-
-## Android Plugin
- * [TwilioVoicePlugin] Update documentation (and Permission annotations) where necessary
- * [TwilioVoicePlugin] checked permissions for setting up accounts, etc and noted accordingly - check incoming calls with no permissions, accounts, etc. added
- * [TwilioVoicePlugin] check permissions flow to simply process, e.g. register phone account automatically polls permissions required, etc.
- * [TwilioVoicePlugin] simply & revise functions, comments e.g. copy log state & numbers permission discrepancy
- * [TwilioVoicePlugin] set connection service name (strings) optional for developer
