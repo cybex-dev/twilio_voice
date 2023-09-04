@@ -15,8 +15,9 @@ import android.telecom.*
 import android.util.Log
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.twilio.twilio_voice.R
-import com.twilio.twilio_voice.call.TVCallParameters
+import com.twilio.twilio_voice.call.TVCallInviteParametersImpl
 import com.twilio.twilio_voice.call.TVCallParametersImpl
+import com.twilio.twilio_voice.call.TVParameters
 import com.twilio.twilio_voice.fcm.VoiceFirebaseMessagingService
 import com.twilio.twilio_voice.receivers.TVBroadcastReceiver
 import com.twilio.twilio_voice.storage.Storage
@@ -37,6 +38,8 @@ class TVConnectionService : ConnectionService() {
 
     companion object {
         val TAG = "TwilioVoiceConnectionService"
+
+        val TWI_SCHEME: String = "twi"
 
         val SERVICE_TYPE_MICROPHONE: Int = 100
 
@@ -463,48 +466,26 @@ class TVConnectionService : ConnectionService() {
             return super.onCreateIncomingConnection(connectionManagerPhoneAccount, request)
         }
 
-        val address = ci.from?.let { it1 -> Uri.parse("tel:${it1}") }
-        val callSid: String = ci.callSid;
-        val onAction: ValueBundleChanged<String> = ValueBundleChanged { event: String?, extra: Bundle? ->
-            sendBroadcastEvent(applicationContext, event ?: "", callSid, extra)
-        }
-        val onEvent: ValueBundleChanged<String> = ValueBundleChanged { event: String?, extra: Bundle? ->
-            sendBroadcastEvent(applicationContext, event ?: "", callSid, extra)
-        }
-        val onDisconnect: CompletionHandler<DisconnectCause> = CompletionHandler {
-            if (activeConnections.containsKey(callSid)) {
-                activeConnections.remove(callSid)
-            }
-            stopForegroundService()
-            stopSelfSafe()
-        }
-        val connection = TVCallInviteConnection(applicationContext, ci, onEvent, onAction, onDisconnect)
-        val newBundle = request.extras.also { it ->
+        // Create storage instance for call parameters
+        val storage: Storage = StorageImpl(applicationContext)
+
+        // Create connection
+        val connection = TVCallInviteConnection(applicationContext, ci)
+
+        // Remove call invite from extras, causes marshalling error i.e. Class not found.
+        val requestBundle = request.extras.also { it ->
             it.remove(TelecomManager.EXTRA_INCOMING_CALL_EXTRAS)
         }
-//        ci.customParameters["_TWI_SUBJECT"]?.let {
-//            connection.extras.putString(TelecomManager.EXTRA_CALL_SUBJECT, it)
-//        }
-        connection.extras = newBundle
+        connection.extras = requestBundle
 
-        val storage: Storage = StorageImpl(applicationContext)
-        val callParams: TVCallParameters = TVCallParametersImpl(ci, storage);
-        connection.setCallerDisplayName(callParams.from, TelecomManager.PRESENTATION_ALLOWED)
-//        connection.setAddress(address ?: Uri.parse("tel:Unknown Caller"), TelecomManager.PRESENTATION_ALLOWED)
+        // Resolve call parameters
+        val callParams: TVParameters = TVCallInviteParametersImpl(storage, ci);
+
+        // Setup connection event listeners and UI parameters
+        attachCallEventListeners(connection, ci.callSid)
+        applyParameters(connection, callParams)
         connection.setRinging()
 
-//        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-//            val filename = ci.from ?: "caller"
-//            val uri = ImageUtils.saveToCache(applicationContext, "https://avatars.githubusercontent.com/u/29998700?v=4", filename)
-//            val bundle = Bundle().apply {
-//                putParcelable(TelecomManager.EXTRA_PICTURE_URI, uri)
-//            }
-//            connection.putExtras(bundle)
-//        }
-
-        // this is the name of the caller that will be displayed on the Android UI, preference is given to the name of the contact set by setAddress
-//         connection.setCallerDisplayName(ci.customParameters["_TWI_SUBJECT"], TelecomManager.PRESENTATION_ALLOWED)
-        activeConnections[ci.callSid] = connection
         startForegroundService()
         return connection
     }
@@ -553,58 +534,84 @@ class TVConnectionService : ConnectionService() {
             .params(params)
             .build()
 
+        // create storage instance for call parameters
+        val mStorage: Storage = StorageImpl(applicationContext)
+
         // create outgoing connection
         val connection = TVCallConnection(applicationContext)
+
+        // create Voice SDK call
         val call = Voice.connect(applicationContext, connectOptions, connection)
+        connection.setCall(call)
+
+        // Resolve call parameters
+        val callParams = TVCallParametersImpl(mStorage, call, params)
+
+        // Set call state listener, applies non-temporary Call SID when call is ringing or connected (i.e. when assigned by Twilio)
         val onCallStateListener: CompletionHandler<Call.State> = CompletionHandler { state ->
             if (state == Call.State.RINGING || state == Call.State.CONNECTED) {
                 val callSid = call.sid!!
-                activeConnections[callSid] = connection
+                // If call is not attached, attach it
+                if(!activeConnections.containsKey(callSid)) {
+                    attachCallEventListeners(connection, callSid)
+                    callParams.callSid = callSid
+                }
             }
         }
         connection.setOnCallStateListener(onCallStateListener)
-        connection.setCall(call)
+
+        // Setup connection UI parameters
+        applyParameters(connection, callParams)
+        connection.setInitializing()
+
+        // Apply extras
+        connection.extras = request.extras
+
+        return connection
+    }
+
+    /**
+     * Attach call event listeners to the given connection. This includes responding to call events, call actions and when call has ended.
+     * @param connection The connection to attach the listeners to.
+     * @param callSid The call SID of the connection.
+     */
+    private fun <T: TVCallConnection> attachCallEventListeners(connection: T, callSid: String) {
 
         val onAction: ValueBundleChanged<String> = ValueBundleChanged { event: String?, extra: Bundle? ->
-            sendBroadcastEvent(applicationContext, event ?: "", call.sid, extra)
+            sendBroadcastEvent(applicationContext, event ?: "", callSid, extra)
         }
+
         val onEvent: ValueBundleChanged<String> = ValueBundleChanged { event: String?, extra: Bundle? ->
-            sendBroadcastEvent(applicationContext, event ?: "", call.sid, extra)
+            sendBroadcastEvent(applicationContext, event ?: "", callSid, extra)
         }
         val onDisconnect: CompletionHandler<DisconnectCause> = CompletionHandler {
-            if (activeConnections.containsKey(call.sid)) {
-                activeConnections.remove(call.sid)
+            if (activeConnections.containsKey(callSid)) {
+                activeConnections.remove(callSid)
             }
             stopForegroundService()
             stopSelfSafe()
         }
-        connection.setOnCallEventListener(onEvent)
-        connection.setOnCallEventListener(onEvent)
+
+        // Add to local connection cache
+        activeConnections[callSid] = connection
+
+        // attach listeners
         connection.setOnCallActionListener(onAction)
+        connection.setOnCallEventListener(onEvent)
         connection.setOnCallDisconnected(onDisconnect)
+    }
 
-        connection.extras = request.extras
-
-        val mStorage: Storage = StorageImpl(applicationContext)
-        val caller: String = mStorage.getRegisteredClient(to) ?: mStorage.defaultCaller
-        connection.setCallerDisplayName(caller, TelecomManager.PRESENTATION_ALLOWED)
-
-        // create a contact with the URL or custom URI with scheme twi://
-//        connection.setAddress(Uri.parse("tel:${to}"), TelecomManager.PRESENTATION_ALLOWED)
-        connection.setInitialized()
-
-//        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-//            val filename = params[Constants.FROM] ?: "caller"
-//            val uri = ImageUtils.saveToCache(applicationContext, "https://avatars.githubusercontent.com/u/29998700?v=4", filename)
-//            val bundle = Bundle().apply {
-//                putParcelable(TelecomManager.EXTRA_PICTURE_URI, uri)
-//            }
-//            connection.putExtras(bundle)
-//        }
-        startForegroundService()
-
-        // this is the name of the caller that will be displayed on the Android UI, preference is given to the name of the contact set by setAddress
-        return connection
+    /**
+     * Apply the given parameters to the given connection. This sets the address, caller display name and subject, any and all if present.
+     * @param connection The connection to apply the parameters to.
+     * @param params The parameters to apply to the connection.
+     */
+    private fun <T: TVCallConnection> applyParameters(connection: T, params: TVParameters) {
+        params.getExtra(TelecomManager.EXTRA_CALL_SUBJECT, null)?.let {
+            connection.extras.putString(TelecomManager.EXTRA_CALL_SUBJECT, it)
+        }
+        connection.setAddress(Uri.fromParts(TWI_SCHEME, params.from, null), TelecomManager.PRESENTATION_ALLOWED)
+        connection.setCallerDisplayName(params.from, TelecomManager.PRESENTATION_ALLOWED)
     }
 
     private fun sendBroadcastEvent(ctx: Context, event: String, callSid: String?, extras: Bundle? = null) {
