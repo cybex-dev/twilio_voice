@@ -1,5 +1,7 @@
 
 
+
+
 # twilio_voice
 
 Provides an interface to Twilio's Programmable Voice SDK to allow voice-over-IP (VoIP) calling into
@@ -118,7 +120,7 @@ Finally, to grant access to place calls, run:
 TwilioVoice.instance.requestCallPhonePermission();  // Gives Android permissions to place calls
 ```
 
-See [Customizing the Calling Account]() below
+See [Customizing the Calling Account](#customizing-the-calling-account) for more information.
 
 #### Enabling the ConnectionService
 To enable the `ConnectionService` and make/receive calls, run:
@@ -270,6 +272,7 @@ the workarounds.
 
 The events sent are the following
 
+- incoming // web, MacOS only
 - ringing
 - connected
 - callEnded
@@ -280,7 +283,11 @@ The events sent are the following
 - speakerOn
 - speakerOff
 - log
+- declined (based on Twilio Error codes, or remote abort)
 - answer
+- missedCall
+- returningCall
+- permission (Android only)
 
 ## showMissedCallNotifications
 
@@ -297,10 +304,26 @@ to `false`.
 use `extraOptions` to pass additional variables to your server callback function.
 
 ```
- await TwilioVoice.instance.call.place(from:myId, to: clientId, extraOptions)
-                   ;
+ await TwilioVoice.instance.call.place(from:myId, to: clientId, extraOptions);
 
 ```
+
+These translate to the your TwiML `event` function/service as:
+
+*javascript sample*
+```javascript
+exports.handler = function(context, event, callback) {
+    const from = event.From;
+    const to = event.To;
+    // event contains extraOptions as a key/value map
+
+    // your TwiML code...
+}
+```
+
+See [Setting up the Application](#setting-up-the-application) for more information.
+
+*Please note: the hardcoded `To`, `From` may change in future.*
 
 #### Mute a Call
 
@@ -751,7 +774,7 @@ After you are done, deploy your `.runtimeconfig.json`,
 see [this](https://firebase.google.com/docs/functions/config-env) for more help.
 
 Once done with everything above, deploy your firebase function with this:
-
+  
 ```bash
 firebase deploy --only functions
 ```
