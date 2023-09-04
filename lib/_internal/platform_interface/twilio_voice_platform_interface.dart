@@ -70,6 +70,11 @@ abstract class TwilioVoicePlatform extends SharedPlatformInterface {
   /// Android only
   Future<bool?> registerPhoneAccount();
 
+  /// Checks if App's phone account is enabled
+  ///
+  /// Android only
+  Future<bool> isPhoneAccountEnabled();
+
   /// Open phone account settings
   ///
   /// Android only

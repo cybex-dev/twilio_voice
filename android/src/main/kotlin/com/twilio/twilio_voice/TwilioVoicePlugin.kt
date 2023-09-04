@@ -32,6 +32,7 @@ import com.twilio.twilio_voice.types.TVMethodChannels
 import com.twilio.twilio_voice.types.TVNativeCallActions
 import com.twilio.twilio_voice.types.TVNativeCallEvents
 import com.twilio.twilio_voice.types.TelecomManagerExtension.canReadPhoneNumbers
+import com.twilio.twilio_voice.types.TelecomManagerExtension.getPhoneAccountHandle
 import com.twilio.twilio_voice.types.TelecomManagerExtension.hasCallCapableAccount
 import com.twilio.twilio_voice.types.TelecomManagerExtension.hasReadPhonePermission
 import com.twilio.twilio_voice.types.TelecomManagerExtension.isOnCall
@@ -708,6 +709,11 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 result.success(registerPhoneAccount())
             }
 
+            TVMethodChannels.IS_PHONE_ACCOUNT_ENABLED -> {
+                logEvent("isPhoneAccountEnabled")
+                result.success(checkIsPhoneAccountEnabled())
+            }
+
             TVMethodChannels.OPEN_PHONE_ACCOUNT_SETTINGS -> {
                 logEvent("changePhoneAccount")
                 activity?.let { a ->
@@ -1288,6 +1294,36 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     private fun checkReadPhoneStatePermission(): Boolean {
         logEvent("checkReadPhoneStatePermission")
         return checkPermission(Manifest.permission.READ_PHONE_STATE)
+    }
+
+    /**
+     * Checks if a [PhoneAccount] is registered with the Telecom app, and is enabled.
+     * Requires permissions:
+     * - [Manifest.permission.READ_PHONE_NUMBERS]: for getting the phone account via the handle.
+     */
+    @RequiresPermission(allOf = [Manifest.permission.READ_PHONE_NUMBERS])
+    private fun checkIsPhoneAccountEnabled(): Boolean {
+        context?.let { ctx ->
+            telecomManager?.let { tm ->
+                // Get PhoneAccountHandle
+                val phoneAccountHandle = tm.getPhoneAccountHandle(ctx)
+
+                if (!tm.canReadPhoneNumbers(ctx)) {
+                    Log.e(TAG, "hasRegisteredPhoneAccount: No read phone numbers permission, call `requestReadPhoneNumbersPermission()` first")
+                    return false;
+                }
+
+                return tm.getPhoneAccount(phoneAccountHandle).let {
+                    it != null && it.isEnabled;
+                }
+            } ?: run {
+                Log.e(TAG, "Telecom Manager is null, cannot check if registered phone account")
+                return false
+            }
+        } ?: run {
+            Log.e(TAG, "Context is null, cannot check if registered phone account")
+            return false
+        }
     }
 
     private fun requestPermissionForReadPhoneNumbers(): Boolean {

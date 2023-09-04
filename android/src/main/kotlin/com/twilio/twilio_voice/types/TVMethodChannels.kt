@@ -42,6 +42,7 @@ enum class TVMethodChannels(val method: String) {
     REQUEST_READ_PHONE_NUMBERS_PERMISSION("requestReadPhoneNumbersPermission"),
     @Deprecated("No longer required due to Custom UI replaced with native call screen")
     REQUEST_BACKGROUND_PERMISSIONS("requestBackgroundPermissions"),
+    IS_PHONE_ACCOUNT_ENABLED("isPhoneAccountEnabled"),
     @Deprecated("No longer required due to Custom UI replaced with native call screen")
     UPDATE_CALLKIT_ICON("updateCallKitIcon");
 

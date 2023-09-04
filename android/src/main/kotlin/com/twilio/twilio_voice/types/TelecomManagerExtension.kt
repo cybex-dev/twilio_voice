@@ -64,6 +64,19 @@ object TelecomManagerExtension {
     }
 
     /**
+     * Get the [PhoneAccountHandle] for the app
+     * @param ctx application context
+     * @return PhoneAccountHandle The phone account handle for the app
+     */
+    fun TelecomManager.getPhoneAccountHandle(ctx: Context): PhoneAccountHandle {
+        val appName = ctx.appName
+        val componentName = ComponentName(ctx, TVConnectionService::class.java)
+
+        Log.d(TVConnectionService.TAG, "getPhoneAccountHandle: Get PhoneAccountHandle with name: $appName, componentName: $componentName")
+        return PhoneAccountHandle(componentName, appName)
+    }
+
+    /**
      * Check if the app has the READ_PHONE_STATE permission
      * @param ctx application context
      * @return Boolean True if the app has the READ_PHONE_STATE permission

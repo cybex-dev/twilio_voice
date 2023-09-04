@@ -39,6 +39,14 @@ class _PermissionsBlockState extends State<PermissionsBlock> {
     });
   }
 
+  bool _isPhoneAccountEnabled = false;
+
+  set setIsPhoneAccountEnabled(bool value) {
+    setState(() {
+      _isPhoneAccountEnabled = value;
+    });
+  }
+
   bool _hasReadPhoneStatePermission = false;
 
   set setReadPhoneStatePermission(bool value) {
@@ -162,6 +170,7 @@ class _PermissionsBlockState extends State<PermissionsBlock> {
     _tv.hasReadPhoneNumbersPermission().then((value) => setReadPhoneNumbersPermission = value);
     FirebaseMessaging.instance.requestPermission().then((value) => setBackgroundPermission = value.authorizationStatus == AuthorizationStatus.authorized);
     _tv.hasRegisteredPhoneAccount().then((value) => setPhoneAccountRegistered = value);
+    _tv.isPhoneAccountEnabled().then((value) => setIsPhoneAccountEnabled = value);
   }
 
   @override
@@ -275,13 +284,21 @@ class _PermissionsBlockState extends State<PermissionsBlock> {
                 onRequestPermission: () async {
                   final result = await _tv.registerPhoneAccount();
                   setPhoneAccountRegistered = await _tv.hasRegisteredPhoneAccount();
-                  if (result != null && result) {
-                    await _tv.openPhoneAccountSettings();
-                    if (kDebugMode) {
-                      print("openPhoneAccountSettings $result");
-                    }
-                  }
                 },
+              ),
+
+            // if android
+            if (Platform.isAndroid)
+              ListTile(
+                enabled: _hasRegisteredPhoneAccount,
+                dense: true,
+                leading: const Icon(Icons.phonelink_lock_outlined),
+                title: const Text("Phone Account Status"),
+                subtitle: Text(_hasRegisteredPhoneAccount ? (_isPhoneAccountEnabled ? "Enabled" : "Not Enabled") : "Not Registered"),
+                trailing: ElevatedButton(
+                  onPressed: _hasRegisteredPhoneAccount && !_isPhoneAccountEnabled ? () => _tv.openPhoneAccountSettings() : null,
+                  child: Text("Open Settings"),
+                ),
               ),
           ],
         ),

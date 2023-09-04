@@ -101,6 +101,17 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
     return _channel.invokeMethod<bool?>('registerPhoneAccount', {}).then<bool>((bool? value) => value ?? false);
   }
 
+  /// Checks if App's phone account is enabled
+  ///
+  /// Android only
+  @override
+  Future<bool> isPhoneAccountEnabled() {
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      return Future.value(true);
+    }
+    return _channel.invokeMethod<bool?>('isPhoneAccountEnabled', {}).then<bool>((bool? value) => value ?? false);
+  }
+
   /// Open phone account settings
   ///
   /// Android only
