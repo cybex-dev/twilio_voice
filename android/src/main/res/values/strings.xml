@@ -3,4 +3,6 @@
     <string name="cancel">Cancel</string>
     <string name="proceed">Proceed</string>
     <string name="connection_service_name" translatable="false">Voice Call Service</string>
+    <string name="phone_account_name" translatable="false" />
+    <string name="phone_account_desc" translatable="false" />
 </resources>

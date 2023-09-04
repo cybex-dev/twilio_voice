@@ -379,7 +379,7 @@ class TVConnectionService : ConnectionService() {
 
                     if (!telecomManager.hasCallCapableAccount(applicationContext, phoneAccountHandle.componentName.className)) {
                         Log.e(TAG, "onStartCommand: No registered phone account for PhoneHandle $phoneAccountHandle")
-                        telecomManager.registerPhoneAccount(applicationContext, phoneAccountHandle, applicationContext.appName)
+                        telecomManager.registerPhoneAccount(applicationContext, phoneAccountHandle)
                     }
 
                     // Create outgoing extras

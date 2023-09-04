@@ -15,6 +15,7 @@ import com.twilio.twilio_voice.service.TVConnectionService
 import com.twilio.twilio_voice.types.ContextExtension.appName
 import com.twilio.twilio_voice.types.ContextExtension.hasReadPhoneNumbersPermission
 import com.twilio.twilio_voice.types.ContextExtension.hasReadPhoneStatePermission
+import com.twilio.twilio_voice.R
 
 object TelecomManagerExtension {
 
@@ -26,16 +27,28 @@ object TelecomManagerExtension {
      *  @param shortDescription The short description for the phone account
      */
     @RequiresPermission(value = "android.permission.READ_PHONE_STATE")
-    fun TelecomManager.registerPhoneAccount(ctx: Context, phoneAccountHandle: PhoneAccountHandle, label: String, shortDescription: String = "") {
+    fun TelecomManager.registerPhoneAccount(ctx: Context, phoneAccountHandle: PhoneAccountHandle) {
         if (hasCallCapableAccount(ctx, phoneAccountHandle.componentName.className)) {
             // phone account already registered
             Log.d("TelecomManager", "registerPhoneAccount: phone account already re-registering.")
 //            return
         }
+
+        val label = ctx.getString(R.string.phone_account_name).apply {
+            this.ifEmpty {
+                ctx.appName
+            }
+        }
+        val description = ctx.getString(R.string.phone_account_desc).apply {
+            this.ifEmpty {
+                "Provides calling services for $label"
+            }
+        }
+
         // register phone account
         val phoneAccount = PhoneAccount.builder(phoneAccountHandle, label)
             .setCapabilities(PhoneAccount.CAPABILITY_CALL_PROVIDER or PhoneAccount.CAPABILITY_CONNECTION_MANAGER or PhoneAccount.CAPABILITY_CALL_SUBJECT)
-            .setShortDescription(shortDescription)
+            .setShortDescription(description)
             .addSupportedUriScheme(PhoneAccount.SCHEME_TEL)
             .build()
 

@@ -1067,7 +1067,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
 //                    return true
                 }
 
-                tm.registerPhoneAccount(ctx, phoneAccountHandle, ctx.appName)
+                tm.registerPhoneAccount(ctx, phoneAccountHandle)
                 return true;
             } ?: run {
                 Log.e(TAG, "Telecom Manager is null, cannot check if registered phone account")
