@@ -25,7 +25,9 @@ enum class TVMethodChannels(val method: String) {
     OPEN_PHONE_ACCOUNT_SETTINGS("openPhoneAccountSettings"),
     HAS_MIC_PERMISSION("hasMicPermission"),
     REQUEST_MIC_PERMISSION("requestMicPermission"),
+    @Deprecated("Deprecated in favour of native call screen handling these permissions")
     HAS_BLUETOOTH_PERMISSION("hasBluetoothPermission"),
+    @Deprecated("Deprecated in favour of native call screen handling these permissions")
     REQUEST_BLUETOOTH_PERMISSION("requestBluetoothPermission"),
     HAS_READ_PHONE_STATE_PERMISSION("hasReadPhoneStatePermission"),
     REQUEST_READ_PHONE_STATE_PERMISSION("requestReadPhoneStatePermission"),

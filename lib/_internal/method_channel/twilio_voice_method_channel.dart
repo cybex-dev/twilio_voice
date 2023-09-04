@@ -159,14 +159,14 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
   /// Defaults to false
   @override
   Future<bool> hasBluetoothPermissions() {
-    return _channel.invokeMethod<bool?>('hasBluetoothPermission', {}).then<bool>((bool? value) => value ?? false);
+    return Future.value(false);
   }
 
   /// Request bluetooth permissions
   /// Only available on Android
   @override
   Future<bool?> requestBluetoothPermissions() {
-    return _channel.invokeMethod('requestBluetoothPermission', {});
+    return Future.value(false);
   }
 
   /// Set iOS call kit icon

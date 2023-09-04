@@ -88,7 +88,6 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     // Constants
     private val kCHANNEL_NAME = "twilio_voice"
     private val REQUEST_CODE_MICROPHONE = 1
-    private val REQUEST_CODE_BLUETOOTH = 2
 
     //    private val REQUEST_CODE_TELECOM = 3
 //    private val REQUEST_CODE_READ_PHONE_NUMBERS = 4
@@ -234,14 +233,6 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             } else {
                 Log.d(TAG, "Microphone permission not granted")
                 logEventPermission("Microphone", false)
-            }
-        } else if (requestCode == REQUEST_CODE_BLUETOOTH) {
-            if (permissions.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                Log.d(TAG, "Bluetooth permission granted")
-                logEventPermission("Bluetooth", true)
-            } else {
-                Log.d(TAG, "Bluetooth permission not granted")
-                logEventPermission("Bluetooth", false)
             }
         } /*else if (requestCode == REQUEST_CODE_TELECOM) {
             if (permissions.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
@@ -785,17 +776,13 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             }
 
             TVMethodChannels.HAS_BLUETOOTH_PERMISSION -> {
-                result.success(checkBluetoothPermission())
+                // Deprecated in favour of native call screen handling these permissions
+                result.success(false)
             }
 
             TVMethodChannels.REQUEST_BLUETOOTH_PERMISSION -> {
-                logEvent("requesting bluetooth permissions")
-                if (!checkBluetoothPermission()) {
-                    val hasAccess = requestPermissionForBluetooth()
-                    result.success(hasAccess)
-                } else {
-                    result.success(true)
-                }
+                // Deprecated in favour of native call screen handling these permissions
+                result.success(false)
             }
 
             TVMethodChannels.BACKGROUND_CALL_UI -> {
@@ -1297,13 +1284,6 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         ) == PackageManager.PERMISSION_GRANTED
     }
 
-    private fun checkBluetoothPermission(): Boolean {
-        logEvent("checkPermissionForBluetooth")
-        val permission =
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Manifest.permission.BLUETOOTH_CONNECT else Manifest.permission.BLUETOOTH
-        return checkPermission(permission)
-    }
-
     private fun checkCallPhonePermission(): Boolean {
         logEvent("checkPermissionForCallPhone")
         return checkPermission(Manifest.permission.CALL_PHONE)
@@ -1343,22 +1323,6 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             "Make phone calls.",
             Manifest.permission.CALL_PHONE,
             REQUEST_CODE_CALL_PHONE
-        )
-    }
-
-    /**
-     * Requests permission for bluetooth, or shows rationale if the user has denied/not granted permissions yet.
-     *
-     * @return true if the user has given permission for bluetooth, false otherwise.
-     */
-    private fun requestPermissionForBluetooth(): Boolean {
-        val permission =
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Manifest.permission.BLUETOOTH_CONNECT else Manifest.permission.BLUETOOTH
-        return requestPermissionOrShowRationale(
-            "Bluetooth",
-            "Bluetooth permission is required to access bluetooth headset for calls.",
-            permission,
-            REQUEST_CODE_BLUETOOTH
         )
     }
 
