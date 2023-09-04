@@ -15,9 +15,11 @@ class PermissionsBlock extends StatefulWidget {
   State<PermissionsBlock> createState() => _PermissionsBlockState();
 }
 
-class _PermissionsBlockState extends State<PermissionsBlock> {
+class _PermissionsBlockState extends State<PermissionsBlock> with WidgetsBindingObserver {
   late final StreamSubscription<CallEvent> _subscription;
   final _events = <CallEvent>[];
+
+  AppLifecycleState? _lastLifecycleState;
 
   final _tv = TwilioVoice.instance;
   bool activeCall = false;
@@ -108,8 +110,18 @@ class _PermissionsBlockState extends State<PermissionsBlock> {
   //#endregion
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    print("AppLifecycleState: $state");
+    if(_lastLifecycleState != state && state == AppLifecycleState.resumed) {
+      _updatePermissions();
+    }
+    _lastLifecycleState = state;
+  }
+
+  @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _subscription = _tv.callEventsListener.listen((event) {
       _events.add(event);
       switch (event) {
@@ -147,7 +159,7 @@ class _PermissionsBlockState extends State<PermissionsBlock> {
           break;
 
         case CallEvent.permission:
-          _updatePermissions();
+          // Using app lifecycle states, we don't have to update permissions here - convenience only.
           break;
       }
     });
@@ -318,6 +330,7 @@ class _PermissionsBlockState extends State<PermissionsBlock> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _subscription.cancel();
     super.dispose();
   }
