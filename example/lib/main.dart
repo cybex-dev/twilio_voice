@@ -82,22 +82,29 @@ class _AppState extends State<App> {
   var authRegistered = false;
 
   //#region #region Register with Twilio
-  void register() {
+  void register() async {
     print("voip-service registration");
 
     // Use for locally provided token generator e.g. Twilio's quickstarter project: https://github.com/twilio/voice-quickstart-server-node
     if (!kIsWeb) {
+      bool success = false;
       // if not web, we use the requested registration method
       switch (widget.registrationMethod) {
         case RegistrationMethod.env:
-          _registerFromEnvironment();
+          success = await _registerFromEnvironment();
           break;
         case RegistrationMethod.local:
-          _registerLocal();
+          success = await _registerLocal();
           break;
         case RegistrationMethod.firebase:
-          _registerFirebase();
+          success = await _registerFirebase();
           break;
+      }
+
+      if (success) {
+        setState(() {
+          twilioInit = true;
+        });
       }
     } else {
       // for web, we always show the initialisation screen
