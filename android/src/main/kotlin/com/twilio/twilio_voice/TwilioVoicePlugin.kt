@@ -28,6 +28,10 @@ import com.twilio.twilio_voice.storage.StorageImpl
 import com.twilio.twilio_voice.types.CallDirection
 import com.twilio.twilio_voice.types.CallExceptionExtension
 import com.twilio.twilio_voice.types.ContextExtension.appName
+import com.twilio.twilio_voice.types.ContextExtension.hasMicrophoneAccess
+import com.twilio.twilio_voice.types.ContextExtension.hasReadPhoneNumbersPermission
+import com.twilio.twilio_voice.types.ContextExtension.hasReadPhoneStatePermission
+import com.twilio.twilio_voice.types.ContextExtension.checkPermission
 import com.twilio.twilio_voice.types.IntentExtension.getParcelableExtraSafe
 import com.twilio.twilio_voice.types.TVMethodChannels
 import com.twilio.twilio_voice.types.TVNativeCallActions
@@ -1304,26 +1308,19 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     }
     //endregion
 
-    private fun checkPermission(permissionName: String): Boolean {
-        return ContextCompat.checkSelfPermission(
-            context!!,
-            permissionName
-        ) == PackageManager.PERMISSION_GRANTED
-    }
-
     private fun checkReadPhoneNumbersPermission(): Boolean {
         logEvent("checkPermissionForReadPhoneNumbers")
-        return checkPermission(Manifest.permission.READ_PHONE_NUMBERS)
+        return context?.hasReadPhoneNumbersPermission() ?: false
     }
 
     private fun checkMicrophonePermission(): Boolean {
         logEvent("checkPermissionForMicrophone")
-        return checkPermission(Manifest.permission.RECORD_AUDIO)
+        return context?.hasMicrophoneAccess() ?: false
     }
 
     private fun checkReadPhoneStatePermission(): Boolean {
         logEvent("checkReadPhoneStatePermission")
-        return checkPermission(Manifest.permission.READ_PHONE_STATE)
+        return context?.hasReadPhoneStatePermission() ?: false
     }
 
     /**
@@ -1392,7 +1389,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         if (activity == null) {
             return false
         }
-        if (checkPermission(manifestPermission)) {
+        if (activity!!.checkPermission(manifestPermission)) {
             return true
         }
         logEvent("requestPermissionFor$permissionName")

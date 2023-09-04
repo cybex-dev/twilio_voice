@@ -13,6 +13,8 @@ import androidx.annotation.RequiresPermission
 import androidx.core.content.PermissionChecker
 import com.twilio.twilio_voice.service.TVConnectionService
 import com.twilio.twilio_voice.types.ContextExtension.appName
+import com.twilio.twilio_voice.types.ContextExtension.hasReadPhoneNumbersPermission
+import com.twilio.twilio_voice.types.ContextExtension.hasReadPhoneStatePermission
 
 object TelecomManagerExtension {
 
@@ -86,7 +88,7 @@ object TelecomManagerExtension {
      * @return Boolean True if the app has the READ_PHONE_STATE permission
      */
     fun TelecomManager.canReadPhoneState(ctx: Context): Boolean {
-        return PermissionChecker.checkSelfPermission(ctx, android.Manifest.permission.READ_PHONE_STATE) == PermissionChecker.PERMISSION_GRANTED
+        return ctx.hasReadPhoneStatePermission()
     }
 
     /**
@@ -95,7 +97,7 @@ object TelecomManagerExtension {
      * @return Boolean True if the app has the READ_PHONE_NUMBERS permission
      */
     fun TelecomManager.canReadPhoneNumbers(ctx: Context): Boolean {
-        return PermissionChecker.checkSelfPermission(ctx, android.Manifest.permission.READ_PHONE_NUMBERS) == PermissionChecker.PERMISSION_GRANTED
+        return ctx.hasReadPhoneNumbersPermission()
     }
 
     @RequiresPermission(value = "android.permission.READ_PHONE_STATE")
