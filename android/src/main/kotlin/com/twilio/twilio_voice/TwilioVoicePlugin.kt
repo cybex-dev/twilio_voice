@@ -1386,39 +1386,35 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         manifestPermission: String,
         requestCode: Int
     ): Boolean {
-        if (activity == null) {
-            return false
-        }
-        if (activity!!.checkPermission(manifestPermission)) {
-            return true
-        }
-        logEvent("requestPermissionFor$permissionName")
-        return if (ActivityCompat.shouldShowRequestPermissionRationale(
-                activity!!,
-                manifestPermission
-            )
-        ) {
-            val clickListener =
-                DialogInterface.OnClickListener { _: DialogInterface?, _: Int ->
-                    ActivityCompat.requestPermissions(
-                        activity!!, arrayOf(manifestPermission), requestCode
-                    )
-                }
-            val dismissListener = DialogInterface.OnDismissListener { _: DialogInterface? ->
-                logEvent("Request" + permissionName + "Access")
+        return activity?.let {
+            if (activity!!.checkPermission(manifestPermission)) {
+                return true
             }
-            showPermissionRationaleDialog(
-                activity!!,
-                "$permissionName Permissions",
-                description,
-                clickListener,
-                dismissListener
-            )
-            false
-        } else {
-            ActivityCompat.requestPermissions(activity!!, arrayOf(manifestPermission), requestCode)
-            false
-        }
+            logEvent("requestPermissionFor$permissionName")
+            val shouldShowRationale = ActivityCompat.shouldShowRequestPermissionRationale(activity!!, manifestPermission)
+            return if (shouldShowRationale) {
+                val clickListener =
+                    DialogInterface.OnClickListener { _: DialogInterface?, _: Int ->
+                        ActivityCompat.requestPermissions(
+                            activity!!, arrayOf(manifestPermission), requestCode
+                        )
+                    }
+                val dismissListener = DialogInterface.OnDismissListener { _: DialogInterface? ->
+                    logEvent("Request" + permissionName + "Access")
+                }
+                showPermissionRationaleDialog(
+                    activity!!,
+                    "$permissionName Permissions",
+                    description,
+                    clickListener,
+                    dismissListener
+                )
+                false
+            } else {
+                ActivityCompat.requestPermissions(activity!!, arrayOf(manifestPermission), requestCode)
+                false
+            }
+        } ?: false;
     }
 
     private fun showPermissionRationaleDialog(
