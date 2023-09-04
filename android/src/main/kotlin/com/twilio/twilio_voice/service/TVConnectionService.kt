@@ -5,7 +5,6 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -26,6 +25,7 @@ import com.twilio.twilio_voice.types.BundleExtensions.getParcelableSafe
 import com.twilio.twilio_voice.types.CompletionHandler
 import com.twilio.twilio_voice.types.ContextExtension.appName
 import com.twilio.twilio_voice.types.IntentExtension.getParcelableExtraSafe
+import com.twilio.twilio_voice.types.TelecomManagerExtension.getPhoneAccountHandle
 import com.twilio.twilio_voice.types.TelecomManagerExtension.hasCallCapableAccount
 import com.twilio.twilio_voice.types.TelecomManagerExtension.canReadPhoneState
 import com.twilio.twilio_voice.types.TelecomManagerExtension.registerPhoneAccount
@@ -160,13 +160,6 @@ class TVConnectionService : ConnectionService() {
          */
         const val EXTRA_MUTE_STATE: String = "EXTRA_MUTE_STATE"
         //endregion
-
-        fun getPhoneAccountHandle(ctx: Context): PhoneAccountHandle {
-            val appName = ctx.appName
-            val componentName = ComponentName(ctx, TVConnectionService::class.java)
-//            val userHandle = UserHandle.getUserHandleForUid(0)
-            return PhoneAccountHandle(componentName, appName)
-        }
     }
 
     private val activeConnections = HashMap<String, TVCallConnection>()
@@ -240,9 +233,6 @@ class TVConnectionService : ConnectionService() {
                 }
 
                 ACTION_INCOMING_CALL -> {
-                    // Get PhoneAccountHandle
-                    val phoneAccountHandle = getPhoneAccountHandle(applicationContext)
-
                     // Load CallInvite class loader & get callInvite
                     val callInvite = it.getParcelableExtraSafe<CallInvite>(EXTRA_INCOMING_CALL_INVITE) ?: run {
                         Log.e(TAG, "onStartCommand: 'ACTION_INCOMING_CALL' is missing parcelable 'EXTRA_INCOMING_CALL_INVITE'")
@@ -253,6 +243,17 @@ class TVConnectionService : ConnectionService() {
                     if (!telecomManager.canReadPhoneState(applicationContext)) {
                         Log.e(TAG, "onCallInvite: Permission to read phone state not granted or requested.")
                         callInvite.reject(applicationContext)
+                        return@let
+                    }
+
+                    val phoneAccountHandle = telecomManager.getPhoneAccountHandle(applicationContext)
+                    val phoneAccount = telecomManager.getPhoneAccount(phoneAccountHandle)
+                    if(phoneAccount == null) {
+                        Log.e(TAG, "onStartCommand: PhoneAccount is null, make sure to register one with `registerPhoneAccount()`")
+                        return@let
+                    }
+                    if(!phoneAccount.isEnabled) {
+                        Log.e(TAG, "onStartCommand: PhoneAccount is not enabled, prompt the user to enable the phone account by opening settings with `openPhoneAccountSettings()`")
                         return@let
                     }
 
@@ -355,15 +356,24 @@ class TVConnectionService : ConnectionService() {
                         })
                     }
 
-                    // Get PhoneAccountHandle
-                    val phoneAccountHandle = getPhoneAccountHandle(applicationContext)
-
-                    // Get telecom manager
                     val telecomManager = getSystemService(TELECOM_SERVICE) as TelecomManager
-                    if (!telecomManager.hasReadPhonePermission(applicationContext)) {
+                    val phoneAccountHandle = telecomManager.getPhoneAccountHandle(applicationContext)
+
+                    if (!telecomManager.canReadPhoneState(applicationContext)) {
                         Log.e(TAG, "onStartCommand: Missing READ_PHONE_STATE permission")
                         return@let
                     }
+
+                    val phoneAccount = telecomManager.getPhoneAccount(phoneAccountHandle)
+                    if(phoneAccount == null) {
+                        Log.e(TAG, "onStartCommand: PhoneAccount is null, make sure to register one with `registerPhoneAccount()`")
+                        return@let
+                    }
+                    if(!phoneAccount.isEnabled) {
+                        Log.e(TAG, "onStartCommand: PhoneAccount is not enabled, prompt the user to enable the phone account by opening settings with `openPhoneAccountSettings()`")
+                        return@let
+                    }
+
                     if (!telecomManager.hasCallCapableAccount(applicationContext, phoneAccountHandle.componentName.className)) {
                         Log.e(TAG, "onStartCommand: No registered phone account for PhoneHandle $phoneAccountHandle")
                         telecomManager.registerPhoneAccount(applicationContext, phoneAccountHandle, applicationContext.appName)
