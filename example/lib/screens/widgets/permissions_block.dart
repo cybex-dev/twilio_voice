@@ -55,14 +55,6 @@ class _PermissionsBlockState extends State<PermissionsBlock> {
     });
   }
 
-  bool _hasCallPhonePermission = false;
-
-  set setCallPhonePermission(bool value) {
-    setState(() {
-      _hasCallPhonePermission = value;
-    });
-  }
-
   bool _hasBackgroundPermissions = false;
 
   set setBackgroundPermission(bool value) {
@@ -168,7 +160,6 @@ class _PermissionsBlockState extends State<PermissionsBlock> {
     _tv.hasMicAccess().then((value) => setMicPermission = value);
     _tv.hasBluetoothPermissions().then((value) => setBluetoothPermission = value);
     _tv.hasReadPhoneStatePermission().then((value) => setReadPhoneStatePermission = value);
-    _tv.hasCallPhonePermission().then((value) => setCallPhonePermission = value);
     FirebaseMessaging.instance.requestPermission().then((value) => setBackgroundPermission = value.authorizationStatus == AuthorizationStatus.authorized);
     _tv.hasRegisteredPhoneAccount().then((value) => setPhoneAccountRegistered = value);
   }

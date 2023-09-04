@@ -124,18 +124,6 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
     return _channel.invokeMethod('requestMicPermission', {});
   }
 
-  /// Checks if device has microphone permission
-  @override
-  Future<bool> hasCallPhonePermission() {
-    return _channel.invokeMethod<bool?>('hasCallPhonePermission', {}).then<bool>((bool? value) => value ?? false);
-  }
-
-  /// Request microphone permission
-  @override
-  Future<bool?> requestCallPhonePermission() {
-    return _channel.invokeMethod('requestCallPhonePermission', {});
-  }
-
   /// Checks if device has read phone state permission
   @override
   Future<bool> hasReadPhoneStatePermission() {

@@ -92,7 +92,6 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     //    private val REQUEST_CODE_TELECOM = 3
 //    private val REQUEST_CODE_READ_PHONE_NUMBERS = 4
     private val REQUEST_CODE_READ_PHONE_STATE = 5
-    private val REQUEST_CODE_CALL_PHONE = 6
 
     private var isSpeakerOn: Boolean = false
     private var isBluetoothOn: Boolean = false
@@ -258,14 +257,6 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             } else {
                 Log.d(TAG, "Read Phone State permission not granted")
                 logEventPermission("Read Phone State", false)
-            }
-        } else if (requestCode == REQUEST_CODE_CALL_PHONE) {
-            if (permissions.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                Log.d(TAG, "Call Phone permission granted")
-                logEventPermission("Call Phone", true)
-            } else {
-                Log.d(TAG, "Call Phone permission not granted")
-                logEventPermission("Call Phone", false)
             }
         }
         return true
@@ -1284,11 +1275,6 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         ) == PackageManager.PERMISSION_GRANTED
     }
 
-    private fun checkCallPhonePermission(): Boolean {
-        logEvent("checkPermissionForCallPhone")
-        return checkPermission(Manifest.permission.CALL_PHONE)
-    }
-
     private fun checkMicrophonePermission(): Boolean {
         logEvent("checkPermissionForMicrophone")
         return checkPermission(Manifest.permission.RECORD_AUDIO)
@@ -1314,15 +1300,6 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             "Read phone state to make or receive phone calls.",
             Manifest.permission.READ_PHONE_STATE,
             REQUEST_CODE_READ_PHONE_STATE
-        )
-    }
-
-    private fun requestPermissionForCallPhone(): Boolean {
-        return requestPermissionOrShowRationale(
-            "Phone Calls",
-            "Make phone calls.",
-            Manifest.permission.CALL_PHONE,
-            REQUEST_CODE_CALL_PHONE
         )
     }
 
