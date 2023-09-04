@@ -95,7 +95,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     private val kCHANNEL_NAME = "twilio_voice"
     private val REQUEST_CODE_MICROPHONE = 1
 
-    //    private val REQUEST_CODE_TELECOM = 3
+    private val REQUEST_CODE_CALL_PHONE = 3
     private val REQUEST_CODE_READ_PHONE_NUMBERS = 4
     private val REQUEST_CODE_READ_PHONE_STATE = 5
 
@@ -262,6 +262,14 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             } else {
                 Log.d(TAG, "Read Phone State permission not granted")
                 logEventPermission("Read Phone State", false)
+            }
+        } else if (requestCode == REQUEST_CODE_CALL_PHONE) {
+            if (permissions.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                Log.d(TAG, "Call Phone permission granted")
+                logEventPermission("Call Phone", true)
+            } else {
+                Log.d(TAG, "Call Phone permission not granted")
+                logEventPermission("Call Phone State", false)
             }
         }
         return true
@@ -765,6 +773,20 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 }
             }
 
+            TVMethodChannels.HAS_CALL_PHONE_PERMISSION -> {
+                result.success(checkCallPhonePermission())
+            }
+
+            TVMethodChannels.REQUEST_CALL_PHONE_PERMISSION -> {
+                logEvent("requestingCallPhonePermission")
+                if (!checkCallPhonePermission()) {
+                    val hasAccess = requestPermissionForPhoneState()
+                    result.success(hasAccess)
+                } else {
+                    result.success(true)
+                }
+            }
+
             TVMethodChannels.HAS_READ_PHONE_NUMBERS_PERMISSION -> {
                 result.success(checkReadPhoneNumbersPermission())
             }
@@ -960,6 +982,10 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             }
             if (!checkReadPhoneNumbersPermission()) {
                 Log.e(TAG, "No read phone state permission, call `requestReadPhoneStatePermission()` first")
+                return false
+            }
+            if (!checkCallPhonePermission()) {
+                Log.e(TAG, "No call phone permission, call `requestCallPhonePermission()` first")
                 return false
             }
 
@@ -1323,6 +1349,11 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         return context?.hasReadPhoneStatePermission() ?: false
     }
 
+    private fun checkCallPhonePermission(): Boolean {
+        logEvent("checkCallPhonePermission")
+        return context?.hasReadPhoneStatePermission() ?: false
+    }
+
     /**
      * Checks if a [PhoneAccount] is registered with the Telecom app, and is enabled.
      * Requires permissions:
@@ -1377,6 +1408,15 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             "Read phone state to make or receive phone calls.",
             Manifest.permission.READ_PHONE_STATE,
             REQUEST_CODE_READ_PHONE_STATE
+        )
+    }
+
+    private fun requestPermissionForCallPhone(): Boolean {
+        return requestPermissionOrShowRationale(
+            "Access Phone",
+            "Required to place calls with Telecom App",
+            Manifest.permission.CALL_PHONE,
+            REQUEST_CODE_CALL_PHONE
         )
     }
 

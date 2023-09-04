@@ -110,6 +110,14 @@ Check if it's enabled with:
 TwilioVoice.instance.isPhoneAccountEnabled();
 ```
 
+#### Calling with ConnectionService
+Placing a call with Telecom app via Connection Service requires a `PhoneAccount` to be registered. See [Phone Account](#phone-account) above for more information.
+
+Finally, to grant access to place calls, run:
+```dart
+TwilioVoice.instance.requestCallPhonePermission();  // Gives Android permissions to place calls
+```
+
 See [Customizing the Calling Account]() below
 
 #### Enabling the ConnectionService
@@ -754,7 +762,7 @@ Calling should work naturally - just make sure to fetch the token from the endpo
 
 See [example](https://github.com/diegogarciar/twilio_voice/blob/master/example/lib/main.dart#L51)
 code, make sure to change the `voice-accessToken` to your function name, given to you by firebase
-when deploying (as part of the deploy text)    
+when deploying (as part of the deploy text)
 
 
 ## Future Work

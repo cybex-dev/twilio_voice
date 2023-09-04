@@ -44,6 +44,14 @@ object ContextExtension {
     }
 
     /**
+     * Check if the app has the CALL_PHONE permission
+     * @return Boolean True if the app has the CALL_PHONE permission
+     */
+    fun Context.hasCallPhonePermission(): Boolean {
+        return checkPermission(android.Manifest.permission.CALL_PHONE)
+    }
+
+    /**
      * Check if a permission is granted
      * @param ctx application context
      * @param permission The permission to check

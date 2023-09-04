@@ -41,6 +41,14 @@ class _PermissionsBlockState extends State<PermissionsBlock> with WidgetsBinding
     });
   }
 
+  bool _hasCallPhonePermission = false;
+
+  set setCallPhone(bool value) {
+    setState(() {
+      _hasCallPhonePermission = value;
+    });
+  }
+
   bool _isPhoneAccountEnabled = false;
 
   set setIsPhoneAccountEnabled(bool value) {
@@ -181,6 +189,7 @@ class _PermissionsBlockState extends State<PermissionsBlock> with WidgetsBinding
     _tv.hasReadPhoneStatePermission().then((value) => setReadPhoneStatePermission = value);
     _tv.hasReadPhoneNumbersPermission().then((value) => setReadPhoneNumbersPermission = value);
     FirebaseMessaging.instance.requestPermission().then((value) => setBackgroundPermission = value.authorizationStatus == AuthorizationStatus.authorized);
+    _tv.hasCallPhonePermission().then((value) => setCallPhone = value);
     _tv.hasRegisteredPhoneAccount().then((value) => setPhoneAccountRegistered = value);
     _tv.isPhoneAccountEnabled().then((value) => setIsPhoneAccountEnabled = value);
   }
@@ -284,6 +293,18 @@ class _PermissionsBlockState extends State<PermissionsBlock> with WidgetsBinding
                 onRequestPermission: () async {
                   await _tv.requestReadPhoneNumbersPermission();
                   setReadPhoneNumbersPermission = await _tv.hasReadPhoneNumbersPermission();
+                },
+              ),
+
+            // if android
+            if (Platform.isAndroid)
+              PermissionTile(
+                icon: Icons.call_made,
+                title: "Call Phone",
+                granted: _hasCallPhonePermission,
+                onRequestPermission: () async {
+                  await _tv.requestCallPhonePermission();
+                  setCallPhone = await _tv.hasCallPhonePermission();
                 },
               ),
 

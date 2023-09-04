@@ -153,6 +153,28 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
     return _channel.invokeMethod('requestReadPhoneStatePermission', {});
   }
 
+  /// Checks if device has 'android.permission.CALL_PHONE' permission
+  ///
+  /// Android only
+  @override
+  Future<bool> hasCallPhonePermission() {
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      return Future.value(true);
+    }
+    return _channel.invokeMethod<bool?>('hasCallPhonePermission', {}).then<bool>((bool? value) => value ?? false);
+  }
+
+  /// request 'android.permission.CALL_PHONE' permission
+  ///
+  /// Android only
+  @override
+  Future<bool?> requestCallPhonePermission() {
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      return Future.value(true);
+    }
+    return _channel.invokeMethod('requestCallPhonePermission', {});
+  }
+
   /// Checks if device has read phone numbers permission
   ///
   /// Android only
