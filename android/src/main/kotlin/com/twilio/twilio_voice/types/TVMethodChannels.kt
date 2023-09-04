@@ -33,8 +33,11 @@ enum class TVMethodChannels(val method: String) {
     REQUEST_CALL_PHONE_PERMISSION("requestCallPhonePermission"),
     BACKGROUND_CALL_UI("backgroundCallUi"),
     SHOW_NOTIFICATIONS("showNotifications"),
+    @Deprecated("No longer required due to Custom UI replaced with native call screen")
     REQUIRES_BACKGROUND_PERMISSIONS("requiresBackgroundPermissions"),
+    @Deprecated("No longer required due to Custom UI replaced with native call screen")
     REQUEST_BACKGROUND_PERMISSIONS("requestBackgroundPermissions"),
+    @Deprecated("No longer required due to Custom UI replaced with native call screen")
     UPDATE_CALLKIT_ICON("updateCallKitIcon");
 
     companion object {
