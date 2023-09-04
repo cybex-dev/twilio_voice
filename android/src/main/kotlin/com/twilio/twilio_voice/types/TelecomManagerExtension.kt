@@ -8,6 +8,7 @@ import android.os.Build
 import android.telecom.PhoneAccount
 import android.telecom.PhoneAccountHandle
 import android.telecom.TelecomManager
+import android.util.Log
 import androidx.annotation.RequiresPermission
 import androidx.core.content.PermissionChecker
 import com.twilio.twilio_voice.service.TVConnectionService
@@ -26,7 +27,8 @@ object TelecomManagerExtension {
     fun TelecomManager.registerPhoneAccount(ctx: Context, phoneAccountHandle: PhoneAccountHandle, label: String, shortDescription: String = "") {
         if (hasCallCapableAccount(ctx, phoneAccountHandle.componentName.className)) {
             // phone account already registered
-            return
+            Log.d("TelecomManager", "registerPhoneAccount: phone account already re-registering.")
+//            return
         }
         // register phone account
         val phoneAccount = PhoneAccount.builder(phoneAccountHandle, label)
