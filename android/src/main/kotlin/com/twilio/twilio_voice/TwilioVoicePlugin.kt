@@ -1163,6 +1163,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 addAction(TVBroadcastReceiver.ACTION_INCOMING_CALL)
                 addAction(TVBroadcastReceiver.ACTION_CALL_ENDED)
                 addAction(TVBroadcastReceiver.ACTION_CALL_STATE)
+                addAction(TVBroadcastReceiver.ACTION_INCOMING_CALL_IGNORED)
 
                 addAction(TVNativeCallActions.ACTION_ANSWERED)
                 addAction(TVNativeCallActions.ACTION_REJECTED)
@@ -1502,6 +1503,12 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                     intent.getBooleanExtra(TVBroadcastReceiver.EXTRA_HOLD_STATE, isHolding).also {
                         Log.d(TAG, "handleBroadcastIntent: Call holding $it")
                     }
+            }
+
+            TVBroadcastReceiver.ACTION_INCOMING_CALL_IGNORED -> {
+                val reason = intent.getStringExtra(TVBroadcastReceiver.EXTRA_INCOMING_CALL_IGNORED_REASON) ?: "N/A"
+                val handle = intent.getStringExtra(TVBroadcastReceiver.EXTRA_CALL_HANDLE) ?: "N/A"
+                Log.w(TAG, "handleBroadcastIntent: Incoming call ignored, see reason.\nCall Handle: $handle,\n Reason: $reason, ")
             }
 
             TVNativeCallActions.ACTION_ANSWERED -> {

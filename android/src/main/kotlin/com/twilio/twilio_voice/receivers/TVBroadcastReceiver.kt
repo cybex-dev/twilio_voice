@@ -29,6 +29,11 @@ class TVBroadcastReceiver(private val plugin: TwilioVoicePlugin) : BroadcastRece
         const val ACTION_INCOMING_CALL: String = "com.twilio.ACTION_INCOMING_CALL"
 
         /**
+         * Action used to notify the [TwilioVoicePlugin] of an incoming call.
+         */
+        const val ACTION_INCOMING_CALL_IGNORED: String = "com.twilio.ACTION_INCOMING_CALL_IGNORED"
+
+        /**
          * Action used to notify the [TwilioVoicePlugin] of a call ended.
          */
         const val ACTION_CALL_ENDED: String = "com.twilio.ACTION_CALL_ENDED"
@@ -67,6 +72,11 @@ class TVBroadcastReceiver(private val plugin: TwilioVoicePlugin) : BroadcastRece
          * Extra used with [ACTION_CALL_STATE] providing call mute state.
          */
         const val EXTRA_MUTE_STATE: String = "EXTRA_MUTE_STATE"
+
+        /**
+         * Extra used with [ACTION_INCOMING_CALL_IGNORED] providing call mute state.
+         */
+        const val EXTRA_INCOMING_CALL_IGNORED_REASON: String = "EXTRA_INCOMING_CALL_IGNORED_REASON"
     }
 
     override fun onReceive(context: Context, intent: Intent) {
