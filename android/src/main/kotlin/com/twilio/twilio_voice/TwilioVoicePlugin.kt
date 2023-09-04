@@ -933,46 +933,48 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         assert(to.isNotEmpty()) { "To cannot be empty" }
         assert(from.isNotEmpty()) { "From cannot be empty" }
 
-        if (!checkAccountConnection(context!!)) {
-            Log.e(TAG, "No registered phone account, call `registerPhoneAccount()` first")
+        telecomManager?.let { tm ->
+            if (tm.hasCallCapableAccount(ctx, TVConnectionService::class.java.name)) {
+                Log.e(TAG, "No registered phone account, call `registerPhoneAccount()` first")
+                return false
+            }
+            if (!checkMicrophonePermission()) {
+                Log.e(TAG, "No microphone permission, call `requestMicrophonePermission()` first")
+                return false
+            }
+            if (!checkReadPhoneNumbersPermission()) {
+                Log.e(TAG, "No read phone state permission, call `requestReadPhoneStatePermission()` first")
+                return false
+            }
+
+            val callParams = HashMap<String, String>(params)
+            if (params[Constants.PARAM_TO] == null) {
+                Log.w(TAG, "Call parameters must include '${Constants.PARAM_TO}', removing...")
+                callParams.remove(Constants.PARAM_TO)
+            }
+            if (params[Constants.PARAM_FROM] == null) {
+                Log.w(TAG, "Call parameters must include '${Constants.PARAM_FROM}', removing...")
+                callParams.remove(Constants.PARAM_FROM)
+            }
+
+            Intent(ctx, TVConnectionService::class.java).apply {
+                action = TVConnectionService.ACTION_PLACE_OUTGOING_CALL
+                putExtra(TVConnectionService.EXTRA_TOKEN, accessToken)
+                putExtra(TVConnectionService.EXTRA_TO, to)
+                putExtra(TVConnectionService.EXTRA_FROM, from)
+                putExtra(TVConnectionService.EXTRA_OUTGOING_PARAMS, Bundle().apply {
+                    for ((key, value) in params) {
+                        putString(key, value)
+                    }
+                })
+                ctx.startService(this)
+            }
+
+            return true
+        } ?: run {
+            Log.e(TAG, "TelecomManager is null, cannot place call")
             return false
         }
-        if (!checkMicrophonePermission()) {
-            Log.e(TAG, "No microphone permission, call `requestMicrophonePermission()` first")
-            return false
-        }
-        if (!checkReadPhoneStatePermission()) {
-            Log.e(
-                TAG,
-                "No read phone state permission, call `requestReadPhoneStatePermission()` first"
-            )
-            return false
-        }
-
-        val callParams = HashMap<String, String>(params)
-        if (params[Constants.PARAM_TO] == null) {
-            Log.w(TAG, "Call parameters must include '${Constants.PARAM_TO}', removing...")
-            callParams.remove(Constants.PARAM_TO)
-        }
-        if (params[Constants.PARAM_FROM] == null) {
-            Log.w(TAG, "Call parameters must include '${Constants.PARAM_FROM}', removing...")
-            callParams.remove(Constants.PARAM_FROM)
-        }
-
-        Intent(ctx, TVConnectionService::class.java).apply {
-            action = TVConnectionService.ACTION_PLACE_OUTGOING_CALL
-            putExtra(TVConnectionService.EXTRA_TOKEN, accessToken)
-            putExtra(TVConnectionService.EXTRA_TO, to)
-            putExtra(TVConnectionService.EXTRA_FROM, from)
-            putExtra(TVConnectionService.EXTRA_OUTGOING_PARAMS, Bundle().apply {
-                for ((key, value) in params) {
-                    putString(key, value)
-                }
-            })
-            ctx.startService(this)
-        }
-
-        return true
     }
 
     private fun formatCustomParams(
@@ -1009,32 +1011,41 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         context?.let { ctx ->
             telecomManager?.let { tm ->
                 // Get PhoneAccountHandle
-                val phoneAccountHandle = TVConnectionService.getPhoneAccountHandle(ctx)
+                val phoneAccountHandle = tm.getPhoneAccountHandle(ctx)
 
-                // Get telecom manager
-                if (!tm.hasReadPhonePermission(ctx)) {
-                    Log.e(
-                        TAG,
-                        "onStartCommand: Permission for READ_PHONE_STATE not granted or requested, call `requestReadPhoneStatePermission()` first"
-                    )
-                    return false
+                if (!tm.canReadPhoneNumbers(ctx)) {
+                    Log.e(TAG, "hasRegisteredPhoneAccount: No read phone numbers permission, call `requestReadPhoneNumbersPermission()` first")
+                    return false;
                 }
 
-                if (tm.hasCallCapableAccount(ctx, phoneAccountHandle.componentName.className)) {
-                    Log.w(TAG, "Phone account already registered")
+                // Get PhoneAccount, if null it's not registered
+                val phoneAccount = tm.getPhoneAccount(phoneAccountHandle)
+                if (phoneAccount != null) {
+                    if (!phoneAccount.isEnabled) {
+                        Log.e(
+                            TVConnectionService.TAG,
+                            "onStartCommand: PhoneAccount is not enabled, prompt the user to enable the phone account by opening settings with `openPhoneAccountSettings()`"
+                        )
+                        return true
+                    }
+
+                    // account is ready to use
                     return true
+                }
+
+                // Get telecom manager
+//                if (!tm.canReadPhoneState(ctx)) {
+//                    Log.e(TAG,"onStartCommand: Permission for READ_PHONE_STATE not granted or requested, call `requestReadPhoneStatePermission()` first")
+//                    return false
+//                }
+
+                if (tm.hasCallCapableAccount(ctx, phoneAccountHandle.componentName.className)) {
+                    Log.w(TAG, "registerPhoneAccount: Phone account already registered, re-registering anyway")
+//                    return true
                 }
 
                 tm.registerPhoneAccount(ctx, phoneAccountHandle, ctx.appName)
-
-                activity?.let {
-                    tm.openPhoneAccountSettings(it)
-                    return true
-                } ?: run {
-                    Log.e(TAG, "Activity is null, cannot open phone account settings")
-                    return false
-                }
-
+                return true;
             } ?: run {
                 Log.e(TAG, "Telecom Manager is null, cannot check if registered phone account")
                 return false
