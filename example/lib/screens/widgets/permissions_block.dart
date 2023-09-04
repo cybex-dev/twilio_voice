@@ -159,6 +159,7 @@ class _PermissionsBlockState extends State<PermissionsBlock> {
     // get all permission states
     _tv.hasMicAccess().then((value) => setMicPermission = value);
     _tv.hasReadPhoneStatePermission().then((value) => setReadPhoneStatePermission = value);
+    _tv.hasReadPhoneNumbersPermission().then((value) => setReadPhoneNumbersPermission = value);
     FirebaseMessaging.instance.requestPermission().then((value) => setBackgroundPermission = value.authorizationStatus == AuthorizationStatus.authorized);
     _tv.hasRegisteredPhoneAccount().then((value) => setPhoneAccountRegistered = value);
   }
@@ -250,6 +251,18 @@ class _PermissionsBlockState extends State<PermissionsBlock> {
                 onRequestPermission: () async {
                   await _tv.requestReadPhoneStatePermission();
                   setReadPhoneStatePermission = await _tv.hasReadPhoneStatePermission();
+                },
+              ),
+
+            // if android
+            if (Platform.isAndroid)
+              PermissionTile(
+                icon: Icons.phone,
+                title: "Read Phone Numbers",
+                granted: _hasReadPhoneNumbersPermission,
+                onRequestPermission: () async {
+                  await _tv.requestReadPhoneNumbersPermission();
+                  setReadPhoneNumbersPermission = await _tv.hasReadPhoneNumbersPermission();
                 },
               ),
 

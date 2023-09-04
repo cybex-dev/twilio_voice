@@ -31,6 +31,7 @@ import com.twilio.twilio_voice.types.IntentExtension.getParcelableExtraSafe
 import com.twilio.twilio_voice.types.TVMethodChannels
 import com.twilio.twilio_voice.types.TVNativeCallActions
 import com.twilio.twilio_voice.types.TVNativeCallEvents
+import com.twilio.twilio_voice.types.TelecomManagerExtension.canReadPhoneNumbers
 import com.twilio.twilio_voice.types.TelecomManagerExtension.hasCallCapableAccount
 import com.twilio.twilio_voice.types.TelecomManagerExtension.hasReadPhonePermission
 import com.twilio.twilio_voice.types.TelecomManagerExtension.isOnCall
@@ -90,7 +91,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     private val REQUEST_CODE_MICROPHONE = 1
 
     //    private val REQUEST_CODE_TELECOM = 3
-//    private val REQUEST_CODE_READ_PHONE_NUMBERS = 4
+    private val REQUEST_CODE_READ_PHONE_NUMBERS = 4
     private val REQUEST_CODE_READ_PHONE_STATE = 5
 
     private var isSpeakerOn: Boolean = false
@@ -241,16 +242,15 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 Log.d(TAG, "Telecom permission not granted")
                 logEventPermission("Telecom", false)
             }
-        } else if (requestCode == REQUEST_CODE_READ_PHONE_NUMBERS) {
+        } */ else if (requestCode == REQUEST_CODE_READ_PHONE_NUMBERS) {
             if (permissions.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 Log.d(TAG, "Read Phone Numbers permission granted")
                 logEventPermission("Read Phone Numbers", true)
-                registerPhoneAccount()
             } else {
                 Log.d(TAG, "Read Phone Numbers permission not granted")
                 logEventPermission("Read Phone Numbers", false)
             }
-        }*/ else if (requestCode == REQUEST_CODE_READ_PHONE_STATE) {
+        } else if (requestCode == REQUEST_CODE_READ_PHONE_STATE) {
             if (permissions.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 Log.d(TAG, "Read Phone State permission granted")
                 logEventPermission("Read Phone State", true)
@@ -752,14 +752,14 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 }
             }
 
-            TVMethodChannels.HAS_CALL_PHONE_PERMISSION -> {
-                result.success(checkCallPhonePermission())
+            TVMethodChannels.HAS_READ_PHONE_NUMBERS_PERMISSION -> {
+                result.success(checkReadPhoneNumbersPermission())
             }
 
-            TVMethodChannels.REQUEST_CALL_PHONE_PERMISSION -> {
-                logEvent("requestCallPhonePermission")
-                if (!checkCallPhonePermission()) {
-                    val hasAccess = requestPermissionForCallPhone()
+            TVMethodChannels.REQUEST_READ_PHONE_NUMBERS_PERMISSION -> {
+                logEvent("requestingReadPhoneNumbersPermission")
+                if (!checkReadPhoneNumbersPermission()) {
+                    val hasAccess = requestPermissionForReadPhoneNumbers()
                     result.success(hasAccess)
                 } else {
                     result.success(true)
@@ -1275,6 +1275,11 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         ) == PackageManager.PERMISSION_GRANTED
     }
 
+    private fun checkReadPhoneNumbersPermission(): Boolean {
+        logEvent("checkPermissionForReadPhoneNumbers")
+        return checkPermission(Manifest.permission.READ_PHONE_NUMBERS)
+    }
+
     private fun checkMicrophonePermission(): Boolean {
         logEvent("checkPermissionForMicrophone")
         return checkPermission(Manifest.permission.RECORD_AUDIO)
@@ -1283,6 +1288,15 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     private fun checkReadPhoneStatePermission(): Boolean {
         logEvent("checkReadPhoneStatePermission")
         return checkPermission(Manifest.permission.READ_PHONE_STATE)
+    }
+
+    private fun requestPermissionForReadPhoneNumbers(): Boolean {
+        return requestPermissionOrShowRationale(
+            "Read Phone Numbers",
+            "Grant access to read phone numbers.",
+            Manifest.permission.READ_PHONE_NUMBERS,
+            REQUEST_CODE_READ_PHONE_NUMBERS
+        )
     }
 
     private fun requestPermissionForMicrophone(): Boolean {

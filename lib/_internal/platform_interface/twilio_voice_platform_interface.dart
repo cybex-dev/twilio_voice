@@ -87,6 +87,16 @@ abstract class TwilioVoicePlatform extends SharedPlatformInterface {
   /// Request read phone state permission
   Future<bool?> requestReadPhoneStatePermission();
 
+  /// Checks if device has read phone numbers permission
+  ///
+  /// Android only
+  Future<bool> hasReadPhoneNumbersPermission();
+
+  /// Request read phone numbers permission
+  ///
+  /// Android only
+  Future<bool?> requestReadPhoneNumbersPermission();
+
   /// Checks if device has bluetooth permissions
   /// Only available on Android
   /// Defaults to false

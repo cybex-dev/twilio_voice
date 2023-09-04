@@ -20,7 +20,7 @@ enum class TVMethodChannels(val method: String) {
     REGISTER_CLIENT("registerClient"),
     UNREGISTER_CLIENT("unregisterClient"),
     DEFAULT_CALLER("defaultCaller"),
-    HAS_REGISTERED_PHONE_ACCOUNT("hasRegisteredPhoneAccount"),
+    HAS_REGISTERED_PHONE_ACCOUNT("hasRegisteredPhoneAccount"), //aka has call capable account
     REGISTER_PHONE_ACCOUNT("registerPhoneAccount"),
     OPEN_PHONE_ACCOUNT_SETTINGS("openPhoneAccountSettings"),
     HAS_MIC_PERMISSION("hasMicPermission"),
@@ -36,8 +36,10 @@ enum class TVMethodChannels(val method: String) {
     @Deprecated("No longer required due to Custom UI replaced with native call screen")
     BACKGROUND_CALL_UI("backgroundCallUi"),
     SHOW_NOTIFICATIONS("showNotifications"),
+    HAS_READ_PHONE_NUMBERS_PERMISSION("hasReadPhoneNumbersPermission"),
     @Deprecated("No longer required due to Custom UI replaced with native call screen")
     REQUIRES_BACKGROUND_PERMISSIONS("requiresBackgroundPermissions"),
+    REQUEST_READ_PHONE_NUMBERS_PERMISSION("requestReadPhoneNumbersPermission"),
     @Deprecated("No longer required due to Custom UI replaced with native call screen")
     REQUEST_BACKGROUND_PERMISSIONS("requestBackgroundPermissions"),
     @Deprecated("No longer required due to Custom UI replaced with native call screen")

@@ -72,6 +72,15 @@ object TelecomManagerExtension {
         return PermissionChecker.checkSelfPermission(ctx, android.Manifest.permission.READ_PHONE_STATE) == PermissionChecker.PERMISSION_GRANTED
     }
 
+    /**
+     * Check if the app has the READ_PHONE_NUMBERS permission
+     * @param ctx application context
+     * @return Boolean True if the app has the READ_PHONE_NUMBERS permission
+     */
+    fun TelecomManager.canReadPhoneNumbers(ctx: Context): Boolean {
+        return PermissionChecker.checkSelfPermission(ctx, android.Manifest.permission.READ_PHONE_NUMBERS) == PermissionChecker.PERMISSION_GRANTED
+    }
+
     @RequiresPermission(value = "android.permission.READ_PHONE_STATE")
     fun TelecomManager.isOnCall(ctx: Context): Boolean {
         if (!hasReadPhonePermission(ctx)) return false
