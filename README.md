@@ -1,17 +1,29 @@
+
+
 # twilio_voice
 
 Provides an interface to Twilio's Programmable Voice SDK to allow voice-over-IP (VoIP) calling into
 your Flutter applications.
-This plugin was taken from the original flutter_twilio_voice, as it seems that plugin is no longer
-maintained, this one is.
+~~This plugin was taken from the original `flutter_twilio_voice` as it seems that plugin is no longer maintained, this one is.~~  Project ownership & maintenance handed over by [diegogarcia](https://github.com/diegogarciar). For the foreseeable future, I'll be actively maintaining this project.
+
+
+
+#### 🐞Bug? Issue? Something odd?
+Report it [here](https://github.com/cybex-dev/twilio_voice/issues/new?assignees=&labels=type:Bug,status:Unconfirmed&projects=&template=BUG_REPORT.md&title=).
+
+#### 🚀 Feature Requests?
+Any and all [Feature Requests](https://github.com/cybex-dev/twilio_voice/issues/new?assignees=&labels=type:Enhancement&projects=&template=FEATURE_REQUEST.md&title=) or Pull Requests are gladly welcome!
 
 #### Live Example/Samples:
+
 - [Twilio Voice Web](https://twilio-voice-web.web.app/#/)
+
+*Currently, only Web sample is provided. If demand arises for a Desktop or Mobile builds, I'll throw one up on the relevant store/app provider or make one available.*
 
 ## Features
 
-- Receive and place calls from iOS devices, uses callkit to receive calls.
-- Receive and place calls from Android devices, uses ~~custom UI~~ Native call screen to receive calls.
+- Receive and place calls from iOS devices, uses Callkit to receive calls.
+- Receive and place calls from Android devices, uses ~~custom UI~~ native call screen to receive calls (via a `ConnectionService` impl).
 - Receive and place calls from Web (FCM push notification integration not yet supported by Twilio Voice Web, see [here](https://github.com/twilio/twilio-voice.js/pull/159#issuecomment-1551553299) for discussion)
 - Receive and place calls from MacOS devices, uses custom UI to receive calls (in future & macOS
   13.0+, we'll be using CallKit).
@@ -21,8 +33,6 @@ maintained, this one is.
 - Update plugin to Flutter federated packages (step 1 of 2 with Web support merge)
 - Desktop platform support (implementation as JS wrapper/native implementation, Windows/Linux to start development)
 
-Got a feature you want to add, suggest? File a feature request or PR.
-
 ### Android Limitations
 
 ~~As iOS has CallKit, an Apple provided UI for answering calls, there is no default UI for android to
@@ -30,8 +40,7 @@ receive calls, for this reason a default UI was made. To increase customization,
 splash_icon.png registered on your res/drawable folder. I haven't found a way to customize colors,
 if you find one, please submit a pull request.~~
 
-Android provides a native UI by way of the `ConnectionService`. Twilio has made an attempt at this implementation
-however it is fully realized in this package.
+Android provides a native UI by way of the `ConnectionService`. Twilio has made an attempt a [ConnectionService](https://github.com/twilio/voice-quickstart-android/tree/master/app/src/connection_service) implementation however it is fully realized in this package.
 
 ### macOS Limitations
 
@@ -79,25 +88,49 @@ notifications:
 </intent-filter> </service>
 ```
 
-With the implementation of runtime permissions, Android has made several changes over the SDK versions. Since Android 13, to allow showing notifications, the permissions `android.permission.POST_NOTIFICATIONS` has been added and integrated into the plugin.  This is required to show notifications on Android 13+ devices. Read more about it [here](https://developer.android.com/develop/ui/views/notifications/notification-permission)
+#### Phone Account
 
-There are a few (additional) permissions added to use the `ConnectionService`, several permissions are required to enable this functionality (see example app). There permissions are:
-- `android.permission.BIND_TELECOM_CONNECTION_SERVICE`: required to bind to the `ConnectionService`
-- `android.permission.READ_PHONE_STATE`: required to read the phone state (to determine if a call is active)
-- `android.permission.CALL_PHONE`: required to access the ConnectionService and make/receive calls
-
-Further, registering of [PhoneAccount](https://developer.android.com/reference/android/telecom/PhoneAccount)'s are essential to the functionality. This is integrated into the plugin - however it should be noted if the `PhoneAccount` is not registered nor the `Call Account` is not activated, the plugin will not work. See [here](https://developer.android.com/reference/android/telecom/PhoneAccount) for more information regarding `PhoneAccount`s and [here]() for `Calling Account`s.
-
-To open the `Call Account` settings, use the following code:
+To register a Phone Account, request access to `READ_PHONE_NUMBERS` permission first:
 ```dart
-   TwilioVoice.instance.openPhoneAccountSettings();
+TwilioVoice.instance.requestReadPhoneNumbersPermission();  // Gives Android permissions to read Phone Accounts
+```
+then, register the `PhoneAccount` with:
+```dart
+TwilioVoice.instance.registerPhoneAccount();
 ```
 
-alternatively, this could be found in Phone App settings -> Other/Advanced Call Settings -> Calling Accounts -> Twilio Voice (toggle switch)
+#### Enable calling account
+To open the `Call Account` settings, use the following code:
+```dart
+TwilioVoice.instance.openPhoneAccountSettings();
+```
 
-(if there is a method to programmatically open this, please submit a PR)
+Check if it's enabled with:
+```dart
+TwilioVoice.instance.isPhoneAccountEnabled();
+```
 
-see [[Notes]](https://github.com/diegogarciar/twilio_voice/blob/master/NOTES.md#android) for more information.
+See [Customizing the Calling Account]() below
+
+#### Enabling the ConnectionService
+To enable the `ConnectionService` and make/receive calls, run:
+```dart
+TwilioVoice.instance.requestReadPhoneStatePermission();  // Gives Android permissions to read Phone State
+```
+
+Highly recommended to review the notes for **Android**. See [[Notes]](https://github.com/diegogarciar/twilio_voice/blob/master/NOTES.md#android) for more information.
+
+#### Customizing the Calling Account
+To customize the `label` and `shortDescription` of the calling account, add the following in your `res/values/strings.xml`:
+```xml
+<string name="phone_account_name" translatable="false">Example App</string>
+<string name="phone_account_desc" translatable="false">Example app voice calls calling account</string>
+```
+This can be found in alternatively the Phone App's settings, `Other/Advanced Call Settings -> Calling Accounts -> (Example App)` (then toggle the switch)
+
+![enter image description here](https://i.imgur.com/SwtZjgD.png)
+
+See [example](https://github.com/cybex-dev/twilio_voice/blob/master/example/android/app/src/main/res/values/strings.xml) for more details
 
 ### Web Setup:
 
@@ -115,12 +148,12 @@ To ensure proper/as intended setup:
 Finally, add the following code to your `index.html` file, **at the end of body tag**:
 
 ``` html
-    <body>        
+    <body>
         <!--twilio native js library-->
         <script type="text/javascript" src="./twilio.min.js"></script>
         <!--twilio native js library-->
         <script type="text/javascript" src="./notifications.js"></script>
-        
+
         <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', async () => {
@@ -660,7 +693,7 @@ exports.accessToken = functions.https.onCall((payload, context) => {
     const apiSecret = twilioConfig.api_key_secret;
     const outgoingApplicationSid = twilioConfig.app_sid;
 
-    // Used specifically for creating Voice tokens, we need to use seperate push credentials for each platform. 
+    // Used specifically for creating Voice tokens, we need to use seperate push credentials for each platform.
     // iOS has different APNs environments, so we need to distinguish between sandbox & production as the one won't work in the other.
     let pushCredSid;
     if (payload.isIOS === true) {
@@ -721,7 +754,7 @@ Calling should work naturally - just make sure to fetch the token from the endpo
 
 See [example](https://github.com/diegogarciar/twilio_voice/blob/master/example/lib/main.dart#L51)
 code, make sure to change the `voice-accessToken` to your function name, given to you by firebase
-when deploying (as part of the deploy text)
+when deploying (as part of the deploy text)    
 
 
 ## Future Work
