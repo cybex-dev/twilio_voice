@@ -10,6 +10,8 @@ import android.telecom.PhoneAccountHandle
 import android.telecom.TelecomManager
 import androidx.annotation.RequiresPermission
 import androidx.core.content.PermissionChecker
+import com.twilio.twilio_voice.service.TVConnectionService
+import com.twilio.twilio_voice.types.ContextExtension.appName
 
 object TelecomManagerExtension {
 
@@ -59,7 +61,7 @@ object TelecomManagerExtension {
      */
     @RequiresPermission(value = "android.permission.READ_PHONE_STATE")
     fun TelecomManager.hasCallCapableAccount(ctx: Context, name: String): Boolean {
-        if (!hasReadPhonePermission(ctx)) return false
+        if (!canReadPhoneState(ctx)) return false
         return callCapablePhoneAccounts.any { it.componentName.className == name }
     }
 
@@ -81,7 +83,7 @@ object TelecomManagerExtension {
      * @param ctx application context
      * @return Boolean True if the app has the READ_PHONE_STATE permission
      */
-    fun TelecomManager.hasReadPhonePermission(ctx: Context): Boolean {
+    fun TelecomManager.canReadPhoneState(ctx: Context): Boolean {
         return PermissionChecker.checkSelfPermission(ctx, android.Manifest.permission.READ_PHONE_STATE) == PermissionChecker.PERMISSION_GRANTED
     }
 
@@ -96,7 +98,7 @@ object TelecomManagerExtension {
 
     @RequiresPermission(value = "android.permission.READ_PHONE_STATE")
     fun TelecomManager.isOnCall(ctx: Context): Boolean {
-        if (!hasReadPhonePermission(ctx)) return false
+        if (!canReadPhoneState(ctx)) return false
         return if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.O) isInCall else isInManagedCall
     }
 }

@@ -27,7 +27,7 @@ import com.twilio.twilio_voice.types.CompletionHandler
 import com.twilio.twilio_voice.types.ContextExtension.appName
 import com.twilio.twilio_voice.types.IntentExtension.getParcelableExtraSafe
 import com.twilio.twilio_voice.types.TelecomManagerExtension.hasCallCapableAccount
-import com.twilio.twilio_voice.types.TelecomManagerExtension.hasReadPhonePermission
+import com.twilio.twilio_voice.types.TelecomManagerExtension.canReadPhoneState
 import com.twilio.twilio_voice.types.TelecomManagerExtension.registerPhoneAccount
 import com.twilio.twilio_voice.types.ValueBundleChanged
 import com.twilio.voice.*
@@ -250,7 +250,7 @@ class TVConnectionService : ConnectionService() {
                     }
 
                     val telecomManager = getSystemService(TELECOM_SERVICE) as TelecomManager
-                    if (!telecomManager.hasReadPhonePermission(applicationContext)) {
+                    if (!telecomManager.canReadPhoneState(applicationContext)) {
                         Log.e(TAG, "onCallInvite: Permission to read phone state not granted or requested.")
                         callInvite.reject(applicationContext)
                         return@let

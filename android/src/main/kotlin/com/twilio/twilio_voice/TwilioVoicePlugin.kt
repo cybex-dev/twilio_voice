@@ -34,7 +34,6 @@ import com.twilio.twilio_voice.types.TVNativeCallEvents
 import com.twilio.twilio_voice.types.TelecomManagerExtension.canReadPhoneNumbers
 import com.twilio.twilio_voice.types.TelecomManagerExtension.getPhoneAccountHandle
 import com.twilio.twilio_voice.types.TelecomManagerExtension.hasCallCapableAccount
-import com.twilio.twilio_voice.types.TelecomManagerExtension.hasReadPhonePermission
 import com.twilio.twilio_voice.types.TelecomManagerExtension.isOnCall
 import com.twilio.twilio_voice.types.TelecomManagerExtension.openPhoneAccountSettings
 import com.twilio.twilio_voice.types.TelecomManagerExtension.registerPhoneAccount
@@ -682,7 +681,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 logEvent("hasRegisteredPhoneAccount")
                 context?.let { ctx ->
                     telecomManager?.let { tm ->
-                        if (!tm.hasReadPhonePermission(ctx)) {
+                        if (!tm.canReadPhoneNumbers(ctx)) {
                             Log.e(
                                 TAG,
                                 "No read phone state permission, call `requestReadPhoneStatePermission()` first"
