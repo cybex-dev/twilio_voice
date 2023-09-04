@@ -100,7 +100,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     private var isHolding: Boolean = false
     private var callSid: String? = null
 
-    var hasStarted = false
+    private var hasStarted = false
 
     private fun register(
         messenger: BinaryMessenger,
