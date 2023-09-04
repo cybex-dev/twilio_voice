@@ -59,7 +59,7 @@ void main() async {
     await Firebase.initializeApp();
   }
 
-  final app = App(registrationMethod: RegistrationMethod.loadFromEnvironment() ?? RegistrationMethod.local);
+  final app = App(registrationMethod: RegistrationMethod.loadFromEnvironment() ?? RegistrationMethod.env);
   return runApp(MaterialApp(home: app));
 }
 
