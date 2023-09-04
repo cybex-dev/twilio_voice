@@ -14,6 +14,7 @@ import android.telecom.CallAudioState
 import android.telecom.PhoneAccountHandle
 import android.telecom.TelecomManager
 import android.util.Log
+import androidx.annotation.RequiresPermission
 import androidx.appcompat.app.AlertDialog
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -925,6 +926,14 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         }
     }
 
+    /**
+     * Attempts to place a call using the [TVConnectionService].
+     * Requires permissions:
+     * - [Manifest.permission.READ_PHONE_STATE]: for checking call capable accounts
+     * - [Manifest.permission.READ_PHONE_NUMBERS]: for getting the phone account via the handle.
+     * - [Manifest.permission.RECORD_AUDIO]: for placing the call and capturing microphone audio.
+     */
+    @RequiresPermission(allOf = [Manifest.permission.READ_PHONE_STATE, Manifest.permission.READ_PHONE_NUMBERS, Manifest.permission.RECORD_AUDIO])
     private fun placeCall(
         ctx: Context,
         accessToken: String,
@@ -1009,7 +1018,14 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         return isConnected
     }
 
+    /**
+     * Attempts to register a [PhoneAccount] with the Telecom app.
+     * Requires permissions:
+     *  - [Manifest.permission.READ_PHONE_STATE]: for checking call capable accounts
+     *  - [Manifest.permission.READ_PHONE_NUMBERS]: for getting the phone account via the handle.
+     */
     @SuppressLint("MissingPermission")
+    @RequiresPermission(allOf = [Manifest.permission.READ_PHONE_STATE, Manifest.permission.READ_PHONE_NUMBERS])
     private fun registerPhoneAccount(): Boolean {
         context?.let { ctx ->
             telecomManager?.let { tm ->

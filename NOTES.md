@@ -9,6 +9,22 @@
 **Gradle:**
 > gradle-wrapper: 8.2.1-all
 
+**Permissions:**
+* `android.permission.FOREGROUND_SERVICE`
+Required for foreground services on Android 10+ including running foreground services in the background e.g. to capture microphone audio.
+
+* `android.permission.RECORD_AUDIO`
+Grants access to the microphone for audio recording, to be used for voice calls.
+
+* `android.permission.POST_NOTIFICATIONS`
+Required for displaying incoming call notifications on Android 13+.
+
+* `android.permission.READ_PHONE_STATE`
+Required for reading the phone state, the phone state is the backbone permission for `ConnectionService` integration. It allows checking active calls, placing new calls, and receiving calls and call state updates. It also allows creating a `PhoneAccount` required for placing calls. If not accepted, any and all incoming calls are rejected immediately upon receiving `CallInvite`.
+
+* `android.permission.READ_PHONE_NUMBERS`
+Required for reading phone numbers (e.g. for Telecom App), this is required to create a `PhoneAccount`, see `READ_PHONE_STATE` above.
+
 ### iOS & macOS
 
 If you encounter this error
