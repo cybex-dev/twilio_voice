@@ -136,6 +136,8 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
   }
 
   /// Checks if device has read phone state permission
+  ///
+  /// Android only
   @override
   Future<bool> hasReadPhoneStatePermission() {
     if (defaultTargetPlatform != TargetPlatform.android) {
@@ -145,6 +147,8 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
   }
 
   /// Request read phone state permission
+  ///
+  /// Android only
   @override
   Future<bool?> requestReadPhoneStatePermission() {
     if (defaultTargetPlatform != TargetPlatform.android) {
