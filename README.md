@@ -1,14 +1,9 @@
 
-
-
-
 # twilio_voice
 
 Provides an interface to Twilio's Programmable Voice SDK to allow voice-over-IP (VoIP) calling into
 your Flutter applications.
 ~~This plugin was taken from the original `flutter_twilio_voice` as it seems that plugin is no longer maintained, this one is.~~  Project ownership & maintenance handed over by [diegogarcia](https://github.com/diegogarciar). For the foreseeable future, I'll be actively maintaining this project.
-
-
 
 #### 🐞Bug? Issue? Something odd?
 Report it [here](https://github.com/cybex-dev/twilio_voice/issues/new?assignees=&labels=type:Bug,status:Unconfirmed&projects=&template=BUG_REPORT.md&title=).
@@ -29,6 +24,7 @@ Any and all [Feature Requests](https://github.com/cybex-dev/twilio_voice/issues/
 - Receive and place calls from Web (FCM push notification integration not yet supported by Twilio Voice Web, see [here](https://github.com/twilio/twilio-voice.js/pull/159#issuecomment-1551553299) for discussion)
 - Receive and place calls from MacOS devices, uses custom UI to receive calls (in future & macOS
   13.0+, we'll be using CallKit).
+-  Interpret TwiML parameters to populate UI, see below [Interpreting Parameters](#interpreting-parameters)
 
 ## Feature addition schedule:
 - Audio device selection support (select input/output audio devices, on-hold)
@@ -141,6 +137,14 @@ This can be found in alternatively the Phone App's settings, `Other/Advanced Cal
 ![enter image description here](https://i.imgur.com/SwtZjgD.png)
 
 See [example](https://github.com/cybex-dev/twilio_voice/blob/master/example/android/app/src/main/res/values/strings.xml) for more details
+
+#### Known Issues
+
+##### Bluetooth, Telecom App Crash
+
+- Upon accepting an inbound call, at times the Telecom app/ Bluetooth service will crash and restart. This is a known bug, caused by `Class not found when unmarshalling: com.twilio.voice.CallInvite`. This is due to the Telecom service not using the same Classloader as the main Flutter app. See [here](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/telecomm/java/android/telecom/Call.java#2466) for source of error.
+- Callback action on post dialer screen may not work as expected - this is platform and manufacturer specific. PRs are welcome here.
+- Complete integration with showing missed calls. This is a work in progress.
 
 ### Web Setup:
 
@@ -810,7 +814,7 @@ After you are done, deploy your `.runtimeconfig.json`,
 see [this](https://firebase.google.com/docs/functions/config-env) for more help.
 
 Once done with everything above, deploy your firebase function with this:
-  
+
 ```bash
 firebase deploy --only functions
 ```
