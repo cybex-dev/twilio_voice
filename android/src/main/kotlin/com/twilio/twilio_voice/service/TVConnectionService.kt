@@ -23,6 +23,7 @@ import com.twilio.twilio_voice.receivers.TVBroadcastReceiver
 import com.twilio.twilio_voice.storage.Storage
 import com.twilio.twilio_voice.storage.StorageImpl
 import com.twilio.twilio_voice.types.BundleExtensions.getParcelableSafe
+import com.twilio.twilio_voice.types.CallDirection
 import com.twilio.twilio_voice.types.CompletionHandler
 import com.twilio.twilio_voice.types.ContextExtension.appName
 import com.twilio.twilio_voice.types.ContextExtension.hasCallPhonePermission
@@ -616,8 +617,9 @@ class TVConnectionService : ConnectionService() {
         params.getExtra(TelecomManager.EXTRA_CALL_SUBJECT, null)?.let {
             connection.extras.putString(TelecomManager.EXTRA_CALL_SUBJECT, it)
         }
-        connection.setAddress(Uri.fromParts(TWI_SCHEME, params.from, null), TelecomManager.PRESENTATION_ALLOWED)
-        connection.setCallerDisplayName(params.from, TelecomManager.PRESENTATION_ALLOWED)
+        val name = if(connection.callDirection == CallDirection.OUTGOING) params.to else params.from
+        connection.setAddress(Uri.fromParts(PhoneAccount.SCHEME_TEL, name, null), TelecomManager.PRESENTATION_ALLOWED)
+        connection.setCallerDisplayName(name, TelecomManager.PRESENTATION_ALLOWED)
     }
 
     private fun sendBroadcastEvent(ctx: Context, event: String, callSid: String?, extras: Bundle? = null) {
