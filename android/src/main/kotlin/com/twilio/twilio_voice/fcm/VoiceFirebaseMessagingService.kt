@@ -140,7 +140,7 @@ class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageListene
     }
 
     override fun onCancelledCallInvite(cancelledCallInvite: CancelledCallInvite, callException: CallException?) {
-        Log.e(TAG, "onCancelledCallInvite: ", callException)
+        Log.d(TAG, "onCancelledCallInvite: ", callException)
         Intent(applicationContext, TVConnectionService::class.java).apply {
             action = TVConnectionService.ACTION_CANCEL_CALL_INVITE
             putExtra(TVConnectionService.EXTRA_CANCEL_CALL_INVITE, cancelledCallInvite)
