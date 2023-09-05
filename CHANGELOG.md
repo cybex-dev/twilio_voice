@@ -29,7 +29,7 @@
 * Change: [Android] Removed (Deprecated) `showBackgroundCallUi` as it is no longer needed for background UI screens. (this might be reinstated in future, depending on feature requests) @cybex-dev
 * Change: [Android] Removed (Deprecated) `backgroundCallUi` as it is no longer needed for background UI screens. @cybex-dev
 * Change: [Android] Removed (Deprecated) `requestBluetoothPermission`, `hasBluetoothPermission` as these are no longer needed and handled by the native Telecom App. @cybex-dev
-* Feat: [Android] Added custom scheme `twi://` @cybex-dev
+* (on-hold) Feat: [Android] Added custom scheme `twi://` @cybex-dev
 * Feat (early-access): [Android] Added customParams interpretation via `TVCallInviteParameters` and `TVCallParameters`, see readme for more details. @cybex-dev
 * Feat: [Android] Add CallingAccount (Phone Account) label & description via `strings.xml`. @cybex-dev
 
