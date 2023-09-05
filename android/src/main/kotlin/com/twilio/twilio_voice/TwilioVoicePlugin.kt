@@ -32,6 +32,7 @@ import com.twilio.twilio_voice.types.ContextExtension.hasMicrophoneAccess
 import com.twilio.twilio_voice.types.ContextExtension.hasReadPhoneNumbersPermission
 import com.twilio.twilio_voice.types.ContextExtension.hasReadPhoneStatePermission
 import com.twilio.twilio_voice.types.ContextExtension.checkPermission
+import com.twilio.twilio_voice.types.ContextExtension.hasCallPhonePermission
 import com.twilio.twilio_voice.types.IntentExtension.getParcelableExtraSafe
 import com.twilio.twilio_voice.types.TVMethodChannels
 import com.twilio.twilio_voice.types.TVNativeCallActions
@@ -780,7 +781,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             TVMethodChannels.REQUEST_CALL_PHONE_PERMISSION -> {
                 logEvent("requestingCallPhonePermission")
                 if (!checkCallPhonePermission()) {
-                    val hasAccess = requestPermissionForPhoneState()
+                    val hasAccess = requestPermissionForCallPhone()
                     result.success(hasAccess)
                 } else {
                     result.success(true)
@@ -1351,7 +1352,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
 
     private fun checkCallPhonePermission(): Boolean {
         logEvent("checkCallPhonePermission")
-        return context?.hasReadPhoneStatePermission() ?: false
+        return context?.hasCallPhonePermission() ?: false
     }
 
     /**
