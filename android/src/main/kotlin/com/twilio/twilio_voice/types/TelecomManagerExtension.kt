@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.graphics.drawable.Icon
 import android.os.Build
 import android.telecom.PhoneAccount
 import android.telecom.PhoneAccountHandle
@@ -51,6 +52,7 @@ object TelecomManagerExtension {
             .setCapabilities(PhoneAccount.CAPABILITY_CALL_PROVIDER or PhoneAccount.CAPABILITY_CONNECTION_MANAGER or PhoneAccount.CAPABILITY_CALL_SUBJECT)
             .setShortDescription(description)
 //            .addSupportedUriScheme(TVConnectionService.TWI_SCHEME)
+            .setIcon(Icon.createWithResource(ctx, ctx.applicationInfo.icon))
             .addSupportedUriScheme(PhoneAccount.SCHEME_TEL)
             .build()
 

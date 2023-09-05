@@ -8,7 +8,6 @@ import android.content.DialogInterface
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import android.telecom.CallAudioState
 import android.telecom.PhoneAccountHandle
@@ -27,7 +26,6 @@ import com.twilio.twilio_voice.storage.Storage
 import com.twilio.twilio_voice.storage.StorageImpl
 import com.twilio.twilio_voice.types.CallDirection
 import com.twilio.twilio_voice.types.CallExceptionExtension
-import com.twilio.twilio_voice.types.ContextExtension.appName
 import com.twilio.twilio_voice.types.ContextExtension.hasMicrophoneAccess
 import com.twilio.twilio_voice.types.ContextExtension.hasReadPhoneNumbersPermission
 import com.twilio.twilio_voice.types.ContextExtension.hasReadPhoneStatePermission
@@ -95,7 +93,6 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     // Constants
     private val kCHANNEL_NAME = "twilio_voice"
     private val REQUEST_CODE_MICROPHONE = 1
-
     private val REQUEST_CODE_CALL_PHONE = 3
     private val REQUEST_CODE_READ_PHONE_NUMBERS = 4
     private val REQUEST_CODE_READ_PHONE_STATE = 5
@@ -107,6 +104,9 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     private var callSid: String? = null
 
     private var hasStarted = false
+
+    // Provides a mapping of permission to result handler for when the permission is granted or denied via the PluginRegistry, then responds via future to the Flutter side
+    private val permissionResultHandler: MutableMap<Int, (Boolean) -> Unit> = mutableMapOf()
 
     private fun register(
         messenger: BinaryMessenger,
@@ -232,6 +232,15 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         grantResults: IntArray
     ): Boolean {
         Log.d(TAG, "onRequestPermissionsResult: $requestCode")
+
+        if (permissions.isNotEmpty()) {
+            permissionResultHandler[requestCode]?.let { handler ->
+                val granted = grantResults[0] == PackageManager.PERMISSION_GRANTED
+                handler(granted)
+                permissionResultHandler.remove(requestCode)
+            }
+        }
+
         if (requestCode == REQUEST_CODE_MICROPHONE) {
             if (permissions.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 Log.d(TAG, "Microphone permission granted")
@@ -753,8 +762,9 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             TVMethodChannels.REQUEST_MIC_PERMISSION -> {
                 logEvent("requesting mic permission")
                 if (!checkMicrophonePermission()) {
-                    val hasAccess = requestPermissionForMicrophone()
-                    result.success(hasAccess)
+                    requestPermissionForMicrophone() { granted ->
+                        result.success(granted)
+                    }
                 } else {
                     result.success(true)
                 }
@@ -767,8 +777,9 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             TVMethodChannels.REQUEST_READ_PHONE_STATE_PERMISSION -> {
                 logEvent("requestingReadPhoneStatePermission")
                 if (!checkReadPhoneStatePermission()) {
-                    val hasAccess = requestPermissionForPhoneState()
-                    result.success(hasAccess)
+                    requestPermissionForPhoneState() { granted ->
+                        result.success(granted)
+                    }
                 } else {
                     result.success(true)
                 }
@@ -781,8 +792,9 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             TVMethodChannels.REQUEST_CALL_PHONE_PERMISSION -> {
                 logEvent("requestingCallPhonePermission")
                 if (!checkCallPhonePermission()) {
-                    val hasAccess = requestPermissionForCallPhone()
-                    result.success(hasAccess)
+                    requestPermissionForCallPhone() { granted ->
+                        result.success(granted)
+                    }
                 } else {
                     result.success(true)
                 }
@@ -795,8 +807,9 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             TVMethodChannels.REQUEST_READ_PHONE_NUMBERS_PERMISSION -> {
                 logEvent("requestingReadPhoneNumbersPermission")
                 if (!checkReadPhoneNumbersPermission()) {
-                    val hasAccess = requestPermissionForReadPhoneNumbers()
-                    result.success(hasAccess)
+                    requestPermissionForReadPhoneNumbers() { granted ->
+                        result.success(granted)
+                    }
                 } else {
                     result.success(true)
                 }
@@ -1385,39 +1398,43 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         }
     }
 
-    private fun requestPermissionForReadPhoneNumbers(): Boolean {
+    private fun requestPermissionForReadPhoneNumbers(onPermissionResult: (Boolean) -> Unit) {
         return requestPermissionOrShowRationale(
             "Read Phone Numbers",
             "Grant access to read phone numbers.",
             Manifest.permission.READ_PHONE_NUMBERS,
-            REQUEST_CODE_READ_PHONE_NUMBERS
+            REQUEST_CODE_READ_PHONE_NUMBERS,
+            onPermissionResult
         )
     }
 
-    private fun requestPermissionForMicrophone(): Boolean {
+    private fun requestPermissionForMicrophone(onPermissionResult: (Boolean) -> Unit) {
         return requestPermissionOrShowRationale(
             "Microphone",
             "Microphone permission is required to make or receive phone calls.",
             Manifest.permission.RECORD_AUDIO,
-            REQUEST_CODE_MICROPHONE
+            REQUEST_CODE_MICROPHONE,
+            onPermissionResult
         )
     }
 
-    private fun requestPermissionForPhoneState(): Boolean {
+    private fun requestPermissionForPhoneState(onPermissionResult: (Boolean) -> Unit) {
         return requestPermissionOrShowRationale(
             "Read Phone State",
             "Read phone state to make or receive phone calls.",
             Manifest.permission.READ_PHONE_STATE,
-            REQUEST_CODE_READ_PHONE_STATE
+            REQUEST_CODE_READ_PHONE_STATE,
+            onPermissionResult
         )
     }
 
-    private fun requestPermissionForCallPhone(): Boolean {
+    private fun requestPermissionForCallPhone(onPermissionResult: (Boolean) -> Unit) {
         return requestPermissionOrShowRationale(
             "Access Phone",
             "Required to place calls with Telecom App",
             Manifest.permission.CALL_PHONE,
-            REQUEST_CODE_CALL_PHONE
+            REQUEST_CODE_CALL_PHONE,
+            onPermissionResult
         )
     }
 
@@ -1425,37 +1442,36 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         permissionName: String,
         description: String,
         manifestPermission: String,
-        requestCode: Int
-    ): Boolean {
-        return activity?.let {
-            if (activity!!.checkPermission(manifestPermission)) {
-                return true
-            }
-            logEvent("requestPermissionFor$permissionName")
-            val shouldShowRationale = ActivityCompat.shouldShowRequestPermissionRationale(activity!!, manifestPermission)
-            return if (shouldShowRationale) {
-                val clickListener =
-                    DialogInterface.OnClickListener { _: DialogInterface?, _: Int ->
-                        ActivityCompat.requestPermissions(
-                            activity!!, arrayOf(manifestPermission), requestCode
-                        )
-                    }
-                val dismissListener = DialogInterface.OnDismissListener { _: DialogInterface? ->
-                    logEvent("Request" + permissionName + "Access")
+        requestCode: Int,
+        onPermissionResult: (Boolean) -> Unit,
+    ) {
+        if (activity == null) {
+            onPermissionResult.invoke(false);
+            return;
+        }
+
+        if (activity!!.checkPermission(manifestPermission)) {
+            onPermissionResult.invoke(true)
+            return
+        }
+
+        logEvent("requestPermissionFor$permissionName")
+        val shouldShowRationale = ActivityCompat.shouldShowRequestPermissionRationale(activity!!, manifestPermission)
+        if (shouldShowRationale) {
+            val clickListener =
+                DialogInterface.OnClickListener { _: DialogInterface?, _: Int ->
+                    ActivityCompat.requestPermissions(
+                        activity!!, arrayOf(manifestPermission), requestCode
+                    )
                 }
-                showPermissionRationaleDialog(
-                    activity!!,
-                    "$permissionName Permissions",
-                    description,
-                    clickListener,
-                    dismissListener
-                )
-                false
-            } else {
-                ActivityCompat.requestPermissions(activity!!, arrayOf(manifestPermission), requestCode)
-                false
+            val dismissListener = DialogInterface.OnDismissListener { _: DialogInterface? ->
+                logEvent("Request" + permissionName + "Access")
             }
-        } ?: false;
+            showPermissionRationaleDialog(activity!!, "$permissionName Permissions", description, clickListener, dismissListener)
+        } else {
+            ActivityCompat.requestPermissions(activity!!, arrayOf(manifestPermission), requestCode)
+            permissionResultHandler[requestCode] = onPermissionResult
+        }
     }
 
     private fun showPermissionRationaleDialog(
