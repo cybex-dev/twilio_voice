@@ -614,7 +614,7 @@ class TVConnectionService : ConnectionService() {
      * @param params The parameters to apply to the connection.
      */
     private fun <T: TVCallConnection> applyParameters(connection: T, params: TVParameters) {
-        params.getExtra(TelecomManager.EXTRA_CALL_SUBJECT, null)?.let {
+        params.getExtra(TVParameters.PARAM_SUBJECT, null)?.let {
             connection.extras.putString(TelecomManager.EXTRA_CALL_SUBJECT, it)
         }
         val name = if(connection.callDirection == CallDirection.OUTGOING) params.to else params.from
