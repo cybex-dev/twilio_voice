@@ -70,16 +70,15 @@ abstract class TwilioVoicePlatform extends SharedPlatformInterface {
   /// Android only
   Future<bool?> registerPhoneAccount();
 
+  /// Checks if App's phone account is enabled
+  ///
+  /// Android only
+  Future<bool> isPhoneAccountEnabled();
+
   /// Open phone account settings
   ///
   /// Android only
   Future<bool?> openPhoneAccountSettings();
-
-  /// Checks if device has call phone permission
-  Future<bool> hasCallPhonePermission();
-
-  /// Request call phone permissions
-  Future<bool?> requestCallPhonePermission();
 
   /// Checks if device has microphone permission
   Future<bool> hasMicAccess();
@@ -88,14 +87,39 @@ abstract class TwilioVoicePlatform extends SharedPlatformInterface {
   Future<bool?> requestMicAccess();
 
   /// Checks if device has read phone state permission
+  ///
+  /// Android only
   Future<bool> hasReadPhoneStatePermission();
 
   /// Request read phone state permission
+  ///
+  /// Android only
   Future<bool?> requestReadPhoneStatePermission();
+
+  /// Checks if device has read phone state permission
+  ///
+  /// Android only
+  Future<bool> hasCallPhonePermission();
+
+  /// Request read phone state permission
+  ///
+  /// Android only
+  Future<bool?> requestCallPhonePermission();
+
+  /// Checks if device has read phone numbers permission
+  ///
+  /// Android only
+  Future<bool> hasReadPhoneNumbersPermission();
+
+  /// Request read phone numbers permission
+  ///
+  /// Android only
+  Future<bool?> requestReadPhoneNumbersPermission();
 
   /// Checks if device has bluetooth permissions
   /// Only available on Android
   /// Defaults to false
+  @Deprecated('custom call UI not used anymore, has no effect')
   Future<bool> hasBluetoothPermissions();
 
   /// Request bluetooth permissions
@@ -104,6 +128,7 @@ abstract class TwilioVoicePlatform extends SharedPlatformInterface {
   /// `<uses-permission android:name="android.permission.BLUETOOTH" />`
   ///
   /// Only available on Android
+  @Deprecated('custom call UI not used anymore, has no effect')
   Future<bool?> requestBluetoothPermissions();
 
   /// Set iOS call kit icon

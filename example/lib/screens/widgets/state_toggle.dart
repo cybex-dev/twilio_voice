@@ -33,7 +33,7 @@ class StateToggle extends StatelessWidget {
               children: [
                 if (icon != null) Icon(icon, color: state ? iconColor : iconColor?.withOpacity(0.2) ?? Colors.grey),
                 if (icon != null) const SizedBox(height: 8),
-                Text(title, style: Theme.of(context).textTheme.bodySmall),
+                Text(title, style: Theme.of(context).textTheme.bodySmall, textAlign: TextAlign.center),
               ],
             ),
           ),

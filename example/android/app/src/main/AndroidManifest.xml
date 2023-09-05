@@ -33,7 +33,7 @@
             </intent-filter>
         </activity>
         <service
-            android:name="com.twilio.twilio_voice.messaging.FirebaseMessagingService"
+            android:name="com.twilio.twilio_voice.fcm.VoiceFirebaseMessagingService"
             android:exported="false"
             android:stopWithTask="false">
             <intent-filter>

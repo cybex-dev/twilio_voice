@@ -101,6 +101,17 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
     return _channel.invokeMethod<bool?>('registerPhoneAccount', {}).then<bool>((bool? value) => value ?? false);
   }
 
+  /// Checks if App's phone account is enabled
+  ///
+  /// Android only
+  @override
+  Future<bool> isPhoneAccountEnabled() {
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      return Future.value(true);
+    }
+    return _channel.invokeMethod<bool?>('isPhoneAccountEnabled', {}).then<bool>((bool? value) => value ?? false);
+  }
+
   /// Open phone account settings
   ///
   /// Android only
@@ -124,19 +135,9 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
     return _channel.invokeMethod('requestMicPermission', {});
   }
 
-  /// Checks if device has microphone permission
-  @override
-  Future<bool> hasCallPhonePermission() {
-    return _channel.invokeMethod<bool?>('hasCallPhonePermission', {}).then<bool>((bool? value) => value ?? false);
-  }
-
-  /// Request microphone permission
-  @override
-  Future<bool?> requestCallPhonePermission() {
-    return _channel.invokeMethod('requestCallPhonePermission', {});
-  }
-
   /// Checks if device has read phone state permission
+  ///
+  /// Android only
   @override
   Future<bool> hasReadPhoneStatePermission() {
     if (defaultTargetPlatform != TargetPlatform.android) {
@@ -146,6 +147,8 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
   }
 
   /// Request read phone state permission
+  ///
+  /// Android only
   @override
   Future<bool?> requestReadPhoneStatePermission() {
     if (defaultTargetPlatform != TargetPlatform.android) {
@@ -154,19 +157,63 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
     return _channel.invokeMethod('requestReadPhoneStatePermission', {});
   }
 
+  /// Checks if device has 'android.permission.CALL_PHONE' permission
+  ///
+  /// Android only
+  @override
+  Future<bool> hasCallPhonePermission() {
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      return Future.value(true);
+    }
+    return _channel.invokeMethod<bool?>('hasCallPhonePermission', {}).then<bool>((bool? value) => value ?? false);
+  }
+
+  /// request 'android.permission.CALL_PHONE' permission
+  ///
+  /// Android only
+  @override
+  Future<bool?> requestCallPhonePermission() {
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      return Future.value(true);
+    }
+    return _channel.invokeMethod('requestCallPhonePermission', {});
+  }
+
+  /// Checks if device has read phone numbers permission
+  ///
+  /// Android only
+  @override
+  Future<bool> hasReadPhoneNumbersPermission() {
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      return Future.value(true);
+    }
+    return _channel.invokeMethod<bool?>('hasReadPhoneNumbersPermission', {}).then<bool>((bool? value) => value ?? false);
+  }
+
+  /// Request read phone numbers permission
+  ///
+  /// Android only
+  @override
+  Future<bool?> requestReadPhoneNumbersPermission() {
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      return Future.value(true);
+    }
+    return _channel.invokeMethod('requestReadPhoneNumbersPermission', {});
+  }
+
   /// Checks if device has bluetooth permissions
   /// Only available on Android
   /// Defaults to false
   @override
   Future<bool> hasBluetoothPermissions() {
-    return _channel.invokeMethod<bool?>('hasBluetoothPermission', {}).then<bool>((bool? value) => value ?? false);
+    return Future.value(false);
   }
 
   /// Request bluetooth permissions
   /// Only available on Android
   @override
   Future<bool?> requestBluetoothPermissions() {
-    return _channel.invokeMethod('requestBluetoothPermission', {});
+    return Future.value(false);
   }
 
   /// Set iOS call kit icon

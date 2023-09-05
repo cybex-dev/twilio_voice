@@ -8,8 +8,15 @@ import android.os.Build
 import android.telecom.PhoneAccount
 import android.telecom.PhoneAccountHandle
 import android.telecom.TelecomManager
+import android.util.Log
 import androidx.annotation.RequiresPermission
 import androidx.core.content.PermissionChecker
+import com.twilio.twilio_voice.service.TVConnectionService
+import com.twilio.twilio_voice.types.ContextExtension.appName
+import com.twilio.twilio_voice.types.ContextExtension.hasReadPhoneNumbersPermission
+import com.twilio.twilio_voice.types.ContextExtension.hasReadPhoneStatePermission
+import com.twilio.twilio_voice.R
+import com.twilio.twilio_voice.call.TVParameters
 
 object TelecomManagerExtension {
 
@@ -21,15 +28,29 @@ object TelecomManagerExtension {
      *  @param shortDescription The short description for the phone account
      */
     @RequiresPermission(value = "android.permission.READ_PHONE_STATE")
-    fun TelecomManager.registerPhoneAccount(ctx: Context, phoneAccountHandle: PhoneAccountHandle, label: String, shortDescription: String = "") {
+    fun TelecomManager.registerPhoneAccount(ctx: Context, phoneAccountHandle: PhoneAccountHandle) {
         if (hasCallCapableAccount(ctx, phoneAccountHandle.componentName.className)) {
             // phone account already registered
-            return
+            Log.d("TelecomManager", "registerPhoneAccount: phone account already re-registering.")
+//            return
         }
+
+        val label = ctx.getString(R.string.phone_account_name).apply {
+            this.ifEmpty {
+                ctx.appName
+            }
+        }
+        val description = ctx.getString(R.string.phone_account_desc).apply {
+            this.ifEmpty {
+                "Provides calling services for $label"
+            }
+        }
+
         // register phone account
         val phoneAccount = PhoneAccount.builder(phoneAccountHandle, label)
             .setCapabilities(PhoneAccount.CAPABILITY_CALL_PROVIDER or PhoneAccount.CAPABILITY_CONNECTION_MANAGER or PhoneAccount.CAPABILITY_CALL_SUBJECT)
-            .setShortDescription(shortDescription)
+            .setShortDescription(description)
+//            .addSupportedUriScheme(TVConnectionService.TWI_SCHEME)
             .addSupportedUriScheme(PhoneAccount.SCHEME_TEL)
             .build()
 
@@ -59,8 +80,21 @@ object TelecomManagerExtension {
      */
     @RequiresPermission(value = "android.permission.READ_PHONE_STATE")
     fun TelecomManager.hasCallCapableAccount(ctx: Context, name: String): Boolean {
-        if (!hasReadPhonePermission(ctx)) return false
+        if (!canReadPhoneState(ctx)) return false
         return callCapablePhoneAccounts.any { it.componentName.className == name }
+    }
+
+    /**
+     * Get the [PhoneAccountHandle] for the app
+     * @param ctx application context
+     * @return PhoneAccountHandle The phone account handle for the app
+     */
+    fun TelecomManager.getPhoneAccountHandle(ctx: Context): PhoneAccountHandle {
+        val appName = ctx.appName
+        val componentName = ComponentName(ctx, TVConnectionService::class.java)
+
+        Log.d(TVConnectionService.TAG, "getPhoneAccountHandle: Get PhoneAccountHandle with name: $appName, componentName: $componentName")
+        return PhoneAccountHandle(componentName, appName)
     }
 
     /**
@@ -68,13 +102,22 @@ object TelecomManagerExtension {
      * @param ctx application context
      * @return Boolean True if the app has the READ_PHONE_STATE permission
      */
-    fun TelecomManager.hasReadPhonePermission(ctx: Context): Boolean {
-        return PermissionChecker.checkSelfPermission(ctx, android.Manifest.permission.READ_PHONE_STATE) == PermissionChecker.PERMISSION_GRANTED
+    fun TelecomManager.canReadPhoneState(ctx: Context): Boolean {
+        return ctx.hasReadPhoneStatePermission()
+    }
+
+    /**
+     * Check if the app has the READ_PHONE_NUMBERS permission
+     * @param ctx application context
+     * @return Boolean True if the app has the READ_PHONE_NUMBERS permission
+     */
+    fun TelecomManager.canReadPhoneNumbers(ctx: Context): Boolean {
+        return ctx.hasReadPhoneNumbersPermission()
     }
 
     @RequiresPermission(value = "android.permission.READ_PHONE_STATE")
     fun TelecomManager.isOnCall(ctx: Context): Boolean {
-        if (!hasReadPhonePermission(ctx)) return false
+        if (!canReadPhoneState(ctx)) return false
         return if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.O) isInCall else isInManagedCall
     }
 }

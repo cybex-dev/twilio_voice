@@ -59,7 +59,7 @@ void main() async {
     await Firebase.initializeApp();
   }
 
-  final app = App(registrationMethod: RegistrationMethod.loadFromEnvironment() ?? RegistrationMethod.local);
+  final app = App(registrationMethod: RegistrationMethod.loadFromEnvironment() ?? RegistrationMethod.env);
   return runApp(MaterialApp(home: app));
 }
 
@@ -81,23 +81,33 @@ class _AppState extends State<App> {
   /// Flag showing registration status (for registering or re-registering on token change)
   var authRegistered = false;
 
+  /// Flag showing if incoming call dialog is showing
+  var showingIncomingCallDialog = false;
+
   //#region #region Register with Twilio
-  void register() {
+  void register() async {
     print("voip-service registration");
 
     // Use for locally provided token generator e.g. Twilio's quickstarter project: https://github.com/twilio/voice-quickstart-server-node
     if (!kIsWeb) {
+      bool success = false;
       // if not web, we use the requested registration method
       switch (widget.registrationMethod) {
         case RegistrationMethod.env:
-          _registerFromEnvironment();
+          success = await _registerFromEnvironment();
           break;
         case RegistrationMethod.local:
-          _registerLocal();
+          success = await _registerLocal();
           break;
         case RegistrationMethod.firebase:
-          _registerFirebase();
+          success = await _registerFirebase();
           break;
+      }
+
+      if (success) {
+        setState(() {
+          twilioInit = true;
+        });
       }
     } else {
       // for web, we always show the initialisation screen
@@ -221,12 +231,13 @@ class _AppState extends State<App> {
     });
 
     listenForEvents();
+    register();
 
     final partnerId = "alicesId";
     TwilioVoice.instance.registerClient(partnerId, "Alice");
-    TwilioVoice.instance.requestReadPhoneStatePermission();
-    TwilioVoice.instance.requestMicAccess();
-    TwilioVoice.instance.requestCallPhonePermission();
+    // TwilioVoice.instance.requestReadPhoneStatePermission();
+    // TwilioVoice.instance.requestMicAccess();
+    // TwilioVoice.instance.requestCallPhonePermission();
   }
 
   /// Listen for call events
@@ -253,6 +264,18 @@ class _AppState extends State<App> {
             }
           }
           break;
+        case CallEvent.connected:
+        case CallEvent.callEnded:
+        case CallEvent.declined:
+        case CallEvent.answer:
+          if (kIsWeb || Platform.isAndroid) {
+            final nav = Navigator.of(context);
+            if (nav.canPop() && showingIncomingCallDialog) {
+              nav.pop();
+              showingIncomingCallDialog = false;
+            }
+          }
+          break;
         default:
           break;
       }
@@ -266,7 +289,6 @@ class _AppState extends State<App> {
       TwilioVoice.instance.requestMicAccess();
       return;
     }
-    TwilioVoice.instance.requestBluetoothPermissions();
     print("starting call to $clientIdentifier");
     TwilioVoice.instance.call.place(to: clientIdentifier, from: userId, extraOptions: {"_TWI_SUBJECT": "Company Name"});
   }
@@ -315,14 +337,17 @@ class _AppState extends State<App> {
 
   /// Show incoming call dialog for web and Android
   void _showWebIncomingCallDialog() async {
+    showingIncomingCallDialog = true;
     final activeCall = TwilioVoice.instance.call.activeCall!;
     final action = await showIncomingCallScreen(context, activeCall);
     if (action == true) {
       print("accepting call");
       TwilioVoice.instance.call.answer();
-    } else {
+    } else if (action == false) {
       print("rejecting call");
       TwilioVoice.instance.call.hangUp();
+    } else {
+      print("no action");
     }
   }
 

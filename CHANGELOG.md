@@ -23,10 +23,15 @@
 * [twilio_voice_mimp:0.0.12) iOS XCODE failed
 * [twilio_voice_mimp:0.0.11) iOS Podspecs were failing
 * [twilio_voice_mimp:0.0.10) **German Localization in Android
-* Feat: Add check and request Bluetooth permissions @cybex-dev
+* ~~Feat: Add check and request Bluetooth permissions @cybex-dev~~
 * Feat: [Android] Use Android Native callkit equivalent via [ConnectionService](https://developer.android.com/reference/android/telecom/ConnectionService). @cybex-dev
-* Removed (Deprecated) `requiresBackgroundPermissions` & `requestBackgroundPermissions` as they are no longer needed for background UI screens. @cybex-dev
-* Removed (Deprecated) `showBackgroundCallUi` as it is no longer needed for background UI screens. (this might be reinstated in future, depending on feature requests) @cybex-dev
+* Change: [Android] Removed (Deprecated) `requiresBackgroundPermissions` & `requestBackgroundPermissions` as they are no longer needed for background UI screens. @cybex-dev
+* Change: [Android] Removed (Deprecated) `showBackgroundCallUi` as it is no longer needed for background UI screens. (this might be reinstated in future, depending on feature requests) @cybex-dev
+* Change: [Android] Removed (Deprecated) `backgroundCallUi` as it is no longer needed for background UI screens. @cybex-dev
+* Change: [Android] Removed (Deprecated) `requestBluetoothPermission`, `hasBluetoothPermission` as these are no longer needed and handled by the native Telecom App. @cybex-dev
+* (on-hold) Feat: [Android] Added custom scheme `twi://` @cybex-dev
+* Feat (early-access): [Android] Added customParams interpretation via `TVCallInviteParameters` and `TVCallParameters`, see readme for more details. @cybex-dev
+* Feat: [Android] Add CallingAccount (Phone Account) label & description via `strings.xml`. @cybex-dev
 
 ## 0.0.9
 * Feat: forwarded callInvite custom parameters to flutter

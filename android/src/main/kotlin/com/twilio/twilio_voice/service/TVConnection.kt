@@ -145,7 +145,15 @@ open class TVCallConnection(
      */
     override fun onRinging(call: Call) {
         twilioCall = call
-        setRinging()
+
+        when (callDirection) {
+            CallDirection.INCOMING -> {
+                setRinging()
+            }
+            CallDirection.OUTGOING -> {
+                setInitialized()
+            }
+        }
         onEvent?.onChange(TVNativeCallEvents.EVENT_RINGING, Bundle().apply {
             putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, call.sid)
             putString(TVBroadcastReceiver.EXTRA_CALL_FROM, call.from ?: "")
