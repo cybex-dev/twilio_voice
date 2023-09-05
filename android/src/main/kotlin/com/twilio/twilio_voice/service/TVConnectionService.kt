@@ -25,6 +25,7 @@ import com.twilio.twilio_voice.storage.StorageImpl
 import com.twilio.twilio_voice.types.BundleExtensions.getParcelableSafe
 import com.twilio.twilio_voice.types.CompletionHandler
 import com.twilio.twilio_voice.types.ContextExtension.appName
+import com.twilio.twilio_voice.types.ContextExtension.hasCallPhonePermission
 import com.twilio.twilio_voice.types.IntentExtension.getParcelableExtraSafe
 import com.twilio.twilio_voice.types.TelecomManagerExtension.getPhoneAccountHandle
 import com.twilio.twilio_voice.types.TelecomManagerExtension.hasCallCapableAccount
@@ -380,6 +381,11 @@ class TVConnectionService : ConnectionService() {
                     if (!telecomManager.hasCallCapableAccount(applicationContext, phoneAccountHandle.componentName.className)) {
                         Log.e(TAG, "onStartCommand: No registered phone account for PhoneHandle $phoneAccountHandle")
                         telecomManager.registerPhoneAccount(applicationContext, phoneAccountHandle)
+                    }
+
+                    if (!applicationContext.hasCallPhonePermission()) {
+                        Log.e(TAG, "onStartCommand: Missing CALL_PHONE permission, request permission with `requestCallPhonePermission()`")
+                        return@let
                     }
 
                     // Create outgoing extras
