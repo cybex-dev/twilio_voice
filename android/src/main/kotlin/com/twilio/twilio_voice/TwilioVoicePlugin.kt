@@ -8,7 +8,6 @@ import android.content.DialogInterface
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import android.telecom.CallAudioState
 import android.telecom.PhoneAccountHandle
@@ -27,7 +26,6 @@ import com.twilio.twilio_voice.storage.Storage
 import com.twilio.twilio_voice.storage.StorageImpl
 import com.twilio.twilio_voice.types.CallDirection
 import com.twilio.twilio_voice.types.CallExceptionExtension
-import com.twilio.twilio_voice.types.ContextExtension.appName
 import com.twilio.twilio_voice.types.ContextExtension.hasMicrophoneAccess
 import com.twilio.twilio_voice.types.ContextExtension.hasReadPhoneNumbersPermission
 import com.twilio.twilio_voice.types.ContextExtension.hasReadPhoneStatePermission
@@ -95,7 +93,6 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     // Constants
     private val kCHANNEL_NAME = "twilio_voice"
     private val REQUEST_CODE_MICROPHONE = 1
-
     private val REQUEST_CODE_CALL_PHONE = 3
     private val REQUEST_CODE_READ_PHONE_NUMBERS = 4
     private val REQUEST_CODE_READ_PHONE_STATE = 5
