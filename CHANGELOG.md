@@ -32,6 +32,8 @@
 * (on-hold) Feat: [Android] Added custom scheme `twi://` @cybex-dev
 * Feat (early-access): [Android] Added customParams interpretation via `TVCallInviteParameters` and `TVCallParameters`, see readme for more details. @cybex-dev
 * Feat: [Android] Add CallingAccount (Phone Account) label & description via `strings.xml`. @cybex-dev
+* Feat: [Android] Add Calling Account (Phone Account) icon (using current app icon via `getApplicationInfo().getIcon()`). @cybex-dev
+* Fix: request Permissions return result via Flutter future.
 
 ## 0.0.9
 * Feat: forwarded callInvite custom parameters to flutter
