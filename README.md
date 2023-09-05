@@ -289,6 +289,42 @@ The events sent are the following
 - returningCall
 - permission (Android only)
 
+### Interpreting Parameters
+
+As a convenience, the plugin will interpret the TwiML parameters and send them as a map in the `CallInvite` or provided via `extraOptions` when creating the call. This is useful for passing additional information to the call screen and are prefixed with `__TWI`.
+
+ - `__TWI_CALLER_ID` - caller id
+ - `__TWI_CALLER_NAME` - caller name
+ - `__TWI_CALLER_URL` - caller image/thumbnail url (not implemented/supported at the moment)
+ - `__TWI_RECIPIENT_ID` - recipient id
+ - `__TWI_RECIPIENT_NAME` - recipient name
+ - `__TWI_RECIPIENT_URL` - recipient image/thumbnail url (not implemented/supported at the moment)
+ - `__TWI_SUBJECT` - subject/additional info
+
+ These parameters above are interpreted as follows.
+
+ #### Name resolution
+ Caller is usually referred to as `call.from` or `callInvite.from`. This can either be a number of a string (with the format `client:clientName`) or null.
+
+ The following rules are applied to determine the caller/recipient name, which is shown in the call screen and heads-up notification:
+
+ - If the caller is empty/not provided, the default caller name is shown e.g. "Unknown Caller", else
+ - if the caller is a number, the plugin will show the number as is, else
+ - if the caller is a string, the plugin will interpret the string as follows:
+    - if the `__TWI_CALLER_NAME` parameter is provided, the plugin will show the value of `__TWI_CALLER_NAME` as is, else
+    - if the `__TWI_CALLER_ID` parameter is provided, the plugin will search for a registered client with the same id and show the client name, else
+    - if not found or not provided, the plugin will search for a registered client with the `call.from` value and show the client name, as a last resort
+    - the default caller name is shown e.g. "Unknown Caller"
+
+*Please note: the same approach applies to both caller and recipient name resolution.*
+
+ #### Subject
+
+ Using the provided `__TWI_SUBJECT` parameter, the plugin will show the subject as is, else (depending on the platform and manufacturer), the plugin will show:
+  - the caller name as the subject, or
+  - the app name as the subject, or
+  - the default subject "Incoming Call"
+
 ## showMissedCallNotifications
 
 By default a local notification will be shown to the user after missing a call, clicking on the
