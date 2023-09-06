@@ -41,6 +41,8 @@ class TVConnectionService : ConnectionService() {
     companion object {
         val TAG = "TwilioVoiceConnectionService"
 
+        val activeConnections = HashMap<String, TVCallConnection>()
+
         val TWI_SCHEME: String = "twi"
 
         val SERVICE_TYPE_MICROPHONE: Int = 100
@@ -165,13 +167,30 @@ class TVConnectionService : ConnectionService() {
          */
         const val EXTRA_MUTE_STATE: String = "EXTRA_MUTE_STATE"
         //endregion
+
+        fun hasActiveCalls(): Boolean {
+            return activeConnections.isNotEmpty()
+        }
+
+        /**
+         * Get the first active call handle, if any. Returns null if there are no active calls. If there are more than one active calls, the first call handle is returned.
+         * Note: this might not necessarily correspond to the current active call.
+         */
+        fun getActiveCallHandle(): String? {
+            if (!hasActiveCalls()) return null
+            return activeConnections.entries.firstOrNull { it.value.state == Connection.STATE_ACTIVE }?.key
+        }
+
+        fun getIncomingCallHandle(): String? {
+            if (!hasActiveCalls()) return null
+            return activeConnections.entries.firstOrNull { it.value.state == Connection.STATE_RINGING }?.key
+        }
+
+        fun getConnection(callSid: String): TVCallConnection? {
+            return activeConnections[callSid]
+        }
     }
 
-    private val activeConnections = HashMap<String, TVCallConnection>()
-
-    private fun getConnection(callSid: String): TVCallConnection? {
-        return this.activeConnections[callSid]
-    }
 
     private fun stopSelfSafe(): Boolean {
         if (!hasActiveCalls()) {
@@ -180,24 +199,6 @@ class TVConnectionService : ConnectionService() {
         } else {
             return false
         }
-    }
-
-    private fun hasActiveCalls(): Boolean {
-        return this.activeConnections.isNotEmpty()
-    }
-
-    /**
-     * Get the first active call handle, if any. Returns null if there are no active calls. If there are more than one active calls, the first call handle is returned.
-     * Note: this might not necessarily correspond to the current active call.
-     */
-    private fun getActiveCallHandle(): String? {
-        if (!hasActiveCalls()) return null
-        return activeConnections.entries.firstOrNull { it.value.state == Connection.STATE_ACTIVE }?.key
-    }
-
-    private fun getIncomingCallHandle(): String? {
-        if (!hasActiveCalls()) return null
-        return activeConnections.entries.firstOrNull { it.value.state == Connection.STATE_RINGING }?.key
     }
 
     //region Service onStartCommand

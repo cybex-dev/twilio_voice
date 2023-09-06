@@ -38,7 +38,6 @@ import com.twilio.twilio_voice.types.TVNativeCallEvents
 import com.twilio.twilio_voice.types.TelecomManagerExtension.canReadPhoneNumbers
 import com.twilio.twilio_voice.types.TelecomManagerExtension.getPhoneAccountHandle
 import com.twilio.twilio_voice.types.TelecomManagerExtension.hasCallCapableAccount
-import com.twilio.twilio_voice.types.TelecomManagerExtension.isOnCall
 import com.twilio.twilio_voice.types.TelecomManagerExtension.openPhoneAccountSettings
 import com.twilio.twilio_voice.types.TelecomManagerExtension.registerPhoneAccount
 import com.twilio.voice.Call
@@ -397,22 +396,16 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                     return@onMethodCall
                 }
 
-                context?.let { ctx ->
-                    telecomManager?.let { tm ->
-                        if (isOnCall(ctx, tm)) {
-                            toggleSpeaker(ctx, speakerIsOn)
-                            result.success(true)
-                        } else {
-                            Log.d(TAG, "onMethodCall: Not on call, cannot toggle speaker")
-                            result.success(false)
-                        }
-
+                if (isOnCall()) {
+                    context?.let { ctx ->
+                        toggleSpeaker(ctx, speakerIsOn)
+                        result.success(true)
                     } ?: run {
-                        Log.w(TAG, "TelecomManager is null, cannot toggle speaker")
+                        Log.e(TAG, "Context is null, cannot toggle speaker")
                         result.success(false)
                     }
-                } ?: run {
-                    Log.e(TAG, "Context is null, cannot toggle speaker")
+                } else {
+                    Log.d(TAG, "onMethodCall: Not on call, cannot toggle speaker")
                     result.success(false)
                 }
             }
@@ -432,22 +425,16 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                     return@onMethodCall
                 }
 
-                context?.let { ctx ->
-                    telecomManager?.let { tm ->
-                        if (isOnCall(ctx, tm)) {
-                            toggleBluetooth(ctx, bluetoothOn)
-                            result.success(true)
-                        } else {
-                            Log.d(TAG, "onMethodCall: Not on call, cannot toggle bluetooth")
-                            result.success(false)
-                        }
-
+                if (isOnCall()) {
+                    context?.let { ctx ->
+                        toggleBluetooth(ctx, bluetoothOn)
+                        result.success(true)
                     } ?: run {
-                        Log.w(TAG, "TelecomManager is null, cannot toggle bluetooth")
+                        Log.e(TAG, "Context is null, cannot toggle bluetooth")
                         result.success(false)
                     }
-                } ?: run {
-                    Log.e(TAG, "Context is null, cannot toggle bluetooth")
+                } else {
+                    Log.d(TAG, "onMethodCall: Not on call, cannot toggle bluetooth")
                     result.success(false)
                 }
             }
@@ -467,22 +454,16 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                     return@onMethodCall
                 }
 
-                context?.let { ctx ->
-                    telecomManager?.let { tm ->
-                        if (isOnCall(ctx, tm)) {
-                            toggleMute(ctx, muted)
-                            result.success(true)
-                        } else {
-                            Log.d(TAG, "onMethodCall: Not on call, cannot toggle mute")
-                            result.success(false)
-                        }
-
+                if (isOnCall()) {
+                    context?.let { ctx ->
+                        toggleMute(ctx, muted)
+                        result.success(true)
                     } ?: run {
-                        Log.w(TAG, "TelecomManager is null, cannot toggle mute")
+                        Log.e(TAG, "Context is null, cannot toggle mute")
                         result.success(false)
                     }
-                } ?: run {
-                    Log.e(TAG, "Context is null, cannot toggle mute")
+                } else {
+                    Log.d(TAG, "onMethodCall: Not on call, cannot toggle mute")
                     result.success(false)
                 }
             }
@@ -493,21 +474,26 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             }
 
             TVMethodChannels.CALL_SID -> {
-                result.success(callSid)
+                val activeCallHandle = TVConnectionService.getActiveCallHandle();
+                result.success(activeCallHandle)
             }
 
             TVMethodChannels.IS_ON_CALL -> {
-                context?.let { ctx ->
-                    telecomManager?.let { tm ->
-                        result.success(isOnCall(ctx, tm))
-                    } ?: run {
-                        Log.w(TAG, "TelecomManager is null, cannot check if on call")
-                        result.success(false)
-                    }
-                } ?: run {
-                    Log.e(TAG, "Context is null, cannot check if on call")
-                    result.success(false)
-                }
+                result.success(isOnCall())
+                return
+
+                // Disabled for now until a better solution for TelecomManager.isInCall() is found - this returns true for any ConnectionService including Cellular calls.
+//                context?.let { ctx ->
+//                    telecomManager?.let { tm ->
+//                        result.success(isOnCall(ctx, tm))
+//                    } ?: run {
+//                        Log.w(TAG, "TelecomManager is null, cannot check if on call")
+//                        result.success(false)
+//                    }
+//                } ?: run {
+//                    Log.e(TAG, "Context is null, cannot check if on call")
+//                    result.success(false)
+//                }
             }
 
             TVMethodChannels.HOLD_CALL -> {
@@ -521,22 +507,16 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 }
 
                 Log.d(TAG, "Hold call invoked")
-                context?.let { ctx ->
-                    telecomManager?.let { tm ->
-                        if (isOnCall(ctx, tm)) {
-                            toggleHold(ctx, shouldHold)
-                            result.success(true)
-                        } else {
-                            Log.d(TAG, "onMethodCall: Not on call, cannot toggle hold call")
-                            result.success(false)
-                        }
-
+                if (isOnCall()) {
+                    context?.let { ctx ->
+                        toggleHold(ctx, shouldHold)
+                        result.success(true)
                     } ?: run {
-                        Log.w(TAG, "TelecomManager is null, cannot toggle hold call")
+                        Log.e(TAG, "Context is null, cannot toggle hold call")
                         result.success(false)
                     }
-                } ?: run {
-                    Log.e(TAG, "Context is null, cannot toggle hold call")
+                } else {
+                    Log.d(TAG, "onMethodCall: Not on call, cannot toggle hold call")
                     result.success(false)
                 }
             }
@@ -951,18 +931,19 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         }
     }
 
-    private fun isOnCall(ctx: Context, tm: TelecomManager): Boolean {
-        if (!checkReadPhoneStatePermission()) {
-            Log.e(
-                TAG,
-                "No read phone state permission, call `requestReadPhoneStatePermission()` first"
-            )
-            return false
-        }
-        if (callSid == null) {
-            Log.d(TAG, "isOnCall: CallSid is null.")
-        }
-        return tm.isOnCall(ctx)
+    private fun isOnCall(/*ctx: Context, tm: TelecomManager*/): Boolean {
+//        if (!checkReadPhoneStatePermission()) {
+//            Log.e(
+//                TAG,
+//                "No read phone state permission, call `requestReadPhoneStatePermission()` first"
+//            )
+//            return false
+//        }
+//        if (callSid == null) {
+//            Log.d(TAG, "isOnCall: CallSid is null.")
+//        }
+//        return tm.isOnCall(ctx)
+        return TVConnectionService.hasActiveCalls()
     }
 
     private fun toggleSpeaker(ctx: Context, speakerIsOn: Boolean) {
