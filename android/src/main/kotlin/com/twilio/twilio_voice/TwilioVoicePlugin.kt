@@ -694,7 +694,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 } ?: run {
                     Log.e(
                         TAG,
-                        "Storage is null, cannot unregister client. Has Storage been initialized?"
+                        "Storage is null, cannot set default caller. Has Storage been initialized?"
                     )
                     result.success(false)
                 }
@@ -846,7 +846,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 } ?: run {
                     Log.e(
                         TAG,
-                        "Storage is null, cannot unregister client. Has Storage been initialized?"
+                        "Storage is null, cannot set showNotifications. Has Storage been initialized?"
                     )
                     result.success(false)
                 }
