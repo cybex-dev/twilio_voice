@@ -61,6 +61,11 @@ class TVCallInviteConnection(
     override fun onReject() {
         super.onReject()
         callInvite.reject(context)
+        // if the call was answered, then immediately rejected/ended, we need to disconnect the call also
+        twilioCall?.let {
+            Log.d(TAG, "onReject: disconnecting call")
+            it.disconnect()
+        }
         onEvent?.onChange(TVNativeCallEvents.EVENT_DISCONNECTED_LOCAL, null)
         onDisconnected?.withValue(DisconnectCause(DisconnectCause.REJECTED))
         onAction?.onChange(TVNativeCallActions.ACTION_REJECTED, null)
