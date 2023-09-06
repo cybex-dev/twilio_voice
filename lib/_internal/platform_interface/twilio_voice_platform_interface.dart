@@ -131,6 +131,18 @@ abstract class TwilioVoicePlatform extends SharedPlatformInterface {
   @Deprecated('custom call UI not used anymore, has no effect')
   Future<bool?> requestBluetoothPermissions();
 
+  /// Reject call when no `CALL_PHONE` permissions are granted nor Phone Account (via `isPhoneAccountEnabled`) is registered.
+  /// If set to true, the call is rejected immediately upon received. If set to false, the call is left until the timeout is reached / call is canceled.
+  /// Defaults to false.
+  ///
+  /// Only available on Android
+  Future<bool> rejectCallOnNoPermissions({bool shouldReject = false});
+
+  /// Returns true if call is rejected when no `CALL_PHONE` permissions are granted nor Phone Account (via `isPhoneAccountEnabled`) is registered. Defaults to false.
+  ///
+  /// Only available on Android
+  Future<bool> isRejectingCallOnNoPermissions();
+
   /// Set iOS call kit icon
   ///
   /// This allows for CallKit customization: setting the last button (bottom right) of the callkit.

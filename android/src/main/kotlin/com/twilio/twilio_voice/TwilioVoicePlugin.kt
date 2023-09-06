@@ -694,7 +694,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 } ?: run {
                     Log.e(
                         TAG,
-                        "Storage is null, cannot unregister client. Has Storage been initialized?"
+                        "Storage is null, cannot set default caller. Has Storage been initialized?"
                     )
                     result.success(false)
                 }
@@ -846,7 +846,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 } ?: run {
                     Log.e(
                         TAG,
-                        "Storage is null, cannot unregister client. Has Storage been initialized?"
+                        "Storage is null, cannot set showNotifications. Has Storage been initialized?"
                     )
                     result.success(false)
                 }
@@ -865,6 +865,41 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             TVMethodChannels.UPDATE_CALLKIT_ICON -> {
                 // we don't use CallKit on Android... yet
                 result.success(true)
+            }
+
+            TVMethodChannels.REJECT_CALL_ON_NO_PERMISSIONS -> {
+                val shouldRejectOnNoPermissions = call.argument<Boolean>("shouldReject") ?: run {
+                    result.error(
+                        FlutterErrorCodes.MALFORMED_ARGUMENTS,
+                        "No 'shouldReject' provided or invalid type",
+                        null
+                    )
+                    return@onMethodCall
+                }
+
+                storage?.let {
+                    logEvent("shouldRejectOnNoPermissions is $shouldRejectOnNoPermissions")
+                    it.rejectOnNoPermissions = shouldRejectOnNoPermissions
+                    result.success(true)
+                } ?: run {
+                    Log.e(
+                        TAG,
+                        "Storage is null, cannot set reject on no permissions. Has Storage been initialized?"
+                    )
+                    result.success(false)
+                }
+            }
+
+            TVMethodChannels.IS_REJECTING_CALL_ON_NO_PERMISSIONS -> {
+                storage?.let {
+                    result.success(it.rejectOnNoPermissions)
+                } ?: run {
+                    Log.e(
+                        TAG,
+                        "Storage is null, cannot set reject on no permissions. Has Storage been initialized?"
+                    )
+                    result.success(false)
+                }
             }
 
             else -> {

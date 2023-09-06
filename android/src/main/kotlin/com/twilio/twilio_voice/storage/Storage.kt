@@ -32,6 +32,12 @@ interface Storage {
     var defaultCaller: String
 
     /**
+     * If true, reject incoming calls if the app does not have the required permissions. Default is false.
+     * @return true to reject on no permissions, false to ignore.
+     */
+    var rejectOnNoPermissions: Boolean
+
+    /**
      * Get the default caller name, if not set, return the default [Constants.DEFAULT_UNKNOWN_CALLER]
      * @param id: the id of the registered client
      * @return the default caller name

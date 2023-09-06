@@ -1,4 +1,3 @@
-
 # twilio_voice
 
 Provides an interface to Twilio's Programmable Voice SDK to allow voice-over-IP (VoIP) calling into
@@ -6,9 +5,11 @@ your Flutter applications.
 ~~This plugin was taken from the original `flutter_twilio_voice` as it seems that plugin is no longer maintained, this one is.~~  Project ownership & maintenance handed over by [diegogarcia](https://github.com/diegogarciar). For the foreseeable future, I'll be actively maintaining this project.
 
 #### 🐞Bug? Issue? Something odd?
+
 Report it [here](https://github.com/cybex-dev/twilio_voice/issues/new?assignees=&labels=type:Bug,status:Unconfirmed&projects=&template=BUG_REPORT.md&title=).
 
 #### 🚀 Feature Requests?
+
 Any and all [Feature Requests](https://github.com/cybex-dev/twilio_voice/issues/new?assignees=&labels=type:Enhancement&projects=&template=FEATURE_REQUEST.md&title=) or Pull Requests are gladly welcome!
 
 #### Live Example/Samples:
@@ -24,9 +25,10 @@ Any and all [Feature Requests](https://github.com/cybex-dev/twilio_voice/issues/
 - Receive and place calls from Web (FCM push notification integration not yet supported by Twilio Voice Web, see [here](https://github.com/twilio/twilio-voice.js/pull/159#issuecomment-1551553299) for discussion)
 - Receive and place calls from MacOS devices, uses custom UI to receive calls (in future & macOS
   13.0+, we'll be using CallKit).
--  Interpret TwiML parameters to populate UI, see below [Interpreting Parameters](#interpreting-parameters)
+- Interpret TwiML parameters to populate UI, see below [Interpreting Parameters](#interpreting-parameters)
 
 ## Feature addition schedule:
+
 - Audio device selection support (select input/output audio devices, on-hold)
 - Update plugin to Flutter federated packages (step 1 of 2 with Web support merge)
 - Desktop platform support (implementation as JS wrapper/native implementation, Windows/Linux to start development)
@@ -76,7 +78,7 @@ see [[Limitations]](https://github.com/diegogarciar/twilio_voice/blob/master/NOT
 register in your `AndroidManifest.xml` the service in charge of displaying incoming call
 notifications:
 
-``` xml
+```xml
 <Application>
  .....
  <service
@@ -89,29 +91,37 @@ notifications:
 #### Phone Account
 
 To register a Phone Account, request access to `READ_PHONE_NUMBERS` permission first:
+
 ```dart
 TwilioVoice.instance.requestReadPhoneNumbersPermission();  // Gives Android permissions to read Phone Accounts
 ```
+
 then, register the `PhoneAccount` with:
+
 ```dart
 TwilioVoice.instance.registerPhoneAccount();
 ```
 
 #### Enable calling account
+
 To open the `Call Account` settings, use the following code:
+
 ```dart
 TwilioVoice.instance.openPhoneAccountSettings();
 ```
 
 Check if it's enabled with:
+
 ```dart
 TwilioVoice.instance.isPhoneAccountEnabled();
 ```
 
 #### Calling with ConnectionService
+
 Placing a call with Telecom app via Connection Service requires a `PhoneAccount` to be registered. See [Phone Account](#phone-account) above for more information.
 
 Finally, to grant access to place calls, run:
+
 ```dart
 TwilioVoice.instance.requestCallPhonePermission();  // Gives Android permissions to place calls
 ```
@@ -119,7 +129,9 @@ TwilioVoice.instance.requestCallPhonePermission();  // Gives Android permissions
 See [Customizing the Calling Account](#customizing-the-calling-account) for more information.
 
 #### Enabling the ConnectionService
+
 To enable the `ConnectionService` and make/receive calls, run:
+
 ```dart
 TwilioVoice.instance.requestReadPhoneStatePermission();  // Gives Android permissions to read Phone State
 ```
@@ -127,14 +139,17 @@ TwilioVoice.instance.requestReadPhoneStatePermission();  // Gives Android permis
 Highly recommended to review the notes for **Android**. See [[Notes]](https://github.com/diegogarciar/twilio_voice/blob/master/NOTES.md#android) for more information.
 
 #### Customizing the Calling Account
+
 To customize the `label` and `shortDescription` of the calling account, add the following in your `res/values/strings.xml`:
+
 ```xml
 <string name="phone_account_name" translatable="false">Example App</string>
 <string name="phone_account_desc" translatable="false">Example app voice calls calling account</string>
 ```
+
 This can be found in alternatively the Phone App's settings, `Other/Advanced Call Settings -> Calling Accounts -> (Example App)` (then toggle the switch)
 
-![enter image description here](https://i.imgur.com/SwtZjgD.png)
+![enter image description here](https://i.imgur.com/6mhjFWZ.gif)
 
 See [example](https://github.com/cybex-dev/twilio_voice/blob/master/example/android/app/src/main/res/values/strings.xml) for more details
 
@@ -149,19 +164,21 @@ See [example](https://github.com/cybex-dev/twilio_voice/blob/master/example/andr
 ### Web Setup:
 
 There are 2 important files for Twilio incoming/missed call notifications to work:
+
 - `notifications.js` is the main file, it handles the notifications and the service worker.
 - `twilio-sw.js` is the service worker, it is used to handle the incoming calls.
 
 Also, the twilio javascript SDK itself, `twilio.min.js` is needed.
 
 To ensure proper/as intended setup:
+
 1. Get all 3 files (`notifications.js`, `twilio.min.js` and `twilio-sw.js`) from `example/web` folder
 2. Copy all 3 into your own project,
 3. (optional) Review & change the `notifications.js`, `twilio-sw.js) files to match your needs.
 
 Finally, add the following code to your `index.html` file, **at the end of body tag**:
 
-``` html
+```html
     <body>
         <!--twilio native js library-->
         <script type="text/javascript" src="./twilio.min.js"></script>
@@ -183,6 +200,7 @@ Finally, add the following code to your `index.html` file, **at the end of body 
 ```
 
 #### Web Considerations
+
 Notice should be given to using `firebase-messaging-sw.js` in addition to `twilio-sw.js` since these may cause conflict in service worker events being handled.
 
 _If you need to debug the service worker, open up Chrome Devtools, go to Application tab, and select Service Workers from the left menu. There you can see the service workers and their status.
@@ -196,20 +214,21 @@ wrapper. This makes macOS integration a drop-in solution.
 However, you'll need to:
 
 1. add the following to your `Info.plist` file:
-    ``` xml
-    <key>NSMicrophoneUsageDescription</key>
-    <string>Allow microphone access to make calls</string>
-    ```
+
+   ```xml
+   <key>NSMicrophoneUsageDescription</key>
+   <string>Allow microphone access to make calls</string>
+   ```
 2. include Hardened Runtime entitlements (this is required for App Store distributed MacOS apps):
-    ``` xml
+
+   ```xml
    <key>com.apple.security.audio-input</key>
    <true/>
 
-    <!--Optionally for bluetooth support/permissions-->
+   <!--Optionally for bluetooth support/permissions-->
    <key>com.apple.security.device.bluetooth</key>
    <true/>
-    ```
-
+   ```
 3. Lastly and most importantly, ensure the `index.html` and `twilio.min.js` is bundled inside of `twilio_voice` package (this
    shouldn't be a problem, but just in case). Found in `twilio_voice.../.../Classes/Resources/*`.
 
@@ -297,37 +316,39 @@ The events sent are the following
 
 As a convenience, the plugin will interpret the TwiML parameters and send them as a map in the `CallInvite` or provided via `extraOptions` when creating the call. This is useful for passing additional information to the call screen and are prefixed with `__TWI`.
 
- - `__TWI_CALLER_ID` - caller id
- - `__TWI_CALLER_NAME` - caller name
- - `__TWI_CALLER_URL` - caller image/thumbnail url (not implemented/supported at the moment)
- - `__TWI_RECIPIENT_ID` - recipient id
- - `__TWI_RECIPIENT_NAME` - recipient name
- - `__TWI_RECIPIENT_URL` - recipient image/thumbnail url (not implemented/supported at the moment)
- - `__TWI_SUBJECT` - subject/additional info
+- `__TWI_CALLER_ID` - caller id
+- `__TWI_CALLER_NAME` - caller name
+- `__TWI_CALLER_URL` - caller image/thumbnail url (not implemented/supported at the moment)
+- `__TWI_RECIPIENT_ID` - recipient id
+- `__TWI_RECIPIENT_NAME` - recipient name
+- `__TWI_RECIPIENT_URL` - recipient image/thumbnail url (not implemented/supported at the moment)
+- `__TWI_SUBJECT` - subject/additional info
 
- These parameters above are interpreted as follows.
+These parameters above are interpreted as follows.
 
- #### Name resolution
- Caller is usually referred to as `call.from` or `callInvite.from`. This can either be a number of a string (with the format `client:clientName`) or null.
+#### Name resolution
 
- The following rules are applied to determine the caller/recipient name, which is shown in the call screen and heads-up notification:
+Caller is usually referred to as `call.from` or `callInvite.from`. This can either be a number of a string (with the format `client:clientName`) or null.
 
- - If the caller is empty/not provided, the default caller name is shown e.g. "Unknown Caller", else
- - if the caller is a number, the plugin will show the number as is, else
- - if the caller is a string, the plugin will interpret the string as follows:
-    - if the `__TWI_CALLER_NAME` parameter is provided, the plugin will show the value of `__TWI_CALLER_NAME` as is, else
-    - if the `__TWI_CALLER_ID` parameter is provided, the plugin will search for a registered client with the same id and show the client name, else
-    - if not found or not provided, the plugin will search for a registered client with the `call.from` value and show the client name, as a last resort
-    - the default caller name is shown e.g. "Unknown Caller"
+The following rules are applied to determine the caller/recipient name, which is shown in the call screen and heads-up notification:
+
+- If the caller is empty/not provided, the default caller name is shown e.g. "Unknown Caller", else
+- if the caller is a number, the plugin will show the number as is, else
+- if the caller is a string, the plugin will interpret the string as follows:
+  - if the `__TWI_CALLER_NAME` parameter is provided, the plugin will show the value of `__TWI_CALLER_NAME` as is, else
+  - if the `__TWI_CALLER_ID` parameter is provided, the plugin will search for a registered client with the same id and show the client name, else
+  - if not found or not provided, the plugin will search for a registered client with the `call.from` value and show the client name, as a last resort
+  - the default caller name is shown e.g. "Unknown Caller"
 
 *Please note: the same approach applies to both caller and recipient name resolution.*
 
- #### Subject
+#### Subject
 
- Using the provided `__TWI_SUBJECT` parameter, the plugin will show the subject as is, else (depending on the platform and manufacturer), the plugin will show:
-  - the caller name as the subject, or
-  - the app name as the subject, or
-  - the default subject "Incoming Call"
+Using the provided `__TWI_SUBJECT` parameter, the plugin will show the subject as is, else (depending on the platform and manufacturer), the plugin will show:
+
+- the caller name as the subject, or
+- the app name as the subject, or
+- the default subject "Incoming Call"
 
 ## showMissedCallNotifications
 
@@ -351,6 +372,7 @@ use `extraOptions` to pass additional variables to your server callback function
 These translate to the your TwiML `event` function/service as:
 
 *javascript sample*
+
 ```javascript
 exports.handler = function(context, event, callback) {
     const from = event.From;
@@ -364,6 +386,16 @@ exports.handler = function(context, event, callback) {
 See [Setting up the Application](#setting-up-the-application) for more information.
 
 *Please note: the hardcoded `To`, `From` may change in future.*
+
+#### Receiving Calls
+
+##### iOS
+
+Receives calls via [CallKit](https://developer.apple.com/documentation/callkit) integration. Make sure to review the [iOS Setup](#ios-setup) section for more information.
+
+##### Android
+
+Receives calls via [ConnectionService](https://developer.android.com/reference/android/telecom/ConnectionService) integration. Make sure to review the [Android Setup](#android-setup) section for more information.
 
 #### Mute a Call
 
@@ -414,6 +446,41 @@ page to enable the permission.~~
 
 Deprecated in 0.10.0, as it is no longer needed. Custom UI has been replaced with native UI.
 
+#### ConnectionService & Native Phone Account (Android only)
+
+Similar to CallKit on iOS, Android implements their own via a [ConnectionService](https://developer.android.com/reference/android/telecom/ConnectionService) integration. To make use of this, you'll need to request `CALL_PHONE` permissions via:
+
+```dart
+TwilioVoice.instance.requestCallPhonePermission();  // Gives Android permissions to place outgoing calls
+TwilioVoice.instance.requestReadPhoneStatePermission();  // Gives Android permissions to read Phone State including receiving calls
+TwilioVoice.instance.requestReadPhoneNumbersPermission();  // Gives Android permissions to read Phone Accounts
+```
+
+Following this, to register a Phone Account (required by all applications implementing a system-managed `ConnectionService`, run:
+
+```dart
+TwilioVoice.instance.registerPhoneAccount();  // Registers the Phone Account
+TwilioVoice.instance.openPhoneAccountSettings();  // Opens the Phone Account settings
+
+// After the account is enabled, you can check if it's enabled with:
+TwilioVoice.instance.isPhoneAccountEnabled();  // Checks if the Phone Account is enabled
+```
+
+This last step can be considered the 'final check' to make/receive calls on Android.
+
+**Permissions not granted?**
+
+Finally, a consideration for not all (`CALL_PHONE`) permissions granted on an Android device. The following feature is available on Android only:
+
+```dart
+TwilioVoice.instance.rejectCallOnNoPermissions({Bool = false}); // Rejects incoming calls if permissions are not granted
+TwilioVoice.instance.isRejectingCallOnNoPermissions(); // Checks if the plugin is rejecting calls if permissions are not granted
+```
+
+If the `CALL_PHONE` permissions group i.e. `READ_PHONE_STATE`, `READ_PHONE_NUMBERS`, `CALL_PHONE` aren't granted nor a Phone Account is registered and enabled, the plugin will either reject the incoming call (true) or not show the incoming call UI (false).
+
+See [Android Setup](#android-setup) and [Android Notes](https://github.com/diegogarciar/twilio_voice/blob/master/NOTES.md#android) for more information regarding configuring the `ConnectionService` and registering a Phone Account.
+
 ### Localization
 
 Because some of the UI is in native code, you need to localize those strings natively in your
@@ -450,7 +517,7 @@ the `make-call` function.
 This will allow you to actually place the call
 
 Prerequisites
----
+-------------
 
 * A Twilio Account. Don't have one? [Sign up](https://www.twilio.com/try-twilio) for free!
 
@@ -614,16 +681,15 @@ the deployment text. If this isn't done, calling won't work!
 
 Twilio's configurations are stored in `.runtimeconfig.json` which contains:
 
-    "auth_token": "",
-    "account_sid": "",
-    "app_sid": "",
-    "phone": "",
-    "api_key": "",
-    "api_key_secret": "",
-    "android_push_credential": "",
-    "apple_push_credential_debug": "",
-    "apple_push_credential_release": ""
-
+"auth_token": "",
+"account_sid": "",
+"app_sid": "",
+"phone": "",
+"api_key": "",
+"api_key_secret": "",
+"android_push_credential": "",
+"apple_push_credential_debug": "",
+"apple_push_credential_release": ""
 _**Note:** this is used for local emulator testing, but you need to deploy these to your firebase
 function application once you are ready to go live. If you don't, this won't work!_
 
@@ -646,7 +712,6 @@ twilio api:chat:v2:credentials:create \
 --friendly-name="voice-push-credential-fcm" \
 --secret=SERVER_KEY_VALUE
 ```
-
 and then place into the field: `android_push_credential` above
 
 This generated a push credential SID in the format `CRxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx` which must
@@ -678,7 +743,6 @@ $ openssl pkcs12 -in PATH_TO_YOUR_SANDBOX_P12 -nokeys -out sandbox_cert.pem -nod
 $ openssl pkcs12 -in PATH_TO_YOUR_SANDBOX_P12 -nocerts -out sandbox_key.pem -nodes
 $ openssl rsa -in sandbox_key.pem -out sandbox_key.pem
 ```
-
 Using sandbox certificates, generate credential:
 
 ```
@@ -689,7 +753,6 @@ twilio api:chat:v2:credentials:create \
 --certificate="$(cat PATH_TO_SANDBOX_CERT_PEM)" \
 --private-key="$(cat PATH_TO_SANDBOX_KEY_PEM)"
 ```
-
 then place it into the field `apple_push_credential_debug`
 
 **- Production Mode**
@@ -704,7 +767,6 @@ $ openssl pkcs12 -in PATH_TO_YOUR_P12 -nokeys -out prod_cert.pem -nodes
 $ openssl pkcs12 -in PATH_TO_YOUR_P12 -nocerts -out prod_key.pem -nodes
 $ openssl rsa -in prod_key.pem -out prod_key.pem
 ```
-
 Using production certificates, generate credential:
 
 ```
@@ -714,7 +776,6 @@ twilio api:chat:v2:credentials:create \
 --certificate="$(cat PATH_TO_PROD_CERT_PEM)" \
 --private-key="$(cat PATH_TO_PROD_KEY_PEM)"
 ```
-
 then place it into the field `apple_push_credential_release`
 
 see for more
@@ -805,7 +866,6 @@ exports.accessToken = functions.https.onCall((payload, context) => {
     };
 });
 ```
-
 Add the function above to your Firebase Functions application,
 see [this](https://firebase.google.com/docs/functions/get-started) for more help on creating a
 firebase functions project
@@ -818,7 +878,6 @@ Once done with everything above, deploy your firebase function with this:
 ```bash
 firebase deploy --only functions
 ```
-
 ##### Done!
 
 Calling should work naturally - just make sure to fetch the token from the endpoint and you can call
@@ -827,10 +886,11 @@ See [example](https://github.com/diegogarciar/twilio_voice/blob/master/example/l
 code, make sure to change the `voice-accessToken` to your function name, given to you by firebase
 when deploying (as part of the deploy text)
 
-
 ## Future Work
+
 - Move package to `federated plugin` structure (see [here](https://flutter.dev/go/federated-plugins) for more info), see reduced overhead advantages covered as motivation (see [here](https://medium.com/flutter/how-to-write-a-flutter-web-plugin-part-2-afdddb69ece6) for more info))
 
 ## Updating Twilio Voice JS SDK
+
 `twilio.js` is no longer hosted via CDNs (see [reference](https://github.com/twilio/twilio-voice.js/blob/master/README.md#cdn)), instead it is hosted via npm / github. See instructions found [here](https://github.com/twilio/twilio-voice.js/blob/master/README.md#github)
 This is automatically added to your `web/index.html` file, as a `<script/>` tag during runtime. See [here](./lib/_internal/twilio_loader.dart) for more info.);

@@ -7,13 +7,12 @@ import android.content.Intent
 import android.telecom.*
 import android.util.Log
 import androidx.annotation.RequiresPermission
-import androidx.core.content.ContextCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.twilio.twilio_voice.receivers.TVBroadcastReceiver
 import com.twilio.twilio_voice.service.TVConnectionService
-import com.twilio.twilio_voice.types.ContextExtension.hasMicrophoneAccess
+import com.twilio.twilio_voice.storage.StorageImpl
 import com.twilio.twilio_voice.types.TelecomManagerExtension.canReadPhoneNumbers
 import com.twilio.voice.CallException
 import com.twilio.voice.CallInvite
@@ -75,43 +74,62 @@ class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageListene
     @RequiresPermission(allOf = [Manifest.permission.RECORD_AUDIO, Manifest.permission.READ_PHONE_STATE, Manifest.permission.READ_PHONE_NUMBERS])
     @SuppressLint("MissingPermission")
     override fun onCallInvite(callInvite: CallInvite) {
+        Log.d(
+            TAG,
+            "onCallInvite: {\n\t" +
+                    "CallSid: ${callInvite.callSid}, \n\t" +
+                    "From: ${callInvite.from}, \n\t" +
+                    "To: ${callInvite.to}, \n\t" +
+                    "Parameters: ${callInvite.customParameters.entries.joinToString { "${it.key}:${it.value}" }},\n\t" +
+                    "}"
+        )
         // Get TelecomManager instance
         val tm = applicationContext.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
 
-        var shouldRejectCall = false
-        var requiredPermissions: Array<String> = emptyArray()
+        val shouldRejectOnNoPermissions: Boolean = StorageImpl(applicationContext).rejectOnNoPermissions
+        var missingPermissions: Array<String> = emptyArray()
 
         // Check permission READ_PHONE_STATE
         if (!tm.canReadPhoneState(applicationContext)) {
-            shouldRejectCall = true
-            requiredPermissions += "No `READ_PHONE_STATE` permission, cannot check if phone account is registered. Request this with `requestReadPhoneStatePermission()`"
+            missingPermissions += "No `READ_PHONE_STATE` permission, cannot check if phone account is registered. Request this with `requestReadPhoneStatePermission()`"
         }
 
         // Check permission READ_PHONE_NUMBERS
         if (!tm.canReadPhoneNumbers(applicationContext)) {
-            shouldRejectCall = true
-            requiredPermissions += "No `READ_PHONE_NUMBERS` permission, cannot communicate with ConnectionService if not granted. Request this with `requestReadPhoneNumbersPermission()`"
+            missingPermissions += "No `READ_PHONE_NUMBERS` permission, cannot communicate with ConnectionService if not granted. Request this with `requestReadPhoneNumbersPermission()`"
         }
 
-        // Check permission RECORD_AUDIO
-        if (!applicationContext.hasMicrophoneAccess()) {
-            shouldRejectCall = true
-            requiredPermissions += "No `RECORD_AUDIO` permission, VoiceSDK requires this permission. Request this with `requestMicPermission()`"
-        }
+        // NOTE(cybex-dev): Foreground services requiring privacy permission e.g. microphone or
+        // camera are required to be started in the foreground. Since we're using the Telecom's
+        // PhoneAccount, we don't directly require microphone access. Further, microphone access
+        // is always denied if the app requiring microphone access via a Foreground service
+        // is in the background (by design).
+//        // Check permission RECORD_AUDIO
+//        if (!applicationContext.hasMicrophoneAccess()) {
+//            shouldRejectCall = true
+//            requiredPermissions += "No `RECORD_AUDIO` permission, VoiceSDK requires this permission. Request this with `requestMicPermission()`"
+//        }
 
         if(!tm.hasCallCapableAccount(applicationContext, TVConnectionService::class.java.name)) {
-            shouldRejectCall = true
-            requiredPermissions += "No call capable phone account registered. Request this with `registerPhoneAccount()`"
+            missingPermissions += "No call capable phone account registered. Request this with `registerPhoneAccount()`"
         }
 
-        if (shouldRejectCall) {
-            requiredPermissions.forEach { Log.e(TAG, it) }
+        // If we have missingPermissions, then we cannot proceed with answering the call.
+        if (missingPermissions.isNotEmpty()) {
+            missingPermissions.forEach { Log.e(TAG, it) }
+
+            // If we're not rejecting on no permissions, and can't answer because we don't have the required permissions / phone account, we let it ring.
+            // This details a use-case where multiple instances of a user is logged in, and can accept the call on another device.
+            if(!shouldRejectOnNoPermissions) {
+                return
+            }
+            
             Log.e(TAG, "onCallInvite: Rejecting incoming call\nSID: ${callInvite.callSid}")
 
             // send broadcast to TVBroadcastReceiver, we notify Flutter about incoming call
             Intent(applicationContext, TVBroadcastReceiver::class.java).apply {
                 action = TVBroadcastReceiver.ACTION_INCOMING_CALL_IGNORED
-                putExtra(TVBroadcastReceiver.EXTRA_INCOMING_CALL_IGNORED_REASON, requiredPermissions)
+                putExtra(TVBroadcastReceiver.EXTRA_INCOMING_CALL_IGNORED_REASON, missingPermissions)
                 putExtra(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callInvite.callSid)
                 LocalBroadcastManager.getInstance(applicationContext).sendBroadcast(this)
             }
