@@ -858,7 +858,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 }
 
                 storage?.let {
-                    logEvent("shouldRejectOnNoPermissions is $shouldRejectOnNoPermissions")
+                    Log.d(TAG, "onMethodCall: shouldRejectOnNoPermissions is $shouldRejectOnNoPermissions")
                     it.rejectOnNoPermissions = shouldRejectOnNoPermissions
                     result.success(true)
                 } ?: run {
@@ -1365,22 +1365,22 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     //endregion
 
     private fun checkReadPhoneNumbersPermission(): Boolean {
-        logEvent("checkPermissionForReadPhoneNumbers")
+        Log.d(TAG, "checkReadPhoneNumbersPermission")
         return context?.hasReadPhoneNumbersPermission() ?: false
     }
 
     private fun checkMicrophonePermission(): Boolean {
-        logEvent("checkPermissionForMicrophone")
+        Log.d(TAG, "checkMicrophonePermission")
         return context?.hasMicrophoneAccess() ?: false
     }
 
     private fun checkReadPhoneStatePermission(): Boolean {
-        logEvent("checkReadPhoneStatePermission")
+        Log.d(TAG, "checkReadPhoneStatePermission")
         return context?.hasReadPhoneStatePermission() ?: false
     }
 
     private fun checkCallPhonePermission(): Boolean {
-        logEvent("checkCallPhonePermission")
+        Log.d(TAG, "checkCallPhonePermission")
         return context?.hasCallPhonePermission() ?: false
     }
 
