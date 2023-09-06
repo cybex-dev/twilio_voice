@@ -41,6 +41,8 @@ class TVConnectionService : ConnectionService() {
     companion object {
         val TAG = "TwilioVoiceConnectionService"
 
+        val activeConnections = HashMap<String, TVCallConnection>()
+
         val TWI_SCHEME: String = "twi"
 
         val SERVICE_TYPE_MICROPHONE: Int = 100
@@ -102,6 +104,11 @@ class TVConnectionService : ConnectionService() {
          * Additional parameters are required: [EXTRA_TOKEN], [EXTRA_TO] and [EXTRA_FROM]. Optionally, [EXTRA_OUTGOING_PARAMS] for bundled extra custom parameters.
          */
         const val ACTION_PLACE_OUTGOING_CALL: String = "ACTION_PLACE_OUTGOING_CALL"
+
+        /**
+         * Action used to poll the ConnectionService for the active call handle.
+         */
+        const val ACTION_ACTIVE_HANDLE: String = "ACTION_ACTIVE_HANDLE"
         //endregion
 
         //region EXTRA_* Constants
@@ -165,13 +172,30 @@ class TVConnectionService : ConnectionService() {
          */
         const val EXTRA_MUTE_STATE: String = "EXTRA_MUTE_STATE"
         //endregion
+
+        fun hasActiveCalls(): Boolean {
+            return activeConnections.isNotEmpty()
+        }
+
+        /**
+         * Get the first active call handle, if any. Returns null if there are no active calls. If there are more than one active calls, the first call handle is returned.
+         * Note: this might not necessarily correspond to the current active call.
+         */
+        fun getActiveCallHandle(): String? {
+            if (!hasActiveCalls()) return null
+            return activeConnections.entries.firstOrNull { it.value.state == Connection.STATE_ACTIVE }?.key
+        }
+
+        fun getIncomingCallHandle(): String? {
+            if (!hasActiveCalls()) return null
+            return activeConnections.entries.firstOrNull { it.value.state == Connection.STATE_RINGING }?.key
+        }
+
+        fun getConnection(callSid: String): TVCallConnection? {
+            return activeConnections[callSid]
+        }
     }
 
-    private val activeConnections = HashMap<String, TVCallConnection>()
-
-    private fun getConnection(callSid: String): TVCallConnection? {
-        return this.activeConnections[callSid]
-    }
 
     private fun stopSelfSafe(): Boolean {
         if (!hasActiveCalls()) {
@@ -180,24 +204,6 @@ class TVConnectionService : ConnectionService() {
         } else {
             return false
         }
-    }
-
-    private fun hasActiveCalls(): Boolean {
-        return this.activeConnections.isNotEmpty()
-    }
-
-    /**
-     * Get the first active call handle, if any. Returns null if there are no active calls. If there are more than one active calls, the first call handle is returned.
-     * Note: this might not necessarily correspond to the current active call.
-     */
-    private fun getActiveCallHandle(): String? {
-        if (!hasActiveCalls()) return null
-        return activeConnections.entries.firstOrNull { it.value.state == Connection.STATE_ACTIVE }?.key
-    }
-
-    private fun getIncomingCallHandle(): String? {
-        if (!hasActiveCalls()) return null
-        return activeConnections.entries.firstOrNull { it.value.state == Connection.STATE_RINGING }?.key
     }
 
     //region Service onStartCommand
@@ -446,6 +452,11 @@ class TVConnectionService : ConnectionService() {
                     }
                 }
 
+                ACTION_ACTIVE_HANDLE -> {
+                    val activeCallHandle = getActiveCallHandle()
+                    sendBroadcastCallHandle(applicationContext, activeCallHandle)
+                }
+
                 else -> {
                     Log.e(TAG, "onStartCommand: unknown action: ${it.action}")
                 }
@@ -590,6 +601,8 @@ class TVConnectionService : ConnectionService() {
 
         val onEvent: ValueBundleChanged<String> = ValueBundleChanged { event: String?, extra: Bundle? ->
             sendBroadcastEvent(applicationContext, event ?: "", callSid, extra)
+            // This is a temporary solution since `isOnCall` returns true when there is an active ConnectionService, regardless of the source app. This also applies to SIM/Telecom calls.
+            sendBroadcastCallHandle(applicationContext, extra?.getString(TVBroadcastReceiver.EXTRA_CALL_HANDLE))
         }
         val onDisconnect: CompletionHandler<DisconnectCause> = CompletionHandler {
             if (activeConnections.containsKey(callSid)) {
@@ -627,6 +640,15 @@ class TVConnectionService : ConnectionService() {
             action = event
             putExtra(EXTRA_CALL_HANDLE, callSid)
             extras?.let { putExtras(it) }
+            LocalBroadcastManager.getInstance(ctx).sendBroadcast(this)
+        }
+    }
+
+    private fun sendBroadcastCallHandle(ctx: Context, callSid: String?) {
+        Log.d(TAG, "sendBroadcastCallHandle: ${if (callSid != null) "On call" else "Not on call"}}")
+        Intent(ctx, TVBroadcastReceiver::class.java).apply {
+            action = TVBroadcastReceiver.ACTION_ACTIVE_CALL_CHANGED
+            putExtra(EXTRA_CALL_HANDLE, callSid)
             LocalBroadcastManager.getInstance(ctx).sendBroadcast(this)
         }
     }
