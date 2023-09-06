@@ -42,6 +42,7 @@ class TVCallInviteConnection(
     }
 
     override fun onAnswer() {
+        Log.d(TAG, "onAnswer: onAnswer")
         super.onAnswer()
         twilioCall = callInvite.accept(context, this)
         onAction?.onChange(TVNativeCallActions.ACTION_ANSWERED, Bundle().apply {
@@ -51,16 +52,24 @@ class TVCallInviteConnection(
     }
 
     fun acceptInvite() {
+        Log.d(TAG, "acceptInvite: acceptInvite")
         onAnswer()
     }
 
     fun rejectInvite() {
+        Log.d(TAG, "rejectInvite: rejectInvite")
         onReject()
     }
 
     override fun onReject() {
+        Log.d(TAG, "onReject: onReject")
         super.onReject()
         callInvite.reject(context)
+        // if the call was answered, then immediately rejected/ended, we need to disconnect the call also
+        twilioCall?.let {
+            Log.d(TAG, "onReject: disconnecting call")
+            it.disconnect()
+        }
         onEvent?.onChange(TVNativeCallEvents.EVENT_DISCONNECTED_LOCAL, null)
         onDisconnected?.withValue(DisconnectCause(DisconnectCause.REJECTED))
         onAction?.onChange(TVNativeCallActions.ACTION_REJECTED, null)
@@ -308,12 +317,14 @@ open class TVCallConnection(
     override fun onReject(rejectReason: Int) {
         Log.d(TAG, "onReject: onReject $rejectReason")
         super.onReject(rejectReason)
+        twilioCall?.disconnect()
         onAction?.onChange(TVNativeCallActions.ACTION_REJECTED, null)
     }
 
     override fun onReject(replyMessage: String?) {
         Log.d(TAG, "onReject: onReject $replyMessage")
         super.onReject(replyMessage)
+        twilioCall?.disconnect()
         onAction?.onChange(TVNativeCallActions.ACTION_REJECTED, Bundle().apply {
             putString(TVNativeCallActions.EXTRA_REJECT_REASON, replyMessage)
         })
@@ -456,6 +467,7 @@ open class TVCallConnection(
      * Otherwise, disconnect the call using [Call.disconnect] with [DisconnectCause.LOCAL]
      */
     fun disconnect() {
+        Log.d(TAG, "disconnect: disconnect")
         if (this is TVCallInviteConnection && state == STATE_RINGING) {
             rejectInvite()
         } else {
