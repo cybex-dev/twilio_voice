@@ -75,6 +75,15 @@ class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageListene
     @RequiresPermission(allOf = [Manifest.permission.RECORD_AUDIO, Manifest.permission.READ_PHONE_STATE, Manifest.permission.READ_PHONE_NUMBERS])
     @SuppressLint("MissingPermission")
     override fun onCallInvite(callInvite: CallInvite) {
+        Log.d(
+            TAG,
+            "onCallInvite: {\n\t" +
+                    "CallSid: ${callInvite.callSid}, \n\t" +
+                    "From: ${callInvite.from}, \n\t" +
+                    "To: ${callInvite.to}, \n\t" +
+                    "Parameters: ${callInvite.customParameters.entries.joinToString { "${it.key}:${it.value}" }},\n\t" +
+                    "}"
+        )
         // Get TelecomManager instance
         val tm = applicationContext.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
 
