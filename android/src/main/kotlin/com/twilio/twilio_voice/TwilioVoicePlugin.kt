@@ -867,6 +867,41 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 result.success(true)
             }
 
+            TVMethodChannels.REJECT_CALL_ON_NO_PERMISSIONS -> {
+                val shouldRejectOnNoPermissions = call.argument<Boolean>("shouldReject") ?: run {
+                    result.error(
+                        FlutterErrorCodes.MALFORMED_ARGUMENTS,
+                        "No 'shouldReject' provided or invalid type",
+                        null
+                    )
+                    return@onMethodCall
+                }
+
+                storage?.let {
+                    logEvent("shouldRejectOnNoPermissions is $shouldRejectOnNoPermissions")
+                    it.rejectOnNoPermissions = shouldRejectOnNoPermissions
+                    result.success(true)
+                } ?: run {
+                    Log.e(
+                        TAG,
+                        "Storage is null, cannot set reject on no permissions. Has Storage been initialized?"
+                    )
+                    result.success(false)
+                }
+            }
+
+            TVMethodChannels.IS_REJECTING_CALL_ON_NO_PERMISSIONS -> {
+                storage?.let {
+                    result.success(it.rejectOnNoPermissions)
+                } ?: run {
+                    Log.e(
+                        TAG,
+                        "Storage is null, cannot set reject on no permissions. Has Storage been initialized?"
+                    )
+                    result.success(false)
+                }
+            }
+
             else -> {
                 result.notImplemented()
             }

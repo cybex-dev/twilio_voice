@@ -216,6 +216,30 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
     return Future.value(false);
   }
 
+  /// Reject call when no `CALL_PHONE` permissions are granted nor Phone Account (via `isPhoneAccountEnabled`) is registered.
+  /// If set to true, the call is rejected immediately upon received. If set to false, the call is left until the timeout is reached / call is canceled.
+  /// Defaults to false.
+  ///
+  /// Only available on Android
+  @override
+  Future<bool> rejectCallOnNoPermissions({bool shouldReject = false}) {
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      return Future.value(true);
+    }
+    return _channel.invokeMethod<bool?>('rejectCallOnNoPermissions', {"shouldReject": shouldReject}).then<bool>((bool? value) => value ?? false);
+  }
+
+  /// Returns true if call is rejected when no `CALL_PHONE` permissions are granted nor Phone Account (via `isPhoneAccountEnabled`) is registered. Defaults to false.
+  ///
+  /// Only available on Android
+  @override
+  Future<bool> isRejectingCallOnNoPermissions() {
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      return Future.value(false);
+    }
+    return _channel.invokeMethod<bool?>('isRejectingCallOnNoPermissions', {}).then<bool>((bool? value) => value ?? false);
+  }
+
   /// Set iOS call kit icon
   ///
   /// This allows for CallKit customization: setting the last button (bottom right) of the callkit.
@@ -273,7 +297,7 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
     } else if (state.startsWith("LOG|PERMISSION|")) {
       List<String> tokens = state.split('|');
       if (kDebugMode) {
-        if(tokens.length == 4) {
+        if (tokens.length == 4) {
           print("Name: ${tokens[2]}, granted state: ${tokens[3]}");
         }
       }
@@ -305,7 +329,8 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
     } else if (state.startsWith("Connected|")) {
       call.activeCall = createCallFromState(state, initiated: true);
       if (kDebugMode) {
-        print('Connected - From: ${call.activeCall!.from}, To: ${call.activeCall!.to}, StartOn: ${call.activeCall!.initiated}, Direction: ${call.activeCall!.callDirection}');
+        print(
+            'Connected - From: ${call.activeCall!.from}, To: ${call.activeCall!.to}, StartOn: ${call.activeCall!.initiated}, Direction: ${call.activeCall!.callDirection}');
       }
       return CallEvent.connected;
     } else if (state.startsWith("Incoming|")) {

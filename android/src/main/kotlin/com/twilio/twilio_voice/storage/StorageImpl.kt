@@ -9,6 +9,7 @@ class StorageImpl(ctx: Context) : Storage {
     val TAG: String = javaClass.name
 
     private val kDefaultCaller: String = "defaultCaller"
+    private val kRejectOnNoPermissions: String = "rejectOnNoPermissions"
     private val kShowNotifications: String = "show-notifications"
 
     override var defaultCaller
@@ -17,6 +18,14 @@ class StorageImpl(ctx: Context) : Storage {
         set(value) {
             val editor = prefs.edit()
             editor.putString(kDefaultCaller, value)
+            editor.apply()
+        }
+
+    override var rejectOnNoPermissions
+        get() = prefs.getBoolean(kRejectOnNoPermissions, false)
+        set(value) {
+            val editor = prefs.edit()
+            editor.putBoolean(kRejectOnNoPermissions, value)
             editor.apply()
         }
 
