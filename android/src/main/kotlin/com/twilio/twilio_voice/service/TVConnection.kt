@@ -184,7 +184,13 @@ open class TVCallConnection(
      */
     override fun onReconnecting(call: Call, callException: CallException) {
         twilioCall = call
-        onEvent?.onChange(TVNativeCallEvents.EVENT_RECONNECTING, callException.toBundle())
+        onEvent?.onChange(TVNativeCallEvents.EVENT_RECONNECTING, Bundle().apply {
+            putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, call.sid)
+            putString(TVBroadcastReceiver.EXTRA_CALL_FROM, call.from ?: "")
+            putString(TVBroadcastReceiver.EXTRA_CALL_TO, call.to ?: "")
+            putInt(TVBroadcastReceiver.EXTRA_CALL_DIRECTION, callDirection.id)
+            putExtras(callException.toBundle())
+        })
         onCallStateListener?.withValue(call.state)
     }
 
@@ -196,7 +202,12 @@ open class TVCallConnection(
     override fun onReconnected(call: Call) {
         twilioCall = call
         setActive()
-        onEvent?.onChange(TVNativeCallEvents.EVENT_RECONNECTED, Bundle.EMPTY)
+        onEvent?.onChange(TVNativeCallEvents.EVENT_RECONNECTED, Bundle().apply {
+            putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, call.sid)
+            putString(TVBroadcastReceiver.EXTRA_CALL_FROM, call.from ?: "")
+            putString(TVBroadcastReceiver.EXTRA_CALL_TO, call.to ?: "")
+            putInt(TVBroadcastReceiver.EXTRA_CALL_DIRECTION, callDirection.id)
+        })
         onCallStateListener?.withValue(call.state)
     }
 
