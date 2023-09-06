@@ -313,12 +313,14 @@ open class TVCallConnection(
     override fun onReject(rejectReason: Int) {
         Log.d(TAG, "onReject: onReject $rejectReason")
         super.onReject(rejectReason)
+        twilioCall?.disconnect()
         onAction?.onChange(TVNativeCallActions.ACTION_REJECTED, null)
     }
 
     override fun onReject(replyMessage: String?) {
         Log.d(TAG, "onReject: onReject $replyMessage")
         super.onReject(replyMessage)
+        twilioCall?.disconnect()
         onAction?.onChange(TVNativeCallActions.ACTION_REJECTED, Bundle().apply {
             putString(TVNativeCallActions.EXTRA_REJECT_REASON, replyMessage)
         })
