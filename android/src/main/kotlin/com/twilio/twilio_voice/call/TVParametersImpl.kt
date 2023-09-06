@@ -49,10 +49,12 @@ class TVCallInviteParametersImpl(storage: Storage, callInvite: CallInvite) : TVP
         }
 }
 
-class TVCallParametersImpl(storage: Storage, call: Call, customParameters: Map<String, String> = emptyMap()) : TVParametersImpl(storage) {
+class TVCallParametersImpl(storage: Storage, call: Call, callTo: String, callFrom: String, customParameters: Map<String, String> = emptyMap()) : TVParametersImpl(storage) {
     private var mCallSid: String? = null
 
     private val mCall: Call
+    private val mFrom: String
+    private val mTo: String
     override var callSid: String
         get() = mCallSid ?: ""
         set(value) {
@@ -61,11 +63,12 @@ class TVCallParametersImpl(storage: Storage, call: Call, customParameters: Map<S
 
     init {
         mCall = call
+        mFrom = callFrom
+        mTo = callTo
     }
 
     override val from: String
         get() {
-            val mFrom = mCall.from ?: ""
             if (mFrom.isEmpty()) {
                 return mStorage.defaultCaller
             }
@@ -75,15 +78,14 @@ class TVCallParametersImpl(storage: Storage, call: Call, customParameters: Map<S
                 return mFrom
             }
 
-            val mToName = mFrom.replace("client:", "")
+            val mFromName = mFrom.replace("client:", "")
             return customParameters[PARAM_RECIPIENT_NAME]
                 ?: customParameters[PARAM_RECIPIENT_ID]?.let { resolveHumanReadableName(it) }
-                ?: resolveHumanReadableName(mToName)
+                ?: resolveHumanReadableName(mFromName)
         }
 
     override val to: String
         get() {
-            val mTo = mCall.to ?: ""
             if (mTo.isEmpty()) {
                 return mStorage.defaultCaller
             }
@@ -100,10 +102,10 @@ class TVCallParametersImpl(storage: Storage, call: Call, customParameters: Map<S
         }
 
     override val fromRaw: String
-        get() = mCall.from ?: ""
+        get() = mFrom
 
     override val toRaw: String
-        get() = mCall.to ?: ""
+        get() = mTo
 }
 
 open class TVParametersImpl(storage: Storage, override val callSid: String = "", override val customParameters: Map<String, String> = emptyMap()) : TVParameters {

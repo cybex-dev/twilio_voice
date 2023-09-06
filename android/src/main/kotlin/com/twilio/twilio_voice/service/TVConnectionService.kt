@@ -552,7 +552,7 @@ class TVConnectionService : ConnectionService() {
         connection.setCall(call)
 
         // Resolve call parameters
-        val callParams = TVCallParametersImpl(mStorage, call, params)
+        val callParams = TVCallParametersImpl(mStorage, connection.twilioCall!!, to, from, params)
 
         // Set call state listener, applies non-temporary Call SID when call is ringing or connected (i.e. when assigned by Twilio)
         val onCallStateListener: CompletionHandler<Call.State> = CompletionHandler { state ->
