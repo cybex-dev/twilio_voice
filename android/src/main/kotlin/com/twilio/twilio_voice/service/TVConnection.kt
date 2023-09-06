@@ -43,8 +43,7 @@ class TVCallInviteConnection(
 
     override fun onAnswer() {
         super.onAnswer()
-        val call = callInvite.accept(context, this)
-        setCall(call)
+        twilioCall = callInvite.accept(context, this)
         onAction?.onChange(TVNativeCallActions.ACTION_ANSWERED, Bundle().apply {
             putParcelable(TVBroadcastReceiver.EXTRA_CALL_INVITE, callInvite)
             putInt(TVBroadcastReceiver.EXTRA_CALL_DIRECTION, callDirection.id)
@@ -79,7 +78,7 @@ open class TVCallConnection(
 
     open val TAG = "VoipConnection"
     val context: Context
-    private var twilioCall: Call? = null
+    var twilioCall: Call? = null
     var onDisconnected: CompletionHandler<DisconnectCause>? = null
     var onEvent: ValueBundleChanged<String>? = null
     var onAction: ValueBundleChanged<String>? = null
@@ -97,10 +96,6 @@ open class TVCallConnection(
 
     fun setOnCallDisconnected(handler: CompletionHandler<DisconnectCause>) {
         onDisconnected = handler
-    }
-
-    fun setCall(call: Call) {
-        twilioCall = call
     }
 
     fun setOnCallEventListener(listener: ValueBundleChanged<String>) {
@@ -165,8 +160,8 @@ open class TVCallConnection(
 
     override fun onConnected(call: Call) {
         Log.d(TAG, "onConnected: onConnected")
-        setActive()
         twilioCall = call
+        setActive()
         onEvent?.onChange(TVNativeCallEvents.EVENT_CONNECTED, Bundle().apply {
             putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, call.sid)
             putString(TVBroadcastReceiver.EXTRA_CALL_FROM, call.from ?: "")

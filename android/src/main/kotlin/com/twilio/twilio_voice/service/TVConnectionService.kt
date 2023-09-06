@@ -548,8 +548,7 @@ class TVConnectionService : ConnectionService() {
         val connection = TVCallConnection(applicationContext)
 
         // create Voice SDK call
-        val call = Voice.connect(applicationContext, connectOptions, connection)
-        connection.setCall(call)
+        connection.twilioCall = Voice.connect(applicationContext, connectOptions, connection)
 
         // Resolve call parameters
         val callParams = TVCallParametersImpl(mStorage, connection.twilioCall!!, to, from, params)
@@ -557,6 +556,7 @@ class TVConnectionService : ConnectionService() {
         // Set call state listener, applies non-temporary Call SID when call is ringing or connected (i.e. when assigned by Twilio)
         val onCallStateListener: CompletionHandler<Call.State> = CompletionHandler { state ->
             if (state == Call.State.RINGING || state == Call.State.CONNECTED) {
+                val call = connection.twilioCall!!
                 val callSid = call.sid!!
                 // If call is not attached, attach it
                 if(!activeConnections.containsKey(callSid)) {
