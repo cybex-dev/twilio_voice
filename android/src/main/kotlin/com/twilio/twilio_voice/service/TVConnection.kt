@@ -42,6 +42,7 @@ class TVCallInviteConnection(
     }
 
     override fun onAnswer() {
+        Log.d(TAG, "onAnswer: onAnswer")
         super.onAnswer()
         twilioCall = callInvite.accept(context, this)
         onAction?.onChange(TVNativeCallActions.ACTION_ANSWERED, Bundle().apply {
@@ -51,14 +52,17 @@ class TVCallInviteConnection(
     }
 
     fun acceptInvite() {
+        Log.d(TAG, "acceptInvite: acceptInvite")
         onAnswer()
     }
 
     fun rejectInvite() {
+        Log.d(TAG, "rejectInvite: rejectInvite")
         onReject()
     }
 
     override fun onReject() {
+        Log.d(TAG, "onReject: onReject")
         super.onReject()
         callInvite.reject(context)
         // if the call was answered, then immediately rejected/ended, we need to disconnect the call also
@@ -463,6 +467,7 @@ open class TVCallConnection(
      * Otherwise, disconnect the call using [Call.disconnect] with [DisconnectCause.LOCAL]
      */
     fun disconnect() {
+        Log.d(TAG, "disconnect: disconnect")
         if (this is TVCallInviteConnection && state == STATE_RINGING) {
             rejectInvite()
         } else {
