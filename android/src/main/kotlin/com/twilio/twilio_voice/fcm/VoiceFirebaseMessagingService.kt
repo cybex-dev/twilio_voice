@@ -102,10 +102,16 @@ class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageListene
             requiredPermissions += "No `READ_PHONE_NUMBERS` permission, cannot communicate with ConnectionService if not granted. Request this with `requestReadPhoneNumbersPermission()`"
         }
 
-        // Check permission RECORD_AUDIO
-        if (!applicationContext.hasMicrophoneAccess()) {
-            shouldRejectCall = true
-            requiredPermissions += "No `RECORD_AUDIO` permission, VoiceSDK requires this permission. Request this with `requestMicPermission()`"
+        // NOTE(cybex-dev): Foreground services requiring privacy permission e.g. microphone or
+        // camera are required to be started in the foreground. Since we're using the Telecom's
+        // PhoneAccount, we don't directly require microphone access. Further, microphone access
+        // is always denied if the app requiring microphone access via a Foreground service
+        // is in the background (by design).
+//        // Check permission RECORD_AUDIO
+//        if (!applicationContext.hasMicrophoneAccess()) {
+//            shouldRejectCall = true
+//            requiredPermissions += "No `RECORD_AUDIO` permission, VoiceSDK requires this permission. Request this with `requestMicPermission()`"
+//        }
         }
 
         if(!tm.hasCallCapableAccount(applicationContext, TVConnectionService::class.java.name)) {
