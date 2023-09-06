@@ -88,18 +88,18 @@ class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageListene
         val tm = applicationContext.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
 
         var shouldRejectCall = false
-        var requiredPermissions: Array<String> = emptyArray()
+        var missingPermissions: Array<String> = emptyArray()
 
         // Check permission READ_PHONE_STATE
         if (!tm.canReadPhoneState(applicationContext)) {
             shouldRejectCall = true
-            requiredPermissions += "No `READ_PHONE_STATE` permission, cannot check if phone account is registered. Request this with `requestReadPhoneStatePermission()`"
+            missingPermissions += "No `READ_PHONE_STATE` permission, cannot check if phone account is registered. Request this with `requestReadPhoneStatePermission()`"
         }
 
         // Check permission READ_PHONE_NUMBERS
         if (!tm.canReadPhoneNumbers(applicationContext)) {
             shouldRejectCall = true
-            requiredPermissions += "No `READ_PHONE_NUMBERS` permission, cannot communicate with ConnectionService if not granted. Request this with `requestReadPhoneNumbersPermission()`"
+            missingPermissions += "No `READ_PHONE_NUMBERS` permission, cannot communicate with ConnectionService if not granted. Request this with `requestReadPhoneNumbersPermission()`"
         }
 
         // NOTE(cybex-dev): Foreground services requiring privacy permission e.g. microphone or
@@ -112,21 +112,20 @@ class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageListene
 //            shouldRejectCall = true
 //            requiredPermissions += "No `RECORD_AUDIO` permission, VoiceSDK requires this permission. Request this with `requestMicPermission()`"
 //        }
-        }
 
         if(!tm.hasCallCapableAccount(applicationContext, TVConnectionService::class.java.name)) {
             shouldRejectCall = true
-            requiredPermissions += "No call capable phone account registered. Request this with `registerPhoneAccount()`"
+            missingPermissions += "No call capable phone account registered. Request this with `registerPhoneAccount()`"
         }
 
         if (shouldRejectCall) {
-            requiredPermissions.forEach { Log.e(TAG, it) }
+            missingPermissions.forEach { Log.e(TAG, it) }
             Log.e(TAG, "onCallInvite: Rejecting incoming call\nSID: ${callInvite.callSid}")
 
             // send broadcast to TVBroadcastReceiver, we notify Flutter about incoming call
             Intent(applicationContext, TVBroadcastReceiver::class.java).apply {
                 action = TVBroadcastReceiver.ACTION_INCOMING_CALL_IGNORED
-                putExtra(TVBroadcastReceiver.EXTRA_INCOMING_CALL_IGNORED_REASON, requiredPermissions)
+                putExtra(TVBroadcastReceiver.EXTRA_INCOMING_CALL_IGNORED_REASON, missingPermissions)
                 putExtra(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callInvite.callSid)
                 LocalBroadcastManager.getInstance(applicationContext).sendBroadcast(this)
             }
