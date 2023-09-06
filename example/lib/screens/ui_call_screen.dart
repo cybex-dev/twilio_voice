@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:twilio_voice_example/screens/widgets/on_call_widget.dart';
 
 import 'widgets/permissions_block.dart';
 
@@ -79,6 +80,12 @@ class _UICallScreenState extends State<UICallScreen> {
             widget.onPerformCall(identity);
           },
         ),
+        const Divider(),
+        const Padding(
+          padding: EdgeInsets.all(8.0),
+          child: OnCallWidget(),
+        ),
+        const Divider(),
         const Expanded(
           child: PermissionsBlock(),
         )
