@@ -895,7 +895,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         // Send to active call via Intent
         context?.let { ctx ->
             Intent(ctx, TVConnectionService::class.java).apply {
-                action = TVConnectionService.ACTION_HANGUP
+                action = TVConnectionService.ACTION_SEND_DIGITS
                 putExtra(TVConnectionService.EXTRA_CALL_HANDLE, callSid)
                 putExtra(TVConnectionService.ACTION_SEND_DIGITS, digits)
                 ctx.startService(this)
