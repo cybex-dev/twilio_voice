@@ -34,6 +34,9 @@
 * Feat: [Android] Add CallingAccount (Phone Account) label & description via `strings.xml`. @cybex-dev
 * Feat: [Android] Add Calling Account (Phone Account) icon (using current app icon via `getApplicationInfo().getIcon()`). @cybex-dev
 * Fix: request Permissions return result via Flutter future.
+* Fix: [Android] Missing platform method channel for `getSid()`
+* Fix: [Android] Inconsistent caller/recipient names for inbound calls between ringing & connected states.
+* Fix: [Android] Incorrect call direction for incoming calls
 
 ## 0.0.9
 * Feat: forwarded callInvite custom parameters to flutter
