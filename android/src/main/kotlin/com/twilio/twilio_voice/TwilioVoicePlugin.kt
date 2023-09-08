@@ -1726,7 +1726,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                     return
                 }
                 val direction = intent.getIntExtra(TVBroadcastReceiver.EXTRA_CALL_DIRECTION, -1)
-                val callDirection = CallDirection.fromId(direction).toString()
+                val callDirection = CallDirection.fromId(direction)!!.label
 //                callSid = callHandle
                 logEvents("", arrayOf("Connected", from, to, callDirection))
             }
