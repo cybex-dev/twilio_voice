@@ -343,7 +343,7 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
 
       return CallEvent.incoming;
     } else if (state.startsWith("Ringing|")) {
-      call.activeCall = createCallFromState(state, callDirection: CallDirection.outgoing);
+      call.activeCall = createCallFromState(state);
 
       if (kDebugMode) {
         print('Ringing - From: ${call.activeCall!.from}, To: ${call.activeCall!.to}, Direction: ${call.activeCall!.callDirection}');
