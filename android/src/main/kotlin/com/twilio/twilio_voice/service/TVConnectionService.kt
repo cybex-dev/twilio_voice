@@ -178,12 +178,15 @@ class TVConnectionService : ConnectionService() {
         }
 
         /**
-         * Get the first active call handle, if any. Returns null if there are no active calls. If there are more than one active calls, the first call handle is returned.
+         * Active call definition is extended to include calls in which one can actively communicate, or call is on hold, or call is ringing or dialing. This applies only to this and calling functions.
+         * Gets the first ongoing call handle, if any. Else, gets the first call on hold. Lastly, gets the first call in either a ringing or dialing state, if any. Returns null if there are no active calls. If there are more than one active calls, the first call handle is returned.
          * Note: this might not necessarily correspond to the current active call.
          */
         fun getActiveCallHandle(): String? {
             if (!hasActiveCalls()) return null
             return activeConnections.entries.firstOrNull { it.value.state == Connection.STATE_ACTIVE }?.key
+                ?: activeConnections.entries.firstOrNull { it.value.state == Connection.STATE_HOLDING }?.key
+                ?: activeConnections.entries.firstOrNull { arrayListOf(Connection.STATE_RINGING, Connection.STATE_DIALING).contains(it.value.state) }?.key
         }
 
         fun getIncomingCallHandle(): String? {
