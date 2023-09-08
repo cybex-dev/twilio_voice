@@ -487,17 +487,17 @@ class TVConnectionService : ConnectionService() {
         // Create storage instance for call parameters
         val storage: Storage = StorageImpl(applicationContext)
 
+        // Resolve call parameters
+        val callParams: TVParameters = TVCallInviteParametersImpl(storage, ci);
+
         // Create connection
-        val connection = TVCallInviteConnection(applicationContext, ci)
+        val connection = TVCallInviteConnection(applicationContext, ci, callParams)
 
         // Remove call invite from extras, causes marshalling error i.e. Class not found.
         val requestBundle = request.extras.also { it ->
             it.remove(TelecomManager.EXTRA_INCOMING_CALL_EXTRAS)
         }
         connection.extras = requestBundle
-
-        // Resolve call parameters
-        val callParams: TVParameters = TVCallInviteParametersImpl(storage, ci);
 
         // Setup connection event listeners and UI parameters
         attachCallEventListeners(connection, ci.callSid)
@@ -552,25 +552,28 @@ class TVConnectionService : ConnectionService() {
             .params(params)
             .build()
 
-        // create storage instance for call parameters
-        val mStorage: Storage = StorageImpl(applicationContext)
-
         // create outgoing connection
         val connection = TVCallConnection(applicationContext)
 
         // create Voice SDK call
         connection.twilioCall = Voice.connect(applicationContext, connectOptions, connection)
 
-        // Resolve call parameters
-        val callParams = TVCallParametersImpl(mStorage, connection.twilioCall!!, to, from, params)
+        // create storage instance for call parameters
+        val mStorage: Storage = StorageImpl(applicationContext)
 
         // Set call state listener, applies non-temporary Call SID when call is ringing or connected (i.e. when assigned by Twilio)
         val onCallStateListener: CompletionHandler<Call.State> = CompletionHandler { state ->
             if (state == Call.State.RINGING || state == Call.State.CONNECTED) {
                 val call = connection.twilioCall!!
                 val callSid = call.sid!!
+
+                // Resolve call parameters
+                val callParams = TVCallParametersImpl(mStorage, connection.twilioCall!!, to, from, params)
+                connection.setCallParameters(callParams)
+
                 // If call is not attached, attach it
-                if(!activeConnections.containsKey(callSid)) {
+                if (!activeConnections.containsKey(callSid)) {
+                    applyParameters(connection, callParams)
                     attachCallEventListeners(connection, callSid)
                     callParams.callSid = callSid
                 }
@@ -579,7 +582,6 @@ class TVConnectionService : ConnectionService() {
         connection.setOnCallStateListener(onCallStateListener)
 
         // Setup connection UI parameters
-        applyParameters(connection, callParams)
         connection.setInitializing()
 
         // Apply extras

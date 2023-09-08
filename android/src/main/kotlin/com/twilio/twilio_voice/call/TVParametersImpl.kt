@@ -47,6 +47,20 @@ class TVCallInviteParametersImpl(storage: Storage, callInvite: CallInvite) : TVP
                 ?: customParameters[PARAM_RECIPIENT_ID]?.let { resolveHumanReadableName(it) }
                 ?: resolveHumanReadableName(mToName)
         }
+
+    override val fromRaw: String
+        get() {
+            return mCallInvite.from ?: ""
+        }
+
+    override val toRaw: String
+        get() {
+            return mCallInvite.to
+        }
+
+    override fun toString(): String {
+        return "TVCallInviteParametersImpl(callSid='$callSid', from='$from', fromRaw='$fromRaw' to='$to', toRaw='$toRaw', customParameters=$customParameters)"
+    }
 }
 
 class TVCallParametersImpl(storage: Storage, call: Call, callTo: String, callFrom: String, customParameters: Map<String, String> = emptyMap()) : TVParametersImpl(storage) {
@@ -102,10 +116,18 @@ class TVCallParametersImpl(storage: Storage, call: Call, callTo: String, callFro
         }
 
     override val fromRaw: String
-        get() = mFrom
+        get() {
+            return mFrom
+        }
 
     override val toRaw: String
-        get() = mTo
+        get() {
+            return mTo
+        }
+
+    override fun toString(): String {
+        return "TVCallParametersImpl(callSid='$callSid', from='$from', fromRaw='$fromRaw' to='$to', toRaw='$toRaw', customParameters=$customParameters)"
+    }
 }
 
 open class TVParametersImpl(storage: Storage, override val callSid: String = "", override val customParameters: Map<String, String> = emptyMap()) : TVParameters {
@@ -118,20 +140,28 @@ open class TVParametersImpl(storage: Storage, override val callSid: String = "",
     }
 
     override val fromRaw: String
-        get() = ""
+        get() {
+            return ""
+        }
 
     override val from: String
-        get() = customParameters[PARAM_CALLER_NAME]
-            ?: customParameters[PARAM_CALLER_ID]?.let { resolveHumanReadableName(it) }
-            ?: mStorage.defaultCaller
+        get() {
+            return customParameters[PARAM_CALLER_NAME]
+                ?: customParameters[PARAM_CALLER_ID]?.let { resolveHumanReadableName(it) }
+                ?: mStorage.defaultCaller
+        }
 
     override val toRaw: String
-        get() = ""
+        get() {
+            return ""
+        }
 
     override val to: String
-        get() = customParameters[PARAM_RECIPIENT_NAME]
-            ?: customParameters[PARAM_RECIPIENT_ID]?.let { resolveHumanReadableName(it) }
-            ?: mStorage.defaultCaller
+        get() {
+            return customParameters[PARAM_RECIPIENT_NAME]
+                ?: customParameters[PARAM_RECIPIENT_ID]?.let { resolveHumanReadableName(it) }
+                ?: mStorage.defaultCaller
+        }
 
     override fun hasCustomParameters(): Boolean {
         return customParameters.isNotEmpty()
@@ -153,5 +183,9 @@ open class TVParametersImpl(storage: Storage, override val callSid: String = "",
     override fun resolveHumanReadableName(name: String): String {
         val id = name.replace("client:", "")
         return mStorage.getRegisteredClient(id) ?: mStorage.defaultCaller
+    }
+
+    override fun toString(): String {
+        return "TVParametersImpl(callSid='$callSid', from='$from', fromRaw='$fromRaw' to='$to', toRaw='$toRaw', customParameters=$customParameters)"
     }
 }
