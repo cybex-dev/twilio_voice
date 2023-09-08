@@ -37,6 +37,7 @@
 * Fix: [Android] Missing platform method channel for `getSid()`
 * Fix: [Android] Inconsistent caller/recipient names for inbound calls between ringing & connected states.
 * Fix: [Android] Incorrect call direction for incoming calls
+* Fix: call ringing event always showing `CallDirection.outgoing`
 
 ## 0.0.9
 * Feat: forwarded callInvite custom parameters to flutter
