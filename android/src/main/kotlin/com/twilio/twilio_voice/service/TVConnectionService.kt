@@ -571,7 +571,7 @@ class TVConnectionService : ConnectionService() {
                 val callSid = call.sid!!
 
                 // Resolve call parameters
-                val callParams = TVCallParametersImpl(mStorage, connection.twilioCall!!, to, from, params)
+                val callParams = TVCallParametersImpl(mStorage, call, to, from, params)
                 connection.setCallParameters(callParams)
 
                 // If call is not attached, attach it
