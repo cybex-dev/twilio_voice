@@ -403,11 +403,12 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
 
 ActiveCall createCallFromState(String state, {CallDirection? callDirection, bool initiated = false}) {
   List<String> tokens = state.split('|');
+  final direction = callDirection ?? ("incoming" == tokens[3].toLowerCase() ? CallDirection.incoming : CallDirection.outgoing);
   return ActiveCall(
     from: tokens[1],
     to: tokens[2],
     initiated: initiated ? DateTime.now() : null,
-    callDirection: callDirection ?? ("Incoming" == tokens[3] ? CallDirection.incoming : CallDirection.outgoing),
+    callDirection: direction,
     customParams: parseCustomParams(tokens),
   );
 }
