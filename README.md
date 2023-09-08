@@ -8,11 +8,12 @@ This plugin was taken from the original flutter_twilio_voice, as it seems that p
 - Receive and place calls from Android devices, uses custom UI to receive calls.
 
 ## Feature addition schedule:
-- Web support
+- Web support (in testing, see [cybex-dev/feat_web_support](https://github.com/cybex-dev/twilio_voice/tree/feat_web_support))
 - Audio device selection support (select input/output audio devices)
 - Add Bluetooth support (integration)
 - Update plugin to Flutter federated packages
-- Desktop platform support (implementation as JS wrapper/native implementation, t.b.d.)
+- Desktop platform support (implementation as JS wrapper/native implementation, early development)
+- Unify Android & iOS incoming call screens with predefined parameters to autofill UI elements (in development).
 
 Got a feature you want to add, suggest? File a feature request or PR.
 
