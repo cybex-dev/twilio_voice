@@ -6,16 +6,17 @@ description: Demonstrates how to use the twilio_voice plugin.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
 environment:
-  sdk: ">=2.14.0 <3.0.0"
+  sdk: ">=2.17.0 <3.0.0"
 
 dependencies:
   flutter:
     sdk: flutter
 
-  firebase_core: ^1.8.0
-  firebase_messaging: ^10.0.9
-  cloud_functions: ^3.0.5
-  firebase_auth: ^3.1.4
+  firebase_core: ^2.9.0
+  firebase_messaging: ^14.4.0
+  cloud_functions: ^4.1.0
+  firebase_auth: ^4.4.0
+  http: ^0.13.5
 
   twilio_voice:
     # When depending on this package from a real application you should use:
@@ -30,6 +31,7 @@ dependencies:
   cupertino_icons: ^1.0.3
 
 dev_dependencies:
+  flutter_lints: ^2.0.2
   flutter_test:
     sdk: flutter
 

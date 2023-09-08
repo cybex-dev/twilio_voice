@@ -8,6 +8,8 @@ import UserNotifications
 
 public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHandler, PKPushRegistryDelegate, NotificationDelegate, CallDelegate, AVAudioPlayerDelegate, CXProviderDelegate {
     
+    final let defaultCallKitIcon = "callkit_icon"
+    var callKitIcon: String?
 
     var _result: FlutterResult?
     private var eventSink: FlutterEventSink?
@@ -55,9 +57,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         let configuration = CXProviderConfiguration(localizedName: SwiftTwilioVoicePlugin.appName)
         configuration.maximumCallGroups = 1
         configuration.maximumCallsPerCallGroup = 1
-        if let callKitIcon = UIImage(named: "callkit_icon") {
-            configuration.iconTemplateImageData = callKitIcon.pngData()
-        }
+        let defaultIcon = UserDefaults.standard.string(forKey: defaultCallKitIcon) ?? defaultCallKitIcon
         
         clients = UserDefaults.standard.object(forKey: kClientList)  as? [String:String] ?? [:]
         callKitProvider = CXProvider(configuration: configuration)
@@ -67,6 +67,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         super.init()
         
         callKitProvider.setDelegate(self, queue: nil)
+        _ = updateCallKitIcon(icon: defaultIcon)
         
         voipRegistry.delegate = self
         voipRegistry.desiredPushTypes = Set([PKPushType.voIP])
@@ -145,6 +146,14 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                 _result!(ferror)
             }
         }
+        else if flutterCall.method == "isMuted"
+        {
+            if(self.call != nil) {
+                result(self.call!.isMuted);
+            } else {
+                result(false);
+            }
+        }
         else if flutterCall.method == "toggleSpeaker"
         {
             guard let speakerIsOn = arguments["speakerIsOn"] as? Bool else {return}
@@ -153,6 +162,26 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                 return
             }
             eventSink(speakerIsOn ? "Speaker On" : "Speaker Off")
+        }
+        else if flutterCall.method == "isOnSpeaker"
+        {
+            let isOnSpeaker: Bool = isSpeakerOn();
+            result(isOnSpeaker);
+        }
+        else if flutterCall.method == "toggleBluetooth"
+        {
+            guard let bluetoothOn = arguments["bluetoothOn"] as? Bool else {return}
+            // TODO: toggle bluetooth
+            // toggleAudioRoute(toSpeaker: speakerIsOn)
+            guard let eventSink = eventSink else {
+                return
+            }
+            eventSink(bluetoothOn ? "Bluetooth On" : "Bluetooth Off")
+        }
+        else if flutterCall.method == "isBluetoothOn"
+        {
+            let isBluetoothOn: Bool = isBluetoothOn();
+            result(isBluetoothOn);
         }
         else if flutterCall.method == "call-sid"
         {
@@ -177,15 +206,40 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
          self.identity = clientIdentity;
          } */
         else if flutterCall.method == "holdCall" {
+            guard let shouldHold = arguments["shouldHold"] as? Bool else {return}
+            
             if (self.call != nil) {
-                
                 let hold = self.call!.isOnHold
-                self.call!.isOnHold = !hold
-                guard let eventSink = eventSink else {
-                    return
+                if(shouldHold && !hold) {
+                    self.call!.isOnHold = true
+                    guard let eventSink = eventSink else {
+                        return
+                    }
+                    eventSink("Hold")
+                } else if(!shouldHold && hold) {
+                    self.call!.isOnHold = false
+                    guard let eventSink = eventSink else {
+                        return
+                    }
+                    eventSink("Unhold")
                 }
-                eventSink(!hold ? "Hold" : "Unhold")
             }
+        }
+        else if flutterCall.method == "isHolding" {
+            // guard call not nil
+            guard let call = self.call else {
+                return;
+            }
+            
+            // toggle state current state
+            let isOnHold = call.isOnHold;
+            call.isOnHold = !isOnHold;
+            
+            // guard event sink not nil & post update
+            guard let eventSink = eventSink else {
+                return
+            }
+            eventSink(!isOnHold ? "Hold" : "Unhold")
         }
         else if flutterCall.method == "answer" {
             // nuthin
@@ -201,7 +255,8 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             }
             
         }else if flutterCall.method == "hangUp"{
-            if (self.call != nil && self.call?.state == .connected) {
+            // Hang up on-going/active call
+            if (self.call != nil) {
                 self.sendPhoneCallEvents(description: "LOG|hangUp method invoked", isError: false)
                 self.userInitiatedDisconnect = true
                 performEndCallAction(uuid: self.call!.uuid!)
@@ -244,6 +299,12 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                 result(false)
             }
             return
+        } else if flutterCall.method == "hasBluetoothPermission" {
+            result(true)
+            return
+        }else if flutterCall.method == "requestBluetoothPermission"{
+            result(true)
+            return
         } else if flutterCall.method == "show-notifications" {
             guard let show = arguments["show"] as? Bool else{return}
             let prefsShow = UserDefaults.standard.optionalBool(forKey: "show-notifications") ?? true
@@ -252,13 +313,40 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             }
             result(true)
             return
+        } else if flutterCall.method == "updateCallKitIcon" {
+            let newIcon = arguments["icon"] as? String ?? defaultCallKitIcon
+            
+            // update icon & persist
+            result(updateCallKitIcon(icon: newIcon))
+            return
         }
         result(true)
     }
     
+    /// Updates the CallkitProvider configuration with a new icon, and saves this change to future use.
+    /// - Parameter icon: icon path / name
+    /// - Returns: true if succesful
+    func updateCallKitIcon(icon: String) -> Bool {
+        if let newIcon = UIImage(named: icon) {
+            let configuration = callKitProvider.configuration;
+            
+            // set new callkit icon
+            configuration.iconTemplateImageData = newIcon.pngData()
+            callKitProvider.configuration = configuration
+         
+            // save new icon to persist across sessions
+            UserDefaults.standard.set(icon, forKey: defaultCallKitIcon)
+            
+            return true;
+        }
+        
+        return false;
+    }
+    
     func makeCall(to: String)
     {
-        if (self.call != nil && self.call?.state == .connected) {
+        // Cancel the previous call before making another one.
+        if (self.call != nil) {
             self.userInitiatedDisconnect = true
             performEndCallAction(uuid: self.call!.uuid!)            
         } else {
@@ -621,7 +709,25 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         
     }
     
-    
+    func isSpeakerOn() -> Bool {
+        // Source: https://stackoverflow.com/a/51759708/4628115
+        let currentRoute = AVAudioSession.sharedInstance().currentRoute
+        for output in currentRoute.outputs {
+            switch output.portType {
+                case AVAudioSession.Port.builtInSpeaker:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+        return false;
+    }
+
+    // TODO
+    func isBluetoothOn() -> Bool {
+        return false;
+    }
+
     // MARK: AVAudioSession
     func toggleAudioRoute(toSpeaker: Bool) {
         // The mode set by the Voice SDK is "VoiceChat" so the default audio route is the built-in receiver. Use port override to switch the route.
