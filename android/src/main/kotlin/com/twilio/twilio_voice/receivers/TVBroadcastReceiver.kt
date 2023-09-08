@@ -53,9 +53,19 @@ class TVBroadcastReceiver(private val plugin: TwilioVoicePlugin) : BroadcastRece
          */
         const val EXTRA_CALL_HANDLE: String = "EXTRA_CALL_HANDLE"
 
-
+        /**
+         * Extra used providing the call's caller ID.
+         */
         const val EXTRA_CALL_FROM: String = "EXTRA_CALL_FROM"
-        const val EXTRA_CALL_TO: String = "EXTRA_CALL_FROM"
+
+        /**
+         * Extra used providing the call's recipient ID.
+         */
+        const val EXTRA_CALL_TO: String = "EXTRA_CALL_TO"
+
+        /**
+         * Extra used providing the call direction.
+         */
         const val EXTRA_CALL_DIRECTION: String = "EXTRA_CALL_DIRECTION"
 
         /**
