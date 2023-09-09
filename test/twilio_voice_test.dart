@@ -5,15 +5,12 @@ void main() {
   const MethodChannel channel = MethodChannel('twilio_voice');
 
   TestWidgetsFlutterBinding.ensureInitialized();
+  var messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
 
   setUp(() {
-    channel.setMockMethodCallHandler((MethodCall methodCall) async {
+    messenger.setMockMethodCallHandler(channel, (methodCall) async {
       return '42';
     });
-  });
-
-  tearDown(() {
-    channel.setMockMethodCallHandler(null);
   });
 
   test("Mock Test", () async {

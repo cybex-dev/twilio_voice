@@ -116,7 +116,7 @@ class _CallSID extends StatelessWidget {
 class _StatusIcon extends StatelessWidget {
   final bool active;
 
-  const _StatusIcon({super.key, required this.active});
+  const _StatusIcon({required this.active});
 
   @override
   Widget build(BuildContext context) {

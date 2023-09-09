@@ -2,11 +2,12 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:twilio_voice/twilio_voice.dart';
 import 'package:twilio_voice_example/screens/widgets/permission_tile.dart';
 import 'package:twilio_voice_example/screens/widgets/state_toggle.dart';
+
+import '../../utils.dart';
 
 class PermissionsBlock extends StatefulWidget {
   const PermissionsBlock({super.key});
@@ -119,7 +120,7 @@ class _PermissionsBlockState extends State<PermissionsBlock> with WidgetsBinding
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    print("AppLifecycleState: $state");
+    printDebug("AppLifecycleState: $state");
     if(_lastLifecycleState != state && state == AppLifecycleState.resumed) {
       _updatePermissions();
     }
@@ -322,7 +323,7 @@ class _PermissionsBlockState extends State<PermissionsBlock> with WidgetsBinding
                   title: "Phone Account",
                   granted: _hasRegisteredPhoneAccount,
                   onRequestPermission: () async {
-                    final result = await _tv.registerPhoneAccount();
+                    await _tv.registerPhoneAccount();
                     setPhoneAccountRegistered = await _tv.hasRegisteredPhoneAccount();
                   },
                 ),
@@ -337,7 +338,7 @@ class _PermissionsBlockState extends State<PermissionsBlock> with WidgetsBinding
                   subtitle: Text(_hasRegisteredPhoneAccount ? (_isPhoneAccountEnabled ? "Enabled" : "Not Enabled") : "Not Registered"),
                   trailing: ElevatedButton(
                     onPressed: _hasRegisteredPhoneAccount && !_isPhoneAccountEnabled ? () => _tv.openPhoneAccountSettings() : null,
-                    child: Text("Open Settings"),
+                    child: const Text("Open Settings"),
                   ),
                 ),
             ],

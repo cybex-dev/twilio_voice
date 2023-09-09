@@ -4,9 +4,8 @@ import 'package:js/js.dart';
 
 @JS()
 abstract class Promise<T> {
-  external factory Promise(
-      void executor(void resolve(T result), Function reject));
-  external Promise then(void onFulfilled(T result), [Function onRejected]);
+  external factory Promise(void Function(Function(T result) resolve, Function reject) executor);
+  external Promise then(void Function(T result) onFulfilled, [Function onRejected]);
 }
 
 Future<Map<String, dynamic>> parsePromise(Promise<dynamic> promise) async {

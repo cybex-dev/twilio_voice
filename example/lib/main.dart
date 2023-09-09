@@ -11,6 +11,7 @@ import 'package:twilio_voice_example/screens/ui_call_screen.dart';
 import 'package:twilio_voice_example/screens/ui_registration_screen.dart';
 
 import 'api.dart';
+import 'utils.dart';
 
 extension IterableExtension<E> on Iterable<E> {
   /// Extension on [Iterable]'s [firstWhere] that returns null if no element is found instead of throwing an exception.
@@ -42,7 +43,7 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   if (kIsWeb) {
     // Add firebase config here
-    final options = const FirebaseOptions(
+    const options = FirebaseOptions(
       apiKey: '',
       appId: '',
       messagingSenderId: '',
@@ -86,7 +87,7 @@ class _AppState extends State<App> {
 
   //#region #region Register with Twilio
   void register() async {
-    print("voip-service registration");
+    printDebug("voip-service registration");
 
     // Use for locally provided token generator e.g. Twilio's quickstarter project: https://github.com/twilio/voice-quickstart-server-node
     if (!kIsWeb) {
@@ -116,12 +117,12 @@ class _AppState extends State<App> {
 
   /// Registers [accessToken] with TwilioVoice plugin, acquires a device token from FirebaseMessaging and registers with TwilioVoice plugin.
   Future<bool> _registerAccessToken(String accessToken) async {
-    print("voip-registering access token");
+    printDebug("voip-registering access token");
 
     String? androidToken;
     if (Platform.isAndroid || kIsWeb) {
       androidToken = await FirebaseMessaging.instance.getToken();
-      print("androidToken is " + androidToken!);
+      printDebug("androidToken is ${androidToken!}");
     }
     final result = await TwilioVoice.instance.setTokens(accessToken: accessToken, deviceToken: androidToken);
     return result ?? false;
@@ -141,9 +142,9 @@ class _AppState extends State<App> {
     if (myId.isEmpty) myId = null;
     if (myToken.isEmpty) myToken = null;
 
-    print("voip-registering with environment variables");
+    printDebug("voip-registering with environment variables");
     if (myId == null || myToken == null) {
-      print("Failed to register with environment variables, please provide ID and TOKEN");
+      printDebug("Failed to register with environment variables, please provide ID and TOKEN");
       return false;
     }
     userId = myId;
@@ -165,10 +166,10 @@ class _AppState extends State<App> {
   /// Use this method to register with a local token generator
   /// To access this, run with `--dart-define=REGISTRATION_METHOD=local`
   Future<bool> _registerLocal() async {
-    print("voip-registering with local token generator");
+    printDebug("voip-registering with local token generator");
     final result = await generateLocalAccessToken();
     if (result == null) {
-      print("Failed to register with local token generator");
+      printDebug("Failed to register with local token generator");
       return false;
     }
     userId = result.identity;
@@ -181,9 +182,9 @@ class _AppState extends State<App> {
   void _listenForFirebaseLogin() {
     final auth = FirebaseAuth.instance;
     auth.authStateChanges().listen((user) async {
-      // print("authStateChanges $user");
+      // printDebug("authStateChanges $user");
       if (user == null) {
-        print("user is anonomous");
+        printDebug("user is anonomous");
         await auth.signInAnonymously();
       } else if (!authRegistered) {
         authRegistered = true;
@@ -192,7 +193,7 @@ class _AppState extends State<App> {
         if (userId.isEmpty) {
           userId = user.uid;
         }
-        print("registering client $userId [firebase id ${user.uid}]");
+        printDebug("registering client $userId [firebase id ${user.uid}]");
         _registerFirebase();
       }
     });
@@ -205,10 +206,10 @@ class _AppState extends State<App> {
       _listenForFirebaseLogin();
       return false;
     }
-    print("voip-registering with firebase token generator");
+    printDebug("voip-registering with firebase token generator");
     final result = await generateFirebaseAccessToken();
     if (result == null) {
-      print("Failed to register with firebase token generator");
+      printDebug("Failed to register with firebase token generator");
       return false;
     }
     userId = result.identity;
@@ -224,7 +225,7 @@ class _AppState extends State<App> {
     super.initState();
 
     TwilioVoice.instance.setOnDeviceTokenChanged((token) {
-      print("voip-device token changed");
+      printDebug("voip-device token changed");
       if (!kIsWeb) {
         register();
       }
@@ -233,7 +234,7 @@ class _AppState extends State<App> {
     listenForEvents();
     register();
 
-    final partnerId = "alicesId";
+    const partnerId = "alicesId";
     TwilioVoice.instance.registerClient(partnerId, "Alice");
     // TwilioVoice.instance.requestReadPhoneStatePermission();
     // TwilioVoice.instance.requestMicAccess();
@@ -243,7 +244,7 @@ class _AppState extends State<App> {
   /// Listen for call events
   void listenForEvents() {
     TwilioVoice.instance.callEventsListener.listen((event) {
-      print("voip-onCallStateChanged $event");
+      printDebug("voip-onCallStateChanged $event");
 
       switch (event) {
         case CallEvent.incoming:
@@ -260,7 +261,7 @@ class _AppState extends State<App> {
           if (activeCall != null) {
             final customData = activeCall.customParams;
             if (customData != null) {
-              print("voip-customData $customData");
+              printDebug("voip-customData $customData");
             }
           }
           break;
@@ -285,11 +286,11 @@ class _AppState extends State<App> {
   /// Place a call to [clientIdentifier]
   Future<void> _onPerformCall(String clientIdentifier) async {
     if (!await (TwilioVoice.instance.hasMicAccess())) {
-      print("request mic access");
+      printDebug("request mic access");
       TwilioVoice.instance.requestMicAccess();
       return;
     }
-    print("starting call to $clientIdentifier");
+    printDebug("starting call to $clientIdentifier");
     TwilioVoice.instance.call.place(to: clientIdentifier, from: userId, extraOptions: {"_TWI_SUBJECT": "Company Name"});
   }
 
@@ -341,19 +342,19 @@ class _AppState extends State<App> {
     final activeCall = TwilioVoice.instance.call.activeCall!;
     final action = await showIncomingCallScreen(context, activeCall);
     if (action == true) {
-      print("accepting call");
+      printDebug("accepting call");
       TwilioVoice.instance.call.answer();
     } else if (action == false) {
-      print("rejecting call");
+      printDebug("rejecting call");
       TwilioVoice.instance.call.hangUp();
     } else {
-      print("no action");
+      printDebug("no action");
     }
   }
 
   Future<bool?> showIncomingCallScreen(BuildContext context, ActiveCall activeCall) async {
     if (!kIsWeb && !Platform.isAndroid) {
-      print("showIncomingCallScreen only for web");
+      printDebug("showIncomingCallScreen only for web");
       return false;
     }
 

@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:html';
 import 'dart:js';
 
+import 'utils.dart';
+
 /// Injects a `script` with a `src` dynamically into the head of the current
 /// document.
 void _injectSrcScript(String src) async {
@@ -20,7 +22,7 @@ Future<void> loadTwilio() async {
   // If Twilio is already available, Twilio has already been initialized
   // (or the user has added the scripts to their html file).
   if (context['Twilio'] != null) {
-    print("Already found Twilio in context, skipping loadTwilio()...");
+    printDebug("Already found Twilio in context, skipping loadTwilio()...");
     return;
   }
 
