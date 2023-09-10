@@ -29,8 +29,8 @@ class TVCallInviteParametersImpl(storage: Storage, callInvite: CallInvite) : TVP
             }
 
             val mToName = mFrom.replace("client:", "")
-            return customParameters[PARAM_RECIPIENT_NAME]
-                ?: customParameters[PARAM_RECIPIENT_ID]?.let { resolveHumanReadableName(it) }
+            return customParameters[PARAM_CALLER_NAME]
+                ?: customParameters[PARAM_CALLER_ID]?.let { resolveHumanReadableName(it) }
                 ?: resolveHumanReadableName(mToName)
         }
 
@@ -93,8 +93,8 @@ class TVCallParametersImpl(storage: Storage, call: Call, callTo: String, callFro
             }
 
             val mFromName = mFrom.replace("client:", "")
-            return customParameters[PARAM_RECIPIENT_NAME]
-                ?: customParameters[PARAM_RECIPIENT_ID]?.let { resolveHumanReadableName(it) }
+            return customParameters[PARAM_CALLER_NAME]
+                ?: customParameters[PARAM_CALLER_ID]?.let { resolveHumanReadableName(it) }
                 ?: resolveHumanReadableName(mFromName)
         }
 
