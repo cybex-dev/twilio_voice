@@ -726,7 +726,8 @@ class Call extends MethodChannelTwilioCall {
       _cancelNotification(callSid!);
 
       CallStatus callStatus = getCallStatus(_jsCall!);
-      if (callStatus == CallStatus.ringing) {
+      // reject incoming call that is both outbound ringing or inbound pending
+      if (callStatus == CallStatus.ringing || callStatus == CallStatus.pending) {
         _jsCall!.reject();
       } else {
         _jsCall!.disconnect();
