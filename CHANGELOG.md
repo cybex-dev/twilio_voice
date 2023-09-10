@@ -38,6 +38,7 @@
 * Fix: [Android] Inconsistent caller/recipient names for inbound calls between ringing & connected states.
 * Fix: [Android] Incorrect call direction for incoming calls
 * Fix: call ringing event always showing `CallDirection.outgoing`
+* Fix: [Android] Updated CallKit incoming/outgoing name parameter resolution
 
 ## 0.0.9
 * Feat: forwarded callInvite custom parameters to flutter
