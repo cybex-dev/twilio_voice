@@ -18,14 +18,14 @@ class TVCallInviteParametersImpl(storage: Storage, callInvite: CallInvite) : TVP
 
     override val from: String
         get() {
-            val mFrom = mCallInvite.from ?: ""
-            if (mFrom.isEmpty()) {
-                return mStorage.defaultCaller
-            }
-
             return customParameters[PARAM_CALLER_NAME]
                 ?: customParameters[PARAM_CALLER_ID]?.let { resolveHumanReadableName(it) }
                 ?: run {
+                    val mFrom = mCallInvite.from ?: ""
+                    if (mFrom.isEmpty()) {
+                        return mStorage.defaultCaller
+                    }
+
                     if (!mFrom.startsWith("client:")) {
                         // we have a number, return as is
                         return mFrom
@@ -38,11 +38,11 @@ class TVCallInviteParametersImpl(storage: Storage, callInvite: CallInvite) : TVP
 
     override val to: String
         get() {
-            val mTo = mCallInvite.to
-
             return customParameters[PARAM_RECIPIENT_NAME]
                 ?: customParameters[PARAM_RECIPIENT_ID]?.let { resolveHumanReadableName(it) }
                 ?: run {
+                    val mTo = mCallInvite.to
+
                     if (!mTo.startsWith("client:")) {
                         // we have a number, return as is
                         return mTo
@@ -88,13 +88,13 @@ class TVCallParametersImpl(storage: Storage, call: Call, callTo: String, callFro
 
     override val from: String
         get() {
-            if (mFrom.isEmpty()) {
-                return mStorage.defaultCaller
-            }
-
             return customParameters[PARAM_CALLER_NAME]
                 ?: customParameters[PARAM_CALLER_ID]?.let { resolveHumanReadableName(it) }
                 ?: run {
+                    if (mFrom.isEmpty()) {
+                        return mStorage.defaultCaller
+                    }
+
                     if (!mFrom.startsWith("client:")) {
                         // we have a number, return as is
                         return mFrom
@@ -107,13 +107,13 @@ class TVCallParametersImpl(storage: Storage, call: Call, callTo: String, callFro
 
     override val to: String
         get() {
-            if (mTo.isEmpty()) {
-                return mStorage.defaultCaller
-            }
-
             return customParameters[PARAM_RECIPIENT_NAME]
                 ?: customParameters[PARAM_RECIPIENT_ID]?.let { resolveHumanReadableName(it) }
                 ?: run {
+                    if (mTo.isEmpty()) {
+                        return mStorage.defaultCaller
+                    }
+
                     if (!mTo.startsWith("client:")) {
                         // we have a number, return as is
                         return mTo
