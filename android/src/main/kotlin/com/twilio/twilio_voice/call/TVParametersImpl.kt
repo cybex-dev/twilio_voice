@@ -23,29 +23,34 @@ class TVCallInviteParametersImpl(storage: Storage, callInvite: CallInvite) : TVP
                 return mStorage.defaultCaller
             }
 
-            if (!mFrom.startsWith("client:")) {
-                // we have a number, return as is
-                return mFrom
-            }
-
-            val mToName = mFrom.replace("client:", "")
             return customParameters[PARAM_CALLER_NAME]
                 ?: customParameters[PARAM_CALLER_ID]?.let { resolveHumanReadableName(it) }
-                ?: resolveHumanReadableName(mToName)
+                ?: run {
+                    if (!mFrom.startsWith("client:")) {
+                        // we have a number, return as is
+                        return mFrom
+                    }
+
+                    val mToName = mFrom.replace("client:", "")
+                    return resolveHumanReadableName(mToName)
+                }
         }
 
     override val to: String
         get() {
             val mTo = mCallInvite.to
-            if (!mTo.startsWith("client:")) {
-                // we have a number, return as is
-                return mTo
-            }
 
-            val mToName = mTo.replace("client:", "")
             return customParameters[PARAM_RECIPIENT_NAME]
                 ?: customParameters[PARAM_RECIPIENT_ID]?.let { resolveHumanReadableName(it) }
-                ?: resolveHumanReadableName(mToName)
+                ?: run {
+                    if (!mTo.startsWith("client:")) {
+                        // we have a number, return as is
+                        return mTo
+                    }
+
+                    val mToName = mTo.replace("client:", "")
+                    return resolveHumanReadableName(mToName)
+                }
         }
 
     override val fromRaw: String
@@ -87,15 +92,17 @@ class TVCallParametersImpl(storage: Storage, call: Call, callTo: String, callFro
                 return mStorage.defaultCaller
             }
 
-            if (!mFrom.startsWith("client:")) {
-                // we have a number, return as is
-                return mFrom
-            }
-
-            val mFromName = mFrom.replace("client:", "")
             return customParameters[PARAM_CALLER_NAME]
                 ?: customParameters[PARAM_CALLER_ID]?.let { resolveHumanReadableName(it) }
-                ?: resolveHumanReadableName(mFromName)
+                ?: run {
+                    if (!mFrom.startsWith("client:")) {
+                        // we have a number, return as is
+                        return mFrom
+                    }
+
+                    val mFromName = mFrom.replace("client:", "")
+                    return resolveHumanReadableName(mFromName)
+                }
         }
 
     override val to: String
@@ -104,15 +111,17 @@ class TVCallParametersImpl(storage: Storage, call: Call, callTo: String, callFro
                 return mStorage.defaultCaller
             }
 
-            if (!mTo.startsWith("client:")) {
-                // we have a number, return as is
-                return mTo
-            }
-
-            val mToName = mTo.replace("client:", "")
             return customParameters[PARAM_RECIPIENT_NAME]
                 ?: customParameters[PARAM_RECIPIENT_ID]?.let { resolveHumanReadableName(it) }
-                ?: resolveHumanReadableName(mToName)
+                ?: run {
+                    if (!mTo.startsWith("client:")) {
+                        // we have a number, return as is
+                        return mTo
+                    }
+
+                    val mToName = mTo.replace("client:", "")
+                    return resolveHumanReadableName(mToName)
+                }
         }
 
     override val fromRaw: String
