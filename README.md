@@ -332,12 +332,23 @@ Caller is usually referred to as `call.from` or `callInvite.from`. This can eith
 
 The following rules are applied to determine the caller/recipient name, which is shown in the call screen and heads-up notification:
 
-- If the caller is empty/not provided, the default caller name is shown e.g. "Unknown Caller", else
-- if the caller is a number, the plugin will show the number as is, else
-- if the caller is a string, the plugin will interpret the string as follows:
-  - if the `__TWI_CALLER_NAME` parameter is provided, the plugin will show the value of `__TWI_CALLER_NAME` as is, else
-  - if the `__TWI_CALLER_ID` parameter is provided, the plugin will search for a registered client with the same id and show the client name, else
-  - if not found or not provided, the plugin will search for a registered client with the `call.from` value and show the client name, as a last resort
+##### Incoming Calls:
+
+`__TWI_CALLER_NAME` -> `resolve(__TWI_CALLER_ID)` -> (phone number) -> `registered client (from)` -> `defaultCaller name` -> `"Unknown Caller"`
+
+
+##### Outgoing Calls:
+
+`__TWI_RECIPIENT_NAME` -> `resolve(__TWI_RECIPIENT_ID)` -> (phone number) -> `registered client (to)` -> `defaultCaller name` -> `"Unknown Caller"`
+
+**Details explaination:**
+
+- if the call is an CallInvite (incoming), the plugin will interpret the string as follows or if the call is outgoing, the twilio `To` parameter field is used to:
+  - if the `__TWI_CALLER_NAME` (or `__TWI_RECIPIENT_NAME`) parameter is provided, the plugin will show the value of `__TWI_CALLER_NAME` (or `__TWI_RECIPIENT_NAME`) as is, else
+  - if the `__TWI_CALLER_ID` (or `__TWI_RECIPIENT_ID`) parameter is provided, the plugin will search for a registered client with the same id and show the client name,
+- if the caller (`from` or `to` fields) is empty/not provided, the default caller name is shown e.g. "Unknown Caller", else
+- else if the caller (`from` or `to` fields) is a number, the plugin will show the number as is, else
+- else the plugin will search for a registered client with the `callInvite.from` (or call.to) value and show the client name, as a last resort
   - the default caller name is shown e.g. "Unknown Caller"
 
 *Please note: the same approach applies to both caller and recipient name resolution.*
