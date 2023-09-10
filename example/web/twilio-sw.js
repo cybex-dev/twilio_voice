@@ -110,12 +110,12 @@ function focusClientWindow() {
     self.clients.matchAll({
         type: "window",
     }).then((clients) => {
-        for (const client of clients) {
-            if (client.url === "/" && "focus" in client) return client.focus();
-        }
-        if (clients.openWindow) return clients.openWindow("/");
-    }).catch((error) => {
-        _error('Could not focus client window', error);
+        clients
+            .filter(value => !value.focused)
+            .filter(value => "focus" in value)
+            .forEach((client) => {
+                client.focus().catch((error) => _error('Error focusing client window', error));
+            });
     });
 }
 
