@@ -41,6 +41,8 @@
 * Fix: call ringing event always showing `CallDirection.outgoing`
 * Fix: [Android] Updated CallKit incoming/outgoing name parameter resolution
 * Fix: [Web] Notification actions working intermittently.
+* Fix: [Web] Added suggested service worker integration with CI/CD unifying with `flutter_service_worker.js`, see [here](https://firebase.flutter.dev/docs/messaging/usage/#background-messages) for more info regarding service worker limitations.
+* Update: [Web] Remove additional service-worker files
 
 ## 0.0.9
 
