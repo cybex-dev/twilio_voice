@@ -165,29 +165,28 @@ See [example](https://github.com/cybex-dev/twilio_voice/blob/master/example/andr
 
 There are 4 important files for Twilio incoming/missed call notifications to work:
 
-- `twilio.min.js` is the twilio javascript SDK, it is used to handle the incoming calls.
 - `notifications.js` is the main file, it handles the notifications and the service worker.
-- `load-sw.js` is responsible for (re)loading the twilio service worker.
-- `twilio-sw.js` is the service worker, it is used to handle the incoming calls.
+- `twilio-sw.js` is the service worker _content_ used to work with the default flutter service worker (this can be found in `build/web/flutter_service_worker.js`). This file's contents are copied into the flutter service worker.
 
 Also, the twilio javascript SDK itself, `twilio.min.js` is needed.
 
 To ensure proper/as intended setup:
 
-1. Locate 4 files (`twilio.min.js`, `load-sw.js`, `notifications.js` and `twilio-sw.js`) from `example/web` folder
-2. Copy all 4 files into your own project,
+1. Locate 3 files (`twilio.min.js`, `notifications.js` and `twilio-sw.js`) from `example/web` folder
+2. Copy all 3 files into your own project,
 3. (optional) Review & change the `notifications.js`, `twilio-sw.js` files to match your needs.
+4. Build your application with `flutter build web` (or `flutter run -d chrome` to test locally), this will create a `build/web` folder.
+5. Copy the content of `example/web/twilio-sw.js` into your `build/web/flutter_service_worker.js` file, **at the end of the file**.
 
 Finally, add the following code to your `index.html` file, **at the end of body tag**:
 
 ```html
     <body>
+        <!--Start Twilio Voice impl-->
         <!--twilio native js library-->
         <script type="text/javascript" src="./twilio.min.js"></script>
-
-        <!--load twilio service worker-->
-        <script type="text/javascript" src="./load-sw.js"></script>
-
+        <!--End Twilio Voice impl-->
+        
         <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', async () => {
@@ -204,10 +203,27 @@ Finally, add the following code to your `index.html` file, **at the end of body 
 
 #### Web Considerations
 
-Notice should be given to using `firebase-messaging-sw.js` in addition to `twilio-sw.js` since these may cause conflict in service worker events being handled.
+Notice should be given to using `firebase-messaging-sw.js` in addition to `twilio-sw.js` since these may cause conflict in service worker events being handled. Until such a time Flutter provides an appropriate mechanism to integrate with service workers, the suggested solution of post compilation merging of service workers is the best solution.
 
 _If you need to debug the service worker, open up Chrome Devtools, go to Application tab, and select Service Workers from the left menu. There you can see the service workers and their status.
 To review service worker `notificationclick`, `notificationclose`, `message`, etc events - do this using Chrome Devtools (Sources tab, left panel below 'site code' the service workers are listed)_
+
+##### Service Worker
+
+Unifying the service worker(s) is best done via post-compilation tools or a CI/CD pipeline (suggested).
+
+A snippet of the suggested service worker integration is as follows:
+
+```yaml
+#...
+- run: cd ./example; flutter build web --release --target=lib/main.dart --output=build/web
+
+- name: Update service worker
+  run: cat ./example/web/twilio-sw.js > ./example/build/web/flutter_service_worker.js
+#...
+```
+
+A complete example could be found in the github workflows `.github/workflows/flutter.yml` file, see [here](https://github.com/cybex-dev/twilio_voice/blob/master/.github/workflows/flutter.yml). 
 
 ##### Web Notifications
 
