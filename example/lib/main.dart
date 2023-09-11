@@ -42,19 +42,25 @@ enum RegistrationMethod {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   if (kIsWeb) {
-    // Add firebase config here
-    const options = FirebaseOptions(
-      apiKey: '',
-      appId: '',
-      messagingSenderId: '',
-      projectId: '',
-      authDomain: '',
-      databaseURL: '',
-      storageBucket: '',
-      measurementId: '',
-    );
-    // For web apps only
-    await Firebase.initializeApp(options: options);
+    // Get registration method
+    final registrationMethod = RegistrationMethod.loadFromEnvironment() ?? RegistrationMethod.env;
+
+    // if web, we use the requested registration method for firebase registration only
+    if(registrationMethod == RegistrationMethod.firebase) {
+      // Add firebase config here
+      const options = FirebaseOptions(
+        apiKey: '',
+        appId: '',
+        messagingSenderId: '',
+        projectId: '',
+        authDomain: '',
+        databaseURL: '',
+        storageBucket: '',
+        measurementId: '',
+      );
+      // For web apps only
+      await Firebase.initializeApp(options: options);
+    }
   } else {
     // For Android, iOS - Firebase will search for google-services.json in android/app directory or GoogleService-Info.plist in ios/Runner directory respectively.
     await Firebase.initializeApp();
@@ -120,7 +126,8 @@ class _AppState extends State<App> {
     printDebug("voip-registering access token");
 
     String? androidToken;
-    if (Platform.isAndroid || kIsWeb) {
+    if(!kIsWeb && Platform.isAndroid) {
+      // Get device token for Android only
       androidToken = await FirebaseMessaging.instance.getToken();
       printDebug("androidToken is ${androidToken!}");
     }
