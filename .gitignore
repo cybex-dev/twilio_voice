@@ -45,3 +45,5 @@ build/
 
 # Lock files
 *.lock
+
+*.log
