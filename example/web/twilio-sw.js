@@ -14,7 +14,7 @@ const _error = (...message) => {
 _log('Started');
 
 self.addEventListener('message', (event) => {
-    handleMessage(event);
+    _handleMessage(event);
 });
 
 self.addEventListener('messageerror', (event) => {
@@ -24,39 +24,38 @@ self.addEventListener('messageerror', (event) => {
 self.addEventListener('notificationclick', (event) => {
     _log(`notificationclick event [${event.action}]`, event);
     event.notification.close();
-    handleNotificationEvent(event.action, event.notification, event.notification.tag);
+    _handleNotificationEvent(event.action, event.notification, event.notification.tag);
 });
 
 self.addEventListener('notificationclose', (event) => {
     _log('notificationclose event', event);
     event.notification.close();
-    handleNotificationEvent(null, event.data, event.tag);
+    _handleNotificationEvent(null, event.data, event.tag);
 });
 
 function _handleNotificationEvent(action, payload, tag) {
-function handleNotificationEvent(action, payload, tag) {
     const message = {
         tag: tag,
     }
     switch (action) {
         case 'answer': {
-            focusClientWindow();
-            sendToClient(action, message);
+            _focusClientWindow();
+            _sendToClient(action, message);
             break;
         }
         case 'hangup':
         case 'reject': {
-            sendToClient(action, message);
+            _sendToClient(action, message);
             break;
         }
         default: {
-            focusClientWindow();
+            _focusClientWindow();
             break;
         }
     }
 }
 
-function sendToClient(action, payload) {
+function _sendToClient(action, payload) {
     const message = {
         action: action,
         payload: payload
@@ -68,7 +67,7 @@ function sendToClient(action, payload) {
     });
 }
 
-function focusClientWindow() {
+function _focusClientWindow() {
     self.clients.matchAll({
         type: "window",
     }).then((clients) => {
@@ -81,7 +80,7 @@ function focusClientWindow() {
     });
 }
 
-function handleMessage(event) {
+function _handleMessage(event) {
     if (!event) {
         _error('No event');
         return;
