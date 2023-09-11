@@ -163,18 +163,20 @@ See [example](https://github.com/cybex-dev/twilio_voice/blob/master/example/andr
 
 ### Web Setup:
 
-There are 2 important files for Twilio incoming/missed call notifications to work:
+There are 4 important files for Twilio incoming/missed call notifications to work:
 
+- `twilio.min.js` is the twilio javascript SDK, it is used to handle the incoming calls.
 - `notifications.js` is the main file, it handles the notifications and the service worker.
+- `load-sw.js` is responsible for (re)loading the twilio service worker.
 - `twilio-sw.js` is the service worker, it is used to handle the incoming calls.
 
 Also, the twilio javascript SDK itself, `twilio.min.js` is needed.
 
 To ensure proper/as intended setup:
 
-1. Get all 3 files (`notifications.js`, `twilio.min.js` and `twilio-sw.js`) from `example/web` folder
-2. Copy all 3 into your own project,
-3. (optional) Review & change the `notifications.js`, `twilio-sw.js) files to match your needs.
+1. Locate 4 files (`twilio.min.js`, `load-sw.js`, `notifications.js` and `twilio-sw.js`) from `example/web` folder
+2. Copy all 4 files into your own project,
+3. (optional) Review & change the `notifications.js`, `twilio-sw.js` files to match your needs.
 
 Finally, add the following code to your `index.html` file, **at the end of body tag**:
 
@@ -182,8 +184,9 @@ Finally, add the following code to your `index.html` file, **at the end of body 
     <body>
         <!--twilio native js library-->
         <script type="text/javascript" src="./twilio.min.js"></script>
-        <!--twilio native js library-->
-        <script type="text/javascript" src="./notifications.js"></script>
+
+        <!--load twilio service worker-->
+        <script type="text/javascript" src="./load-sw.js"></script>
 
         <script>
         if ('serviceWorker' in navigator) {
@@ -205,6 +208,19 @@ Notice should be given to using `firebase-messaging-sw.js` in addition to `twili
 
 _If you need to debug the service worker, open up Chrome Devtools, go to Application tab, and select Service Workers from the left menu. There you can see the service workers and their status.
 To review service worker `notificationclick`, `notificationclose`, `message`, etc events - do this using Chrome Devtools (Sources tab, left panel below 'site code' the service workers are listed)_
+
+##### Web Notifications
+
+2 types of notifications are shown:
+ - Incoming call notifications with 2 buttons: `Answer` and `Reject`,
+ - Missed call notifications with 1 button: `Call back`.
+
+Notifications are presented as **alerts**. These notifications may not always been shown, check:
+ - if the browser supports notifications,
+ - if the user has granted permissions to show notifications,
+ - if the notifications display method / notifications is enabled by the system (e.g. macOS notifications are disabled, or Windows notifications are disabled, etc).
+ - if there are already notifications shown (https://stackoverflow.com/a/36383155/4628115)
+ - if system is in 'Do Not Disturb' or 'Focus' mode.
 
 ### MacOS Setup:
 
