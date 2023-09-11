@@ -1,6 +1,6 @@
-importScripts('notifications.js')
+// Twilio Voice Service Worker
 
-// create service worker
+importScripts('notifications.js')
 
 const tag = 'Service Worker';
 
@@ -11,7 +11,7 @@ const _error = (...message) => {
     console.error(`[ ${tag} ]`, ...message);
 };
 
-_log('Started');
+_log('Twilio Voice service-worker started');
 
 self.addEventListener('message', (event) => {
     _handleMessage(event);
