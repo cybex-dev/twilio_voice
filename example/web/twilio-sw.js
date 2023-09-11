@@ -13,41 +13,6 @@ const _error = (...message) => {
 
 _log('Started');
 
-self.addEventListener('activate', (event) => {
-    _log('activate event', event);
-    // self.clients.claim();
-   event.waitUntil(self.clients.claim()); // Become available to all pages
-    _log('activated!');
-
-    // Optional: Get a list of all the current open windows/tabs under
-    // our service worker's control, and force them to reload.
-    // This can "unbreak" any open windows/tabs as soon as the new
-    // service worker activates, rather than users having to manually reload.
-    // source: https://stackoverflow.com/a/38980776/4628115
-    // self.clients.matchAll({type: 'window'}).then(windowClients => {
-    //   windowClients.forEach(windowClient => {
-    //     windowClient.navigate(windowClient.url);
-    //   });
-    // });
-});
-
-// disabled due to Chrome no-op warning
-//self.addEventListener('fetch', (event) => {
-//   _log(`fetch event [${event.request.url}]`, event);
-//});
-
-self.addEventListener('install', (event) => {
-    _log('install event, skip waiting', event);
-    // self.skipWaiting()
-   event.waitUntil(self.skipWaiting()); // Activate worker immediately
-
-    // // Skip over the "waiting" lifecycle state, to ensure that our
-    // // new service worker is activated immediately, even if there's
-    // // another tab open controlled by our older service worker code.
-    // // source: https://stackoverflow.com/a/38980776/4628115
-    // self.skipWaiting();
-});
-
 self.addEventListener('message', (event) => {
     handleMessage(event);
 });
@@ -68,10 +33,7 @@ self.addEventListener('notificationclose', (event) => {
     handleNotificationEvent(null, event.data, event.tag);
 });
 
-self.addEventListener('push', (event) => {
-    _log('push event', event);
-});
-
+function _handleNotificationEvent(action, payload, tag) {
 function handleNotificationEvent(action, payload, tag) {
     const message = {
         tag: tag,
