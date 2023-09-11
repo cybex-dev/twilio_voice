@@ -41,7 +41,7 @@ jobs:
 
   deploy-example-web:
     runs-on: ubuntu-latest
-#    needs: build
+    needs: build
 
     steps:
       - uses: actions/checkout@v2
