@@ -1,9 +1,11 @@
 ## Next release
 
+## 0.1.0
+
 * Feat: [Android] Turn off the screen when a call is active and the head is against the handset. @solid-software (https://solid.software)
 * Feat: [macOS] Added support for macOS, based on iOS implementation backed by Twilio Voice Web  (twilio-voice.js [v2.4.1-dev-custom](https://github.com/cybex-dev/twilio-voice.js/tree/2.4.1-dev-custom)).
 * Feat: [Web] Web support with notifications (via Service Worker) with live example at https://twilio-voice-web.web.app @cybex-dev
-* Feat: [Android, iOS] Add handset call status: `isMuted()`, `isOnSpeaker()` and `isHolding()` @cybex-dev
+* Feat: [Android, iOS, web] Add handset call status: `isMuted()`, `isOnSpeaker()` and `isHolding()` @cybex-dev
 * Refactor: Hold call signature changed to `holdCall({bool shouldHold = true})` @cybex-dev
 * Feat: [iOS] Add support for changing callkit icon (future plans to extended this for Flutter assets) @cybex-dev
 * [twilio_voice_mimp:0.2.5) fix 4 Null Pointer execption Android
