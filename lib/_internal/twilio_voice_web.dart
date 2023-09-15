@@ -679,6 +679,18 @@ class Call extends MethodChannelTwilioCall {
     return Future.value(false);
   }
 
+  /// Not currently implemented for web
+  @override
+  Future<bool> isHolding() {
+    return Future.value(false);
+  }
+
+  /// Not currently implemented for web
+  @override
+  Future<bool> isOnSpeaker() {
+    return Future.value(false);
+  }
+
   /// Answers an inbound call. Returns true if successful, false otherwise.
   /// See [twilio_js.Call.accept]
   @override
