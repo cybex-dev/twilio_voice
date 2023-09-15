@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:twilio_voice/twilio_voice.dart';
 import 'package:twilio_voice_example/screens/widgets/permission_tile.dart';
@@ -116,12 +118,13 @@ class _PermissionsBlockState extends State<PermissionsBlock> with WidgetsBinding
       _stateBluetooth = value;
     });
   }
+
   //#endregion
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     printDebug("AppLifecycleState: $state");
-    if(_lastLifecycleState != state && state == AppLifecycleState.resumed) {
+    if (_lastLifecycleState != state && state == AppLifecycleState.resumed) {
       _updatePermissions();
     }
     _lastLifecycleState = state;
@@ -189,7 +192,9 @@ class _PermissionsBlockState extends State<PermissionsBlock> with WidgetsBinding
     _tv.hasMicAccess().then((value) => setMicPermission = value);
     _tv.hasReadPhoneStatePermission().then((value) => setReadPhoneStatePermission = value);
     _tv.hasReadPhoneNumbersPermission().then((value) => setReadPhoneNumbersPermission = value);
-    FirebaseMessaging.instance.requestPermission().then((value) => setBackgroundPermission = value.authorizationStatus == AuthorizationStatus.authorized);
+    if (Firebase.apps.isNotEmpty) {
+      FirebaseMessaging.instance.requestPermission().then((value) => setBackgroundPermission = value.authorizationStatus == AuthorizationStatus.authorized);
+    }
     _tv.hasCallPhonePermission().then((value) => setCallPhonePermission = value);
     _tv.hasRegisteredPhoneAccount().then((value) => setPhoneAccountRegistered = value);
     _tv.isPhoneAccountEnabled().then((value) => setIsPhoneAccountEnabled = value);
@@ -266,22 +271,26 @@ class _PermissionsBlockState extends State<PermissionsBlock> with WidgetsBinding
                 icon: Icons.mic,
                 title: "Microphone",
                 granted: _hasMicPermission,
-                onRequestPermission: () => _tv.requestMicAccess(),
-              ),
-
-              PermissionTile(
-                icon: Icons.notifications,
-                title: "Notifications",
-                granted: _hasBackgroundPermissions,
                 onRequestPermission: () async {
-                  await FirebaseMessaging.instance.requestPermission();
-                  final settings = await FirebaseMessaging.instance.getNotificationSettings();
-                  setBackgroundPermission = settings.authorizationStatus == AuthorizationStatus.authorized;
+                  await _tv.requestMicAccess();
+                  setMicPermission = await _tv.hasMicAccess();
                 },
               ),
 
+              if (Firebase.apps.isNotEmpty)
+                PermissionTile(
+                  icon: Icons.notifications,
+                  title: "Notifications",
+                  granted: _hasBackgroundPermissions,
+                  onRequestPermission: () async {
+                    await FirebaseMessaging.instance.requestPermission();
+                    final settings = await FirebaseMessaging.instance.getNotificationSettings();
+                    setBackgroundPermission = settings.authorizationStatus == AuthorizationStatus.authorized;
+                  },
+                ),
+
               // if android
-              if (Platform.isAndroid)
+              if (!kIsWeb && Platform.isAndroid)
                 PermissionTile(
                   icon: Icons.phone,
                   title: "Read Phone State",
@@ -293,7 +302,7 @@ class _PermissionsBlockState extends State<PermissionsBlock> with WidgetsBinding
                 ),
 
               // if android
-              if (Platform.isAndroid)
+              if (!kIsWeb && Platform.isAndroid)
                 PermissionTile(
                   icon: Icons.phone,
                   title: "Read Phone Numbers",
@@ -305,7 +314,7 @@ class _PermissionsBlockState extends State<PermissionsBlock> with WidgetsBinding
                 ),
 
               // if android
-              if (Platform.isAndroid)
+              if (!kIsWeb && Platform.isAndroid)
                 PermissionTile(
                   icon: Icons.call_made,
                   title: "Call Phone",
@@ -317,7 +326,7 @@ class _PermissionsBlockState extends State<PermissionsBlock> with WidgetsBinding
                 ),
 
               // if android
-              if (Platform.isAndroid)
+              if (!kIsWeb && Platform.isAndroid)
                 PermissionTile(
                   icon: Icons.phonelink_setup,
                   title: "Phone Account",
@@ -329,7 +338,7 @@ class _PermissionsBlockState extends State<PermissionsBlock> with WidgetsBinding
                 ),
 
               // if android
-              if (Platform.isAndroid)
+              if (!kIsWeb && Platform.isAndroid)
                 ListTile(
                   enabled: _hasRegisteredPhoneAccount,
                   dense: true,
