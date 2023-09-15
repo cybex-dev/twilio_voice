@@ -655,6 +655,16 @@ class Call extends MethodChannelTwilioCall {
     return isMuted;
   }
 
+  /// Is call muted. Returns true if muted, false otherwise.
+  @override
+  Future<bool> isMuted() async {
+    if (_jsCall != null) {
+      return _jsCall!.isMuted();
+    } else {
+      return false;
+    }
+  }
+
   /// Not currently implemented for web
   /// https://github.com/twilio/twilio-voice.js/issues/32
   /// Call holding should be done server-side as suggested by @ryan-rowland here(https://github.com/twilio/twilio-voice.js/issues/32#issuecomment-1016872545)
