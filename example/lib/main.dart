@@ -42,8 +42,6 @@ enum RegistrationMethod {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   if (kIsWeb) {
-    // Get registration method
-    final registrationMethod = RegistrationMethod.loadFromEnvironment() ?? RegistrationMethod.env;
 
     // Add firebase config here
     const options = FirebaseOptions(
