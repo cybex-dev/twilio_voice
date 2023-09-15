@@ -645,7 +645,7 @@ class Call extends MethodChannelTwilioCall {
     return Future.value(false);
   }
 
-  /// Not currently implemented for web
+  /// Toggle mute on/off. Returns true if successful, false otherwise.
   @override
   Future<bool?> toggleMute(bool isMuted) async {
     Logger.logLocalEvent(isMuted ? "Mute" : "Unmute", prefix: "");
@@ -653,6 +653,16 @@ class Call extends MethodChannelTwilioCall {
       _jsCall!.mute(isMuted);
     }
     return isMuted;
+  }
+
+  /// Is call muted. Returns true if muted, false otherwise.
+  @override
+  Future<bool> isMuted() async {
+    if (_jsCall != null) {
+      return _jsCall!.isMuted();
+    } else {
+      return false;
+    }
   }
 
   /// Not currently implemented for web
@@ -666,6 +676,18 @@ class Call extends MethodChannelTwilioCall {
     // Logger.logLocalEvent(holdCall ? "Unhold" : "Hold", prefix: "");
     // return Future.value(false);
     Logger.logLocalEvent("Unhold");
+    return Future.value(false);
+  }
+
+  /// Not currently implemented for web
+  @override
+  Future<bool> isHolding() {
+    return Future.value(false);
+  }
+
+  /// Not currently implemented for web
+  @override
+  Future<bool> isOnSpeaker() {
     return Future.value(false);
   }
 
