@@ -58,6 +58,9 @@ jobs:
       - run: flutter config --enable-web
       - run: cd ./example; flutter build web --release --target=lib/main.dart --output=build/web
 
+      - name: Update service worker
+        run: cat ./example/service-worker/twilio-sw.js > ./example/build/web/flutter_service_worker.js
+
       - name: Archive Production Artifact
         uses: actions/upload-artifact@master
         with:

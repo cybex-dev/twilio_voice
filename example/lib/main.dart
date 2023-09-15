@@ -42,25 +42,25 @@ enum RegistrationMethod {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   if (kIsWeb) {
-    // Get registration method
-    final registrationMethod = RegistrationMethod.loadFromEnvironment() ?? RegistrationMethod.env;
 
-    // if web, we use the requested registration method for firebase registration only
-    if(registrationMethod == RegistrationMethod.firebase) {
-      // Add firebase config here
-      const options = FirebaseOptions(
-        apiKey: '',
-        appId: '',
-        messagingSenderId: '',
-        projectId: '',
-        authDomain: '',
-        databaseURL: '',
-        storageBucket: '',
-        measurementId: '',
-      );
-      // For web apps only
-      await Firebase.initializeApp(options: options);
-    }
+    // Add firebase config here
+    const options = FirebaseOptions(
+      apiKey: '',
+      appId: '',
+      messagingSenderId: '',
+      projectId: '',
+      authDomain: '',
+      databaseURL: '',
+      storageBucket: '',
+      measurementId: '',
+    );
+
+    // For web apps only
+    // ignore: body_might_complete_normally_catch_error
+    await Firebase.initializeApp(options: options).catchError((error) {
+      printDebug("Failed to initialise firebase $error");
+    });
+
   } else {
     // For Android, iOS - Firebase will search for google-services.json in android/app directory or GoogleService-Info.plist in ios/Runner directory respectively.
     await Firebase.initializeApp();
