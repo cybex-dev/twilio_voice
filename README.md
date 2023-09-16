@@ -210,7 +210,7 @@ A snippet of the suggested service worker integration is as follows:
 - run: cd ./example; flutter build web --release --target=lib/main.dart --output=build/web
 
 - name: Update service worker
-  run: cat ./example/web/twilio-sw.js > ./example/build/web/flutter_service_worker.js
+  run: cat ./example/web/twilio-sw.js >> ./example/build/web/flutter_service_worker.js
 #...
 ```
 
