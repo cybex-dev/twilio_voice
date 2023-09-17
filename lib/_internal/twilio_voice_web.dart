@@ -943,12 +943,13 @@ class Call extends MethodChannelTwilioCall {
       // TODO(cybex-dev) future actions
       // {'action': 'callback', 'title': 'Return Call'},
     ];
+    final callSid = callParams["CallSid"] as String;
 
     // show JS notification using SW
     NotificationService.instance.showNotification(
       action: action,
       title: title,
-      tag: "",
+      tag: callSid,
       body: body,
       actions: actions,
       requiresInteraction: true,
