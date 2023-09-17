@@ -1,5 +1,7 @@
 ## Next release
 
+* Fix: [Web] Multiple missed call notifications
+
 ## 0.1.0
 
 * Feat: [Android] Turn off the screen when a call is active and the head is against the handset. @solid-software (https://solid.software)
