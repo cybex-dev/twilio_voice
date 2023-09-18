@@ -61,13 +61,22 @@ object TelecomManagerExtension {
 
     fun TelecomManager.openPhoneAccountSettings(activity: Activity) {
         if (Build.MANUFACTURER.equals("Samsung", ignoreCase = true)) {
-            val intent = Intent(TelecomManager.ACTION_CHANGE_PHONE_ACCOUNTS)
-            intent.component = ComponentName(
-                "com.android.server.telecom",
-                "com.android.server.telecom.settings.EnableAccountPreferenceActivity"
-            )
-            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            activity.startActivity(intent, null)
+            try {
+                val intent = Intent(TelecomManager.ACTION_CHANGE_PHONE_ACCOUNTS)
+                intent.component = ComponentName(
+                    "com.android.server.telecom",
+                    "com.android.server.telecom.settings.EnableAccountPreferenceActivity"
+                )
+                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                activity.startActivity(intent, null)
+            } catch (e: Exception) {
+                Log.e("TelecomManager", "openPhoneAccountSettings: ${e.message}")
+
+                // use fallback method
+                val intent = Intent(TelecomManager.ACTION_CHANGE_PHONE_ACCOUNTS)
+                activity.startActivity(intent, null)
+            }
+
         } else {
             val intent = Intent(TelecomManager.ACTION_CHANGE_PHONE_ACCOUNTS)
             activity.startActivity(intent, null)
