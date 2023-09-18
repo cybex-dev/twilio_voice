@@ -2,6 +2,8 @@
 
 * Fix: [Web] Multiple missed call notifications
 * Fix: [Android] `openPhoneAccountsSettings` not always opening on various Android (mainly Samsung) devices
+* Fix: Showing `CallDirection.outgoing` instead of `CallDirection.incoming` when Incoming call is ringing in `CallEventsListeners`.
+* Fix: `ActiveCall` is not null even after the Call is declined.
 
 ## 0.1.0
 

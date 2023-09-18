@@ -315,15 +315,19 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
       // https://www.twilio.com/docs/api/errors/31486
       // The callee is busy.
       if (tokens[1].contains("31603") || tokens[1].contains("31486")) {
+        call.activeCall = null;
         return CallEvent.declined;
       } else if (tokens.toString().toLowerCase().contains("call rejected")) {
         // Android call reject from string: "LOG|Call Rejected"
+        call.activeCall = null;
         return CallEvent.declined;
       } else if (tokens.toString().toLowerCase().contains("rejecting call")) {
         // iOS call reject from string: "LOG|provider:performEndCallAction: rejecting call"
+        call.activeCall = null;
         return CallEvent.declined;
       } else if (tokens[1].contains("Call Rejected")) {
         // macOS / web call reject from string: "Call Rejected"
+        call.activeCall = null;
         return CallEvent.declined;
       }
       return CallEvent.log;
