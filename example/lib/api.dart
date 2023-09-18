@@ -4,6 +4,8 @@ import 'package:http/http.dart' as http;
 
 import 'package:cloud_functions/cloud_functions.dart';
 
+import 'utils.dart';
+
 class Result {
   final String identity;
   final String accessToken;
@@ -20,14 +22,14 @@ class Result {
 ///  "token": "ey...",
 /// }
 Future<Result?> generateLocalAccessToken() async {
-  print("voip-registering with token ");
-  print("GET http://localhost:3000/token");
+  printDebug("voip-registering with token ");
+  printDebug("GET http://localhost:3000/token");
 
   final uri = Uri.http("localhost:3000", "/token");
   final result = await http.get(uri);
   if (result.statusCode >= 200 && result.statusCode < 300) {
-    print("Error requesting token from server [${uri.toString()}]");
-    print(result.body);
+    printDebug("Error requesting token from server [${uri.toString()}]");
+    printDebug(result.body);
     return null;
   }
   final data = jsonDecode(result.body);
@@ -35,8 +37,8 @@ Future<Result?> generateLocalAccessToken() async {
   final token = data["token"] as String?;
 
   if (identity == null || token == null) {
-    print("Error requesting token from server [${uri.toString()}]");
-    print(result.body);
+    printDebug("Error requesting token from server [${uri.toString()}]");
+    printDebug(result.body);
     return null;
   }
   return Result(identity, token);
@@ -51,8 +53,8 @@ Future<Result?> generateLocalAccessToken() async {
 /// }
 ///
 Future<Result?> generateFirebaseAccessToken() async {
-  print("voip-registtering with token ");
-  print("voip-calling voice-accessToken");
+  printDebug("voip-registtering with token ");
+  printDebug("voip-calling voice-accessToken");
   final function = FirebaseFunctions.instance.httpsCallable("voice-accessToken");
 
   final params = {
@@ -67,8 +69,8 @@ Future<Result?> generateFirebaseAccessToken() async {
   final token = data["token"] as String?;
 
   if (identity == null || token == null) {
-    print("Error requesting token from server [${function.toString()}]");
-    print(result.data);
+    printDebug("Error requesting token from server [${function.toString()}]");
+    printDebug(result.data);
     return null;
   }
   return Result(identity, token);

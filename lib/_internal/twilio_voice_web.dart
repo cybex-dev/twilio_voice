@@ -17,18 +17,19 @@ import 'package:js/js_util.dart';
 import 'package:twilio_voice/_internal/platform_interface/twilio_voice_platform_interface.dart';
 
 import '../twilio_voice.dart';
-import './js/js.dart' as twilioJs;
+import './js/js.dart' as twilio_js;
 import 'js/utils/js_object_utils.dart';
 import 'local_storage_web/local_storage_web.dart';
 import 'method_channel/twilio_call_method_channel.dart';
 import 'method_channel/twilio_voice_method_channel.dart';
+import 'utils.dart';
 
 class TwilioSW {
   TwilioSW._() {
     _setupServiceWorker();
   }
 
-  static TwilioSW _instance = TwilioSW._();
+  static final TwilioSW _instance = TwilioSW._();
 
   static TwilioSW get instance => _instance;
 
@@ -49,7 +50,7 @@ class TwilioSW {
   void _setupServiceWorker() {
     _webServiceWorkerContainerDelegate = html.window.navigator.serviceWorker;
     if (_webServiceWorkerContainerDelegate == null) {
-      print("No service worker found, check if you've registered the `twilio-sw.js` service worker and if the script is present.");
+      printDebug("No service worker found, check if you've registered the `twilio-sw.js` service worker and if the script is present.");
       return;
     }
 
@@ -58,7 +59,7 @@ class TwilioSW {
 
     _webServiceWorkerDelegate = _webServiceWorkerContainerDelegate?.controller;
     if (_webServiceWorkerDelegate == null) {
-      print("No service worker registered and/or controlling the page. Try (soft) refreshing?");
+      printDebug("No service worker registered and/or controlling the page. Try (soft) refreshing?");
       return;
     }
   }
@@ -91,11 +92,11 @@ class TwilioSW {
 }
 
 class NotificationService {
-  TwilioSW _twilioSW = TwilioSW.instance;
+  final TwilioSW _twilioSW = TwilioSW.instance;
 
   NotificationService._();
 
-  static NotificationService _instance = NotificationService._();
+  static final NotificationService _instance = NotificationService._();
 
   static NotificationService get instance => _instance;
 
@@ -112,7 +113,7 @@ class NotificationService {
     if(!await hasPermission()) {
       bool result = await requestPermission();
       if(!result) {
-        print("Cannot show notification with permission.");
+        printDebug("Cannot show notification with permission.");
         return;
       }
     }
@@ -145,8 +146,8 @@ class NotificationService {
       final perm = await html.Notification.requestPermission();
       return (perm == "granted");
     } catch (e) {
-      print("Failed to request notifications permission");
-      print(e);
+      printDebug("Failed to request notifications permission");
+      printDebug(e);
       return false;
     }
   }
@@ -156,8 +157,8 @@ class NotificationService {
       final perm = html.Notification.permission;
       return (perm == "granted");
     } catch (e) {
-      print("Failed to query notifications permission");
-      print(e);
+      printDebug("Failed to query notifications permission");
+      printDebug(e);
       return false;
     }
   }
@@ -223,7 +224,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
 
   final LocalStorageWeb _localStorage = LocalStorageWeb();
 
-  twilioJs.Device? device;
+  twilio_js.Device? device;
 
   html.Navigator get _webNavigatorDelegate => html.window.navigator;
 
@@ -240,10 +241,9 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
 
   Stream<CallEvent>? _callEventsListener;
 
+  @override
   Stream<CallEvent> get callEventsListener {
-    if (_callEventsListener == null) {
-      _callEventsListener = Logger.callEventsStream.map(parseCallEvent);
-    }
+    _callEventsListener ??= Logger.callEventsStream.map(parseCallEvent);
     return _callEventsListener!;
   }
 
@@ -259,11 +259,11 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
       action = data["action"];
       payload = data["payload"];
     } else {
-      print("Invalid data received from service worker: $data");
+      printDebug("Invalid data received from service worker: $data");
     }
 
     if (action == null) {
-      print("No action received from service worker");
+      printDebug("No action received from service worker");
       return;
     }
 
@@ -275,7 +275,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
         call.hangUp();
         break;
       default:
-        print("Unhandled action from service worker: $action");
+        printDebug("Unhandled action from service worker: $action");
     }
   }
 
@@ -289,7 +289,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   /// See [LocalStorageWeb.saveDefaultCallerName]
   @override
   Future<bool?> setDefaultCallerName(String callerName) async {
-    Logger.logLocalEvent("defaultCaller is " + callerName);
+    Logger.logLocalEvent("defaultCaller is $callerName");
     _localStorage.saveDefaultCallerName(callerName);
     return true;
   }
@@ -298,7 +298,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   /// See [LocalStorageWeb.removeRegisteredClient]
   @override
   Future<bool?> unregisterClient(String clientId) async {
-    Logger.logLocalEvent("Unregistering" + clientId);
+    Logger.logLocalEvent("Unregistering$clientId");
     _localStorage.removeRegisteredClient(clientId);
     return true;
   }
@@ -307,7 +307,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   /// See [LocalStorageWeb.addRegisteredClient]
   @override
   Future<bool?> registerClient(String clientId, String clientName) async {
-    Logger.logLocalEvent("Registering client " + clientId + ":" + clientName);
+    Logger.logLocalEvent("Registering client $clientId:$clientName");
     _localStorage.addRegisteredClient(clientId, clientName);
     return true;
   }
@@ -330,8 +330,8 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
       mediaStream.getTracks().forEach((track) => track.stop());
       return hasMicAccess();
     } catch (e) {
-      print("Failed to request microphone permission");
-      print(e);
+      printDebug("Failed to request microphone permission");
+      printDebug(e);
       return false;
     }
   }
@@ -344,7 +344,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
     try {
       final perm = await _webPermissionsDelegate?.query({"name": "microphone"});
       if (perm == null) {
-        print("Failed to query microphone permission");
+        printDebug("Failed to query microphone permission");
         return false;
       }
       if (perm.state == "granted") {
@@ -357,8 +357,8 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
         return false;
       }
     } catch (e) {
-      print("Failed to query microphone permission");
-      print(e);
+      printDebug("Failed to query microphone permission");
+      printDebug(e);
       return false;
     }
   }
@@ -393,7 +393,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
 
   /// Unregister device from Twilio. Returns true if successful, false otherwise.
   /// [accessToken] is ignored for web
-  /// See [twilioJs.Device.unregister]
+  /// See [twilio_js.Device.unregister]
   @override
   Future<bool?> unregister({String? accessToken}) async {
     if (device == null) {
@@ -405,7 +405,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
       TwilioSW.instance.destroy();
       return true;
     } catch (e) {
-      print("Failed to unregister device: $e");
+      printDebug("Failed to unregister device: $e");
       return false;
     }
   }
@@ -419,7 +419,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   }
 
   /// Creates and registered the Twilio Device. Returns true if successful, false otherwise.
-  /// See [twilioJs.Device.new]
+  /// See [twilio_js.Device.new]
   /// Note: [deviceToken] is ignored for web
   @override
   Future<bool?> setTokens({required String accessToken, String? deviceToken}) async {
@@ -428,12 +428,12 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
     // assert(deviceToken != null && deviceToken.isNotEmpty, "Device token cannot be null or empty");
     // if (device != null) {
     //   // check active calls?
-    //   print("Twilio device already active, unregistering...");
+    //   printDebug("Twilio device already active, unregistering...");
     //   try {
     //     await device!.unregister();
     //
     //   } catch (e) {
-    //     print("Failed to unregister device: $e");
+    //     printDebug("Failed to unregister device: $e");
     //     return false;
     //   }
     // }
@@ -441,13 +441,13 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
       /// opus set as primary code
       /// https://www.twilio.com/blog/client-javascript-sdk-1-7-ga
       List<String> codecs = ["opus", "pcmu"];
-      twilioJs.DeviceInitOptions options = twilioJs.DeviceInitOptions(
+      twilio_js.DeviceInitOptions options = twilio_js.DeviceInitOptions(
         codecPreferences: codecs,
         closeProtection: true,
       );
 
       /// create new Twilio device
-      device = twilioJs.Device(accessToken, options);
+      device = twilio_js.Device(accessToken, options);
       _call.device = device;
       _attachDeviceListeners(device!);
 
@@ -456,14 +456,14 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
 
       return true;
     } catch (e) {
-      print("Failed to set Twilio Device token: $e");
+      printDebug("Failed to set Twilio Device token: $e");
       return false;
     }
   }
 
-  /// Attach event listeners to [twilioJs.Device]
-  /// See [twilioJs.Device.on]
-  void _attachDeviceListeners(twilioJs.Device device) {
+  /// Attach event listeners to [twilio_js.Device]
+  /// See [twilio_js.Device.on]
+  void _attachDeviceListeners(twilio_js.Device device) {
     // ignore: unnecessary_null_comparison
     assert(device != null, "Device cannot be null");
     device.on("registered", js.allowInterop(_onDeviceRegistered));
@@ -473,9 +473,9 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
     device.on("tokenWillExpire", js.allowInterop(_onTokenWillExpire));
   }
 
-  /// Detach event listeners to [twilioJs.Device]
-  /// See [twilioJs.Device.off]
-  void _detachDeviceListeners(twilioJs.Device device) {
+  /// Detach event listeners to [twilio_js.Device]
+  /// See [twilio_js.Device.off]
+  void _detachDeviceListeners(twilio_js.Device device) {
     // ignore: unnecessary_null_comparison
     assert(device != null, "Device cannot be null");
     device.off("registered", js.allowInterop(_onDeviceRegistered));
@@ -485,11 +485,11 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
     device.off("tokenWillExpire", js.allowInterop(_onTokenWillExpire));
   }
 
-  /// On device registered and ready to make/receive calls via [twilioJs.Device.on] and [twilioJs.TwilioDeviceEvents.registered]
+  /// On device registered and ready to make/receive calls via [twilio_js.Device.on] and [twilio_js.TwilioDeviceEvents.registered]
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#registered-event
   void _onDeviceRegistered() {
-    print("_onDeviceRegistered");
-    print("Device registered for callInvites");
+    printDebug("_onDeviceRegistered");
+    printDebug("Device registered for callInvites");
   }
 
   // /// On device registered and ready to make/receive calls via [twilioJs.Device.on] and [twilioJs.TwilioDeviceEvents.registered]
@@ -504,23 +504,23 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   //   });
   // }
 
-  /// On device unregistered, access token disabled and won't receive any more call invites [twilioJs.Device.off] and [twilioJs.TwilioDeviceEvents.unregistered]
+  /// On device unregistered, access token disabled and won't receive any more call invites [twilio_js.Device.off] and [twilio_js.TwilioDeviceEvents.unregistered]
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#unregistered-event
   void _onDeviceUnregistered() {
-    print("_onDeviceUnregistered");
-    print("Device unregistered, won't receive no more callInvites");
+    printDebug("_onDeviceUnregistered");
+    printDebug("Device unregistered, won't receive no more callInvites");
   }
 
   /// On device error
-  /// See [twilioJs.Device.on] and [twilioJs.TwilioDeviceEvents.error]
+  /// See [twilio_js.Device.on] and [twilio_js.TwilioDeviceEvents.error]
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#error-event
-  void _onDeviceError(twilioJs.TwilioError twilioError, twilioJs.Call? call) {
+  void _onDeviceError(twilio_js.TwilioError twilioError, twilio_js.Call? call) {
     logLocalEvent(twilioError.message);
   }
 
-  /// On incoming call received via [twilioJs.Device.on] and [twilioJs.TwilioDeviceEvents.incoming]
+  /// On incoming call received via [twilio_js.Device.on] and [twilio_js.TwilioDeviceEvents.incoming]
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#incoming-event
-  void _onDeviceIncoming(twilioJs.Call call) {
+  void _onDeviceIncoming(twilio_js.Call call) {
     requestMicAccess();
     this.call.nativeCall = call;
     final params = getCallParams(call);
@@ -552,14 +552,14 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
     return params["__TWI_CALLER_URL"] ?? params["imageUrl"] ?? params["url"];
   }
 
-  void _showIncomingCallNotification(twilioJs.Call call) {
+  void _showIncomingCallNotification(twilio_js.Call call) {
     // request permission to show notification
     NotificationService.instance.requestPermission();
 
-    final action = 'incoming';
+    const action = 'incoming';
     final callParams = getCallParams(call);
     final title = _resolveCallerName(callParams);
-    final body = 'Incoming Call';
+    const body = 'Incoming Call';
     final callSid = callParams["CallSid"] as String;
     final imageUrl = _resolveImageUrl(callParams);
     final actions = <Map<String, String>>[
@@ -582,32 +582,32 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
     );
   }
 
-  /// On device token about to expire (default is 10s prior to expiry), via [twilioJs.Device.on] and [twilioJs.TwilioDeviceEvents.tokenWillExpire]
+  /// On device token about to expire (default is 10s prior to expiry), via [twilio_js.Device.on] and [twilio_js.TwilioDeviceEvents.tokenWillExpire]
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#tokenwillexpire-event
-  void _onTokenWillExpire(twilioJs.Device device) {
+  void _onTokenWillExpire(twilio_js.Device device) {
     logLocalEventEntries(["DEVICETOKEN", device.token], prefix: "");
   }
 }
 
 class Call extends MethodChannelTwilioCall {
   /// Twilio Call JS interface object
-  twilioJs.Call? _jsCall;
-  twilioJs.Device? _device;
+  twilio_js.Call? _jsCall;
+  twilio_js.Device? _device;
 
   // ignore: unnecessary_getters_setters
-  twilioJs.Device? get device => _device;
+  twilio_js.Device? get device => _device;
 
-  set device(twilioJs.Device? value) {
+  set device(twilio_js.Device? value) {
     _device = value;
   }
 
-  Call({twilioJs.Call? call}) : _jsCall = call;
+  Call({twilio_js.Call? call}) : _jsCall = call;
 
-  twilioJs.Call? get nativeCall {
+  twilio_js.Call? get nativeCall {
     return _jsCall;
   }
 
-  set nativeCall(twilioJs.Call? value) {
+  set nativeCall(twilio_js.Call? value) {
     _jsCall = value;
     if (value != null) {
       activeCall = activeCallFromNativeJsCall(value);
@@ -616,7 +616,7 @@ class Call extends MethodChannelTwilioCall {
   }
 
   /// Send digits to the call. Returns true if successful, false otherwise.
-  /// See [twilioJs.Call.sendDigits]
+  /// See [twilio_js.Call.sendDigits]
   @override
   Future<bool?> sendDigits(String digits) async {
     if (_jsCall != null) {
@@ -645,7 +645,7 @@ class Call extends MethodChannelTwilioCall {
     return Future.value(false);
   }
 
-  /// Not currently implemented for web
+  /// Toggle mute on/off. Returns true if successful, false otherwise.
   @override
   Future<bool?> toggleMute(bool isMuted) async {
     Logger.logLocalEvent(isMuted ? "Mute" : "Unmute", prefix: "");
@@ -653,6 +653,16 @@ class Call extends MethodChannelTwilioCall {
       _jsCall!.mute(isMuted);
     }
     return isMuted;
+  }
+
+  /// Is call muted. Returns true if muted, false otherwise.
+  @override
+  Future<bool> isMuted() async {
+    if (_jsCall != null) {
+      return _jsCall!.isMuted();
+    } else {
+      return false;
+    }
   }
 
   /// Not currently implemented for web
@@ -669,8 +679,20 @@ class Call extends MethodChannelTwilioCall {
     return Future.value(false);
   }
 
+  /// Not currently implemented for web
+  @override
+  Future<bool> isHolding() {
+    return Future.value(false);
+  }
+
+  /// Not currently implemented for web
+  @override
+  Future<bool> isOnSpeaker() {
+    return Future.value(false);
+  }
+
   /// Answers an inbound call. Returns true if successful, false otherwise.
-  /// See [twilioJs.Call.accept]
+  /// See [twilio_js.Call.accept]
   @override
   Future<bool?> answer() async {
     if (_jsCall != null) {
@@ -706,18 +728,18 @@ class Call extends MethodChannelTwilioCall {
       return null;
     }
     final params = getCallParams(_jsCall!);
-    return params["CallSid"] ?? null;
+    return params["CallSid"];
   }
 
   /// Returns true if there is an active call, a convenience function for [activeCall != null], false otherwise.
   /// See [MethodChannelTwilioCall.activeCall]
   @override
   Future<bool> isOnCall() async {
-    return this.device?.isBusy ?? _jsCall != null;
+    return device?.isBusy ?? _jsCall != null;
   }
 
   /// Returns true if the call was disconnected, false otherwise.
-  /// See [twilioJs.Call.disconnect]
+  /// See [twilio_js.Call.disconnect]
   @override
   Future<bool?> hangUp() async {
     if (_jsCall != null) {
@@ -726,7 +748,8 @@ class Call extends MethodChannelTwilioCall {
       _cancelNotification(callSid!);
 
       CallStatus callStatus = getCallStatus(_jsCall!);
-      if (callStatus == CallStatus.ringing) {
+      // reject incoming call that is both outbound ringing or inbound pending
+      if (callStatus == CallStatus.ringing || callStatus == CallStatus.pending) {
         _jsCall!.reject();
       } else {
         _jsCall!.disconnect();
@@ -749,7 +772,7 @@ class Call extends MethodChannelTwilioCall {
   ///  ...extraOptions
   /// }
   /// </code>
-  /// See [twilioJs.Device.connect]
+  /// See [twilio_js.Device.connect]
   @override
   Future<bool?> place({required String from, required String to, Map<String, dynamic>? extraOptions}) async {
     assert(device != null,
@@ -774,22 +797,21 @@ class Call extends MethodChannelTwilioCall {
     // final options = twilioJs.DeviceConnectOptions(params);
     try {
       final callParams = js_util.jsify(params);
-      final options = twilioJs.DeviceConnectOptions(params: callParams);
+      final options = twilio_js.DeviceConnectOptions(params: callParams);
       final promise = _device!.connect(options);
-      final _call = await js_util.promiseToFuture(promise);
-      nativeCall = _call;
+      nativeCall = await js_util.promiseToFuture(promise);
 
       _attachCallEventListeners(_jsCall!);
     } catch (e) {
-      print("Failed to place call: $e");
+      printDebug("Failed to place call: $e");
       return false;
     }
     return true;
   }
 
   /// Attach event listeners to the active call
-  /// See [twilioJs.Call.on]
-  void _attachCallEventListeners(twilioJs.Call call) {
+  /// See [twilio_js.Call.on]
+  void _attachCallEventListeners(twilio_js.Call call) {
     // ignore: unnecessary_null_comparison
     assert(call != null, "Call cannot be null");
     // call.on("ringing", js.allowInterop(_onCallRinging));
@@ -806,9 +828,9 @@ class Call extends MethodChannelTwilioCall {
   }
 
   /// Detach event listeners to the active call
-  /// See [twilioJs.Call.off]
+  /// See [twilio_js.Call.off]
   /// 'off' event listener isn't implemented in twilio-voice.js
-  void _detachCallEventListeners(twilioJs.Call call) {
+  void _detachCallEventListeners(twilio_js.Call call) {
     // ignore: unnecessary_null_comparison
     assert(call != null, "Call cannot be null");
     // call.removeListener("ringing", js.allowInterop(_onCallRinging));
@@ -825,7 +847,7 @@ class Call extends MethodChannelTwilioCall {
   }
 
   void _onLogEvent(String status) {
-    log("Log Event: " + status);
+    log("Log Event: $status");
   }
 
   /// On accept/answering (inbound) call
@@ -864,7 +886,7 @@ class Call extends MethodChannelTwilioCall {
 
   /// On accept/answering (inbound) call
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#accept-event
-  void _onCallAccept(twilioJs.Call call) {
+  void _onCallAccept(twilio_js.Call call) {
     if (call.direction == "INCOMING") {
       final params = getCallParams(call);
       final from = params["From"] ?? "";
@@ -880,7 +902,7 @@ class Call extends MethodChannelTwilioCall {
 
   /// On disconnect active (outbound/inbound) call
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#disconnect-event
-  void _onCallDisconnect(twilioJs.Call call) {
+  void _onCallDisconnect(twilio_js.Call call) {
     final status = getCallStatus(call);
     _detachCallEventListeners(call);
     if (status == CallStatus.closed && _jsCall != null) {
@@ -910,23 +932,24 @@ class Call extends MethodChannelTwilioCall {
 
 
 
-  Future<void> _showMissedCallNotification(twilioJs.Call call) async {
-    final action = 'missed';
+  Future<void> _showMissedCallNotification(twilio_js.Call call) async {
+    const action = 'missed';
     final callParams = getCallParams(call);
     // TODO(cybex-dev) resolve from local storage
     final title = callParams["From"] ?? "";
-    final body = 'Missed Call';
+    const body = 'Missed Call';
 
     final actions = <Map<String, String>>[
       // TODO(cybex-dev) future actions
       // {'action': 'callback', 'title': 'Return Call'},
     ];
+    final callSid = callParams["CallSid"] as String;
 
     // show JS notification using SW
     NotificationService.instance.showNotification(
       action: action,
       title: title,
-      tag: "",
+      tag: callSid,
       body: body,
       actions: actions,
       requiresInteraction: true,
@@ -945,13 +968,13 @@ class Call extends MethodChannelTwilioCall {
 
   /// On reject (inbound) call
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#error-event
-  void _onCallError(twilioJs.TwilioError error) {
+  void _onCallError(twilio_js.TwilioError error) {
     Logger.logLocalEvent("Call Error: ${error.code}, ${error.message}");
   }
 
   /// On active call connected to remote client
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall
-  void _onCallConnected(twilioJs.Call call) {
+  void _onCallConnected(twilio_js.Call call) {
     nativeCall = call;
     final direction = call.direction == "INCOMING" ? "Incoming" : "Outgoing";
     final params = getCallParams(call);
@@ -970,7 +993,7 @@ class Call extends MethodChannelTwilioCall {
     Logger.logLocalEvent("Reconnected");
   }
 
-  CallStatus getCallStatus(twilioJs.Call call) {
+  CallStatus getCallStatus(twilio_js.Call call) {
     final status = call.status();
     return parseCallStatus(status);
   }
@@ -997,7 +1020,7 @@ Map<String, String> _getCustomCallParameters(dynamic callParameters) {
   return Map<String, String>.fromEntries(entries);
 }
 
-Map<String, String> getCallParams(twilioJs.Call call) {
+Map<String, String> getCallParams(twilio_js.Call call) {
   final customParams = _getCustomCallParameters(call.customParameters);
   final params = jsToStringMap(call.parameters);
   params.remove("Params");
@@ -1005,7 +1028,7 @@ Map<String, String> getCallParams(twilioJs.Call call) {
   return Map<String, String>.from(customParams)..addAll(params);
 }
 
-ActiveCall activeCallFromNativeJsCall(twilioJs.Call call, {DateTime? initiated}) {
+ActiveCall activeCallFromNativeJsCall(twilio_js.Call call, {DateTime? initiated}) {
   final params = getCallParams(call);
   final from = params["From"] ?? params["from"] ?? "";
   final to = params["To"] ?? params["to"] ?? "";
@@ -1015,7 +1038,7 @@ ActiveCall activeCallFromNativeJsCall(twilioJs.Call call, {DateTime? initiated})
 
   final direction = call.direction;
   final date = initiated ?? DateTime.now();
-  final _activeCall = ActiveCall(
+  return ActiveCall(
     from: from,
     // call.customParameters["From"] ?? "",
     to: to,
@@ -1025,5 +1048,4 @@ ActiveCall activeCallFromNativeJsCall(twilioJs.Call call, {DateTime? initiated})
     callDirection: direction == "INCOMING" ? CallDirection.incoming : CallDirection.outgoing,
     initiated: date,
   );
-  return _activeCall;
 }

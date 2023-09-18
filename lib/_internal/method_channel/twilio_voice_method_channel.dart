@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../../twilio_voice.dart';
 import '../platform_interface/twilio_call_platform_interface.dart';
 import '../platform_interface/twilio_voice_platform_interface.dart';
+import '../utils.dart';
 import 'twilio_call_method_channel.dart';
 
 typedef OnDeviceTokenChanged = Function(String token);
@@ -298,14 +299,14 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
       List<String> tokens = state.split('|');
       if (kDebugMode) {
         if (tokens.length == 4) {
-          print("Name: ${tokens[2]}, granted state: ${tokens[3]}");
+          printDebug("Name: ${tokens[2]}, granted state: ${tokens[3]}");
         }
       }
       return CallEvent.permission;
     } else if (state.startsWith("LOG|")) {
       List<String> tokens = state.split('|');
       if (kDebugMode) {
-        print(tokens[1]);
+        printDebug(tokens[1]);
       }
 
       // source: https://www.twilio.com/docs/api/errors/31603
@@ -333,7 +334,7 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
     } else if (state.startsWith("Connected|")) {
       call.activeCall = createCallFromState(state, initiated: true);
       if (kDebugMode) {
-        print(
+        printDebug(
             'Connected - From: ${call.activeCall!.from}, To: ${call.activeCall!.to}, StartOn: ${call.activeCall!.initiated}, Direction: ${call.activeCall!.callDirection}');
       }
       return CallEvent.connected;
@@ -342,7 +343,7 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
       call.activeCall = createCallFromState(state, callDirection: CallDirection.incoming);
 
       if (kDebugMode) {
-        print('Incoming - From: ${call.activeCall!.from}, To: ${call.activeCall!.to}, Direction: ${call.activeCall!.callDirection}');
+        printDebug('Incoming - From: ${call.activeCall!.from}, To: ${call.activeCall!.to}, Direction: ${call.activeCall!.callDirection}');
       }
 
       return CallEvent.incoming;
@@ -350,14 +351,14 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
       call.activeCall = createCallFromState(state);
 
       if (kDebugMode) {
-        print('Ringing - From: ${call.activeCall!.from}, To: ${call.activeCall!.to}, Direction: ${call.activeCall!.callDirection}');
+        printDebug('Ringing - From: ${call.activeCall!.from}, To: ${call.activeCall!.to}, Direction: ${call.activeCall!.callDirection}');
       }
 
       return CallEvent.ringing;
     } else if (state.startsWith("Answer")) {
       call.activeCall = createCallFromState(state, callDirection: CallDirection.incoming);
       if (kDebugMode) {
-        print('Answer - From: ${call.activeCall!.from}, To: ${call.activeCall!.to}, Direction: ${call.activeCall!.callDirection}');
+        printDebug('Answer - From: ${call.activeCall!.from}, To: ${call.activeCall!.to}, Direction: ${call.activeCall!.callDirection}');
       }
 
       return CallEvent.answer;
@@ -365,7 +366,7 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
       call.activeCall = createCallFromState(state, callDirection: CallDirection.outgoing);
 
       if (kDebugMode) {
-        print('Returning Call - From: ${call.activeCall!.from}, To: ${call.activeCall!.to}, Direction: ${call.activeCall!.callDirection}');
+        printDebug('Returning Call - From: ${call.activeCall!.from}, To: ${call.activeCall!.to}, Direction: ${call.activeCall!.callDirection}');
       }
 
       return CallEvent.returningCall;
@@ -398,7 +399,7 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
         return CallEvent.bluetoothOff;
       default:
         if (kDebugMode) {
-          print('$state is not a valid CallState.');
+          printDebug('$state is not a valid CallState.');
         }
         throw ArgumentError('$state is not a valid CallState.');
     }
@@ -407,11 +408,12 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
 
 ActiveCall createCallFromState(String state, {CallDirection? callDirection, bool initiated = false}) {
   List<String> tokens = state.split('|');
+  final direction = callDirection ?? ("incoming" == tokens[3].toLowerCase() ? CallDirection.incoming : CallDirection.outgoing);
   return ActiveCall(
     from: tokens[1],
     to: tokens[2],
     initiated: initiated ? DateTime.now() : null,
-    callDirection: callDirection ?? ("Incoming" == tokens[3] ? CallDirection.incoming : CallDirection.outgoing),
+    callDirection: direction,
     customParams: parseCustomParams(tokens),
   );
 }

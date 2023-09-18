@@ -100,7 +100,8 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     private var isBluetoothOn: Boolean = false
     private var isMuted: Boolean = false
     private var isHolding: Boolean = false
-    private var callSid: String? = null
+    private val callSid: String?
+        get() = TVConnectionService.getActiveCallHandle()
 
     private var hasStarted = false
 
@@ -1542,7 +1543,6 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             }
 
             TVBroadcastReceiver.ACTION_ACTIVE_CALL_CHANGED -> {
-                callSid = intent.getStringExtra(TVBroadcastReceiver.EXTRA_CALL_HANDLE)
                 Log.d(TAG, "handleBroadcastIntent: Active call changed to $callSid")
             }
 
@@ -1572,7 +1572,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                         put(key, value)
                     }
                 }.toString()
-                callSid = callHandle
+//                callSid = callHandle
                 logEvents("", arrayOf("Incoming", from, to, CallDirection.INCOMING.label, params))
                 logEvents("", arrayOf("Ringing", from, to, CallDirection.INCOMING.label, params))
             }
@@ -1586,7 +1586,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                         )
                         return
                     }
-                callSid = null
+//                callSid = null
                 Log.d(TAG, "handleBroadcastIntent: Call ended $callHandle")
                 logEvent("", "Call ended")
             }
@@ -1639,7 +1639,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                         put(key, value)
                     }
                 }.toString()
-                callSid = callHandle
+//                callSid = callHandle
                 logEvents("", arrayOf("Answer", from, to, params))
             }
 
@@ -1697,7 +1697,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 val direction = intent.getIntExtra(TVBroadcastReceiver.EXTRA_CALL_DIRECTION, -1)
                 val callDirection = CallDirection.fromId(direction).toString()
 
-                callSid = callHandle
+//                callSid = callHandle
                 logEvents("", arrayOf("Ringing", from, to, callDirection))
             }
 
@@ -1726,8 +1726,8 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                     return
                 }
                 val direction = intent.getIntExtra(TVBroadcastReceiver.EXTRA_CALL_DIRECTION, -1)
-                val callDirection = CallDirection.fromId(direction).toString()
-                callSid = callHandle
+                val callDirection = CallDirection.fromId(direction)!!.label
+//                callSid = callHandle
                 logEvents("", arrayOf("Connected", from, to, callDirection))
             }
 

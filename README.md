@@ -163,48 +163,71 @@ See [example](https://github.com/cybex-dev/twilio_voice/blob/master/example/andr
 
 ### Web Setup:
 
-There are 2 important files for Twilio incoming/missed call notifications to work:
+There are 4 important files for Twilio incoming/missed call notifications to work:
 
 - `notifications.js` is the main file, it handles the notifications and the service worker.
-- `twilio-sw.js` is the service worker, it is used to handle the incoming calls.
+- `twilio-sw.js` is the service worker _content_ used to work with the default `flutter_service_worker.js` (this can be found in `build/web/flutter_service_worker.js` after calling `flutter build web`). This file's contents are to be copied into the `flutter_service_worker.js` file after you've built your application.
 
 Also, the twilio javascript SDK itself, `twilio.min.js` is needed.
 
-To ensure proper/as intended setup:
+### To ensure proper/as intended setup:
 
-1. Get all 3 files (`notifications.js`, `twilio.min.js` and `twilio-sw.js`) from `example/web` folder
-2. Copy all 3 into your own project,
-3. (optional) Review & change the `notifications.js`, `twilio-sw.js) files to match your needs.
+1. Copy files `example/web/notifications.js` and `example/web/twilio.min.js` into your application's `web` folder.
+2. This step should be done AFTER you've built your application, every time the `flutter_service_worker.js` changes (this includes hot reloads on your local machine unfortunately)
+   1. Copy the contents of `example/web/twilio-sw.js` into your `build/web/flutter_service_worker.js` file, **at the end of the file**. See [service-worker](#service-worker) for more information.
+
+Note, these files can be changed to suite your needs - however the core functionality should remain the same: responding to `notificationclick`, `notificationclose`, `message` events and associated sub-functions.
 
 Finally, add the following code to your `index.html` file, **at the end of body tag**:
 
 ```html
     <body>
+        <!--Start Twilio Voice impl-->
         <!--twilio native js library-->
         <script type="text/javascript" src="./twilio.min.js"></script>
-        <!--twilio native js library-->
-        <script type="text/javascript" src="./notifications.js"></script>
+        <!--End Twilio Voice impl-->
 
         <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', async () => {
-                await navigator.serviceWorker.register('twilio-sw.js').then(value => {
-                    console.log('Twilio Voice Service worker registered successfully.');
-                }).catch((error) => {
-                    console.warn('Error registering Twilio Service Worker: ' + error.message + '. This prevents notifications from working natively');
-                });
-            });
-        }
-        </script>
+            window.addEventListener('load', function(ev) {
+              // Download main.dart.js
+              ...          
     </body>
 ```
 
 #### Web Considerations
 
-Notice should be given to using `firebase-messaging-sw.js` in addition to `twilio-sw.js` since these may cause conflict in service worker events being handled.
-
 _If you need to debug the service worker, open up Chrome Devtools, go to Application tab, and select Service Workers from the left menu. There you can see the service workers and their status.
 To review service worker `notificationclick`, `notificationclose`, `message`, etc events - do this using Chrome Devtools (Sources tab, left panel below 'site code' the service workers are listed)_
+
+##### Service Worker
+
+Unifying the service worker(s) is best done via post-compilation tools or a CI/CD pipeline (suggested).
+
+A snippet of the suggested service worker integration is as follows:
+
+```yaml
+#...
+- run: cd ./example; flutter build web --release --target=lib/main.dart --output=build/web
+
+- name: Update service worker
+  run: cat ./example/web/twilio-sw.js >> ./example/build/web/flutter_service_worker.js
+#...
+```
+
+A complete example could be found in the github workflows `.github/workflows/flutter.yml` file, see [here](https://github.com/cybex-dev/twilio_voice/blob/master/.github/workflows/flutter.yml). 
+
+##### Web Notifications
+
+2 types of notifications are shown:
+ - Incoming call notifications with 2 buttons: `Answer` and `Reject`,
+ - Missed call notifications with 1 button: `Call back`.
+
+Notifications are presented as **alerts**. These notifications may not always been shown, check:
+ - if the browser supports notifications,
+ - if the user has granted permissions to show notifications,
+ - if the notifications display method / notifications is enabled by the system (e.g. macOS notifications are disabled, or Windows notifications are disabled, etc).
+ - if there are already notifications shown (https://stackoverflow.com/a/36383155/4628115)
+ - if system is in 'Do Not Disturb' or 'Focus' mode.
 
 ### MacOS Setup:
 
@@ -332,12 +355,23 @@ Caller is usually referred to as `call.from` or `callInvite.from`. This can eith
 
 The following rules are applied to determine the caller/recipient name, which is shown in the call screen and heads-up notification:
 
-- If the caller is empty/not provided, the default caller name is shown e.g. "Unknown Caller", else
-- if the caller is a number, the plugin will show the number as is, else
-- if the caller is a string, the plugin will interpret the string as follows:
-  - if the `__TWI_CALLER_NAME` parameter is provided, the plugin will show the value of `__TWI_CALLER_NAME` as is, else
-  - if the `__TWI_CALLER_ID` parameter is provided, the plugin will search for a registered client with the same id and show the client name, else
-  - if not found or not provided, the plugin will search for a registered client with the `call.from` value and show the client name, as a last resort
+##### Incoming Calls:
+
+`__TWI_CALLER_NAME` -> `resolve(__TWI_CALLER_ID)` -> (phone number) -> `registered client (from)` -> `defaultCaller name` -> `"Unknown Caller"`
+
+
+##### Outgoing Calls:
+
+`__TWI_RECIPIENT_NAME` -> `resolve(__TWI_RECIPIENT_ID)` -> (phone number) -> `registered client (to)` -> `defaultCaller name` -> `"Unknown Caller"`
+
+**Details explaination:**
+
+- if the call is an CallInvite (incoming), the plugin will interpret the string as follows or if the call is outgoing, the twilio `To` parameter field is used to:
+  - if the `__TWI_CALLER_NAME` (or `__TWI_RECIPIENT_NAME`) parameter is provided, the plugin will show the value of `__TWI_CALLER_NAME` (or `__TWI_RECIPIENT_NAME`) as is, else
+  - if the `__TWI_CALLER_ID` (or `__TWI_RECIPIENT_ID`) parameter is provided, the plugin will search for a registered client with the same id and show the client name,
+- if the caller (`from` or `to` fields) is empty/not provided, the default caller name is shown e.g. "Unknown Caller", else
+- else if the caller (`from` or `to` fields) is a number, the plugin will show the number as is, else
+- else the plugin will search for a registered client with the `callInvite.from` (or call.to) value and show the client name, as a last resort
   - the default caller name is shown e.g. "Unknown Caller"
 
 *Please note: the same approach applies to both caller and recipient name resolution.*

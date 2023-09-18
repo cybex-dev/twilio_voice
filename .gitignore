@@ -45,3 +45,7 @@ build/
 
 # Lock files
 *.lock
+
+*.log
+
+.firebase/

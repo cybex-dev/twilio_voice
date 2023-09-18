@@ -12,6 +12,7 @@ import android.telecom.Connection
 import android.telecom.DisconnectCause
 import android.util.Log
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
+import com.twilio.twilio_voice.call.TVParameters
 import com.twilio.twilio_voice.receivers.TVBroadcastReceiver
 import com.twilio.twilio_voice.types.CallAudioStateExtension.copyWith
 import com.twilio.twilio_voice.types.CallDirection
@@ -28,6 +29,7 @@ import com.twilio.voice.CallInvite
 class TVCallInviteConnection(
     ctx: Context,
     ci: CallInvite,
+    callParams: TVParameters,
     onEvent: ValueBundleChanged<String>? = null,
     onAction: ValueBundleChanged<String>? = null,
     onDisconnected: CompletionHandler<DisconnectCause>? = null
@@ -39,6 +41,7 @@ class TVCallInviteConnection(
 
     init {
         callInvite = ci
+        setCallParameters(callParams)
     }
 
     override fun onAnswer() {
@@ -93,6 +96,7 @@ open class TVCallConnection(
     var onAction: ValueBundleChanged<String>? = null
     private var onCallStateListener: CompletionHandler<Call.State>? = null
     open val callDirection = CallDirection.OUTGOING
+    private var callParams: TVParameters? = null
 
     init {
         context = ctx
@@ -117,6 +121,14 @@ open class TVCallConnection(
 
     fun setOnCallStateListener(listener: CompletionHandler<Call.State>) {
         onCallStateListener = listener
+    }
+
+    fun setCallParameters(params: TVParameters) {
+        callParams = params
+    }
+
+    fun getCallParameters(): TVParameters? {
+        return callParams
     }
 
     //region Call.Listener
@@ -158,26 +170,26 @@ open class TVCallConnection(
                 setInitialized()
             }
         }
+        onCallStateListener?.withValue(call.state)
         onEvent?.onChange(TVNativeCallEvents.EVENT_RINGING, Bundle().apply {
-            putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, call.sid)
-            putString(TVBroadcastReceiver.EXTRA_CALL_FROM, call.from ?: "")
-            putString(TVBroadcastReceiver.EXTRA_CALL_TO, call.to ?: "")
+            putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callParams?.callSid)
+            putString(TVBroadcastReceiver.EXTRA_CALL_FROM, callParams?.fromRaw)
+            putString(TVBroadcastReceiver.EXTRA_CALL_TO, callParams?.toRaw)
             putInt(TVBroadcastReceiver.EXTRA_CALL_DIRECTION, callDirection.id)
         })
-        onCallStateListener?.withValue(call.state)
     }
 
     override fun onConnected(call: Call) {
         Log.d(TAG, "onConnected: onConnected")
         twilioCall = call
         setActive()
+        onCallStateListener?.withValue(call.state)
         onEvent?.onChange(TVNativeCallEvents.EVENT_CONNECTED, Bundle().apply {
-            putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, call.sid)
-            putString(TVBroadcastReceiver.EXTRA_CALL_FROM, call.from ?: "")
-            putString(TVBroadcastReceiver.EXTRA_CALL_TO, call.to ?: "")
+            putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callParams?.callSid)
+            putString(TVBroadcastReceiver.EXTRA_CALL_FROM, callParams?.fromRaw)
+            putString(TVBroadcastReceiver.EXTRA_CALL_TO, callParams?.toRaw)
             putInt(TVBroadcastReceiver.EXTRA_CALL_DIRECTION, callDirection.id)
         })
-        onCallStateListener?.withValue(call.state)
     }
 
     /**
@@ -193,14 +205,14 @@ open class TVCallConnection(
      */
     override fun onReconnecting(call: Call, callException: CallException) {
         twilioCall = call
+        onCallStateListener?.withValue(call.state)
         onEvent?.onChange(TVNativeCallEvents.EVENT_RECONNECTING, Bundle().apply {
-            putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, call.sid)
-            putString(TVBroadcastReceiver.EXTRA_CALL_FROM, call.from ?: "")
-            putString(TVBroadcastReceiver.EXTRA_CALL_TO, call.to ?: "")
+            putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callParams?.callSid)
+            putString(TVBroadcastReceiver.EXTRA_CALL_FROM, callParams?.fromRaw)
+            putString(TVBroadcastReceiver.EXTRA_CALL_TO, callParams?.toRaw)
             putInt(TVBroadcastReceiver.EXTRA_CALL_DIRECTION, callDirection.id)
             putExtras(callException.toBundle())
         })
-        onCallStateListener?.withValue(call.state)
     }
 
     /**
@@ -211,25 +223,25 @@ open class TVCallConnection(
     override fun onReconnected(call: Call) {
         twilioCall = call
         setActive()
-        onEvent?.onChange(TVNativeCallEvents.EVENT_RECONNECTED, Bundle().apply {
-            putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, call.sid)
-            putString(TVBroadcastReceiver.EXTRA_CALL_FROM, call.from ?: "")
-            putString(TVBroadcastReceiver.EXTRA_CALL_TO, call.to ?: "")
-            putInt(TVBroadcastReceiver.EXTRA_CALL_DIRECTION, callDirection.id)
-        })
         onCallStateListener?.withValue(call.state)
+        onEvent?.onChange(TVNativeCallEvents.EVENT_RECONNECTED, Bundle().apply {
+            putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callParams?.callSid)
+            putString(TVBroadcastReceiver.EXTRA_CALL_FROM, callParams?.fromRaw)
+            putString(TVBroadcastReceiver.EXTRA_CALL_TO, callParams?.toRaw)
+            putInt(TVBroadcastReceiver.EXTRA_CALL_DIRECTION, callDirection.id)
+        });
     }
 
     override fun onDisconnected(call: Call, reason: CallException?) {
         // TODO run below only if we did NOT ended call i.e. remove disconnect from other client
         Log.d(TAG, "onDisconnected: onDisconnected, reason: ${reason?.message}.\nException: ${reason.toString()}")
         twilioCall = null
+        onCallStateListener?.withValue(call.state)
         onEvent?.onChange(TVNativeCallEvents.EVENT_DISCONNECTED_REMOTE, Bundle().apply {
             reason?.toBundle()?.let { putExtras(it) }
         })
         setDisconnected(DisconnectCause(DisconnectCause.REMOTE))
         onDisconnected?.withValue(DisconnectCause(DisconnectCause.REMOTE))
-        onCallStateListener?.withValue(call.state)
         destroy()
     }
     //endregion

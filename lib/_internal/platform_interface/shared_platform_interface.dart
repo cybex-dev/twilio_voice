@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 import '../method_channel/shared_platform_method_channel.dart';
+import '../utils.dart';
 
 abstract class SharedPlatformInterface extends PlatformInterface {
   static const _kMethodChannelName = 'twilio_voice/messages';
@@ -12,11 +13,11 @@ abstract class SharedPlatformInterface extends PlatformInterface {
 
   /// Communication with native code
   MethodChannel get sharedChannel => _sharedChannel;
-  MethodChannel _sharedChannel = const MethodChannel(_kMethodChannelName);
+  final MethodChannel _sharedChannel = const MethodChannel(_kMethodChannelName);
 
   /// Communication to flutter code
   EventChannel get eventChannel => _eventChannel;
-  EventChannel _eventChannel = EventChannel(kEventChannelName);
+  final EventChannel _eventChannel = const EventChannel(kEventChannelName);
 
   // ignore: close_sinks
   StreamController<String>? _callEventsController;
@@ -69,7 +70,7 @@ abstract class SharedPlatformInterface extends PlatformInterface {
       message = "$prefix$separator$description";
     }
 
-    print("Sending event: $message");
+    printDebug("Sending event: $message");
     // Send events to EventChannel for integration into existing communication flow
     callEventsController.add(message);
   }

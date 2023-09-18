@@ -26,7 +26,7 @@ class MethodChannelTwilioCall extends TwilioCallPlatform {
   Future<bool?> place({required String from, required String to, Map<String, dynamic>? extraOptions}) {
     _activeCall = ActiveCall(from: from, to: to, callDirection: CallDirection.outgoing);
 
-    var options = extraOptions ?? Map<String, dynamic>();
+    var options = extraOptions ?? <String, dynamic>{};
     options['From'] = from;
     options['To'] = to;
     return _channel.invokeMethod('makeCall', options);
@@ -65,6 +65,7 @@ class MethodChannelTwilioCall extends TwilioCallPlatform {
   }
 
   /// Query's active call holding state
+  @override
   Future<bool?> isHolding() {
     return _channel.invokeMethod('isHolding', <String, dynamic>{});
   }
@@ -76,6 +77,7 @@ class MethodChannelTwilioCall extends TwilioCallPlatform {
   }
 
   /// Query's mute status of call, true if call is muted
+  @override
   Future<bool?> isMuted() {
     return _channel.invokeMethod('isMuted', <String, dynamic>{});
   }
@@ -92,6 +94,7 @@ class MethodChannelTwilioCall extends TwilioCallPlatform {
   }*/
 
   /// Query's speaker output status, true if on loud speaker.
+  @override
   Future<bool?> isOnSpeaker() {
     return _channel.invokeMethod('isOnSpeaker', <String, dynamic>{});
   }
