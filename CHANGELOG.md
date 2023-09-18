@@ -1,6 +1,7 @@
 ## Next release
 
 * Fix: [Web] Multiple missed call notifications
+* Fix: [Android] `openPhoneAccountsSettings` not always opening on various Android (mainly Samsung) devices
 
 ## 0.1.0
 
