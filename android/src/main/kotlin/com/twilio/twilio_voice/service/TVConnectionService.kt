@@ -590,6 +590,8 @@ class TVConnectionService : ConnectionService() {
         // Apply extras
         connection.extras = request.extras
 
+        startForegroundService()
+
         return connection
     }
 
