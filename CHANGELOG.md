@@ -4,6 +4,7 @@
 * Fix: [Android] `openPhoneAccountsSettings` not always opening on various Android (mainly Samsung) devices
 * Fix: Showing `CallDirection.outgoing` instead of `CallDirection.incoming` when Incoming call is ringing in `CallEventsListeners`.
 * Fix: `ActiveCall` is not null even after the Call is declined.
+* Fix: [Android] microphone not activating on Android +13 devices for outgoing calls. Big thanks to [@mohsen-jalali](https://github.com/mohsen-jalali) for the fix.
 
 ## 0.1.0
 
