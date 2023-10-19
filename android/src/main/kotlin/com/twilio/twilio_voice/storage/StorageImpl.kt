@@ -75,7 +75,8 @@ class StorageImpl(ctx: Context) : Storage {
     }
 
     override fun addRegisteredClient(id: String, name: String): Boolean {
-        assert(id.isNotEmpty()) { "addRegisteredClient: id cannot be empty" }
+        // TODO: remove this assert, it's not needed now.
+//        assert(id.isNotEmpty()) { "addRegisteredClient: id cannot be empty" }
         prefs.let {
             val editor = it.edit()
             return editor.putString(id, name).commit()
@@ -83,7 +84,8 @@ class StorageImpl(ctx: Context) : Storage {
     }
 
     override fun removeRegisteredClient(id: String): Boolean {
-        assert(id.isNotEmpty()) { "removeRegisteredClient: id cannot be empty" }
+        // TODO: remove this assert, it's not needed now.
+//        assert(id.isNotEmpty()) { "removeRegisteredClient: id cannot be empty" }
         prefs.let {
             val editor = it.edit()
             return editor.remove(id).commit()
