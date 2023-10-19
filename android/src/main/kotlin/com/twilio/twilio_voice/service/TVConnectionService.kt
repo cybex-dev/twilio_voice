@@ -472,6 +472,9 @@ class TVConnectionService : ConnectionService() {
     //endregion
 
     override fun onCreateIncomingConnection(connectionManagerPhoneAccount: PhoneAccountHandle?, request: ConnectionRequest?): Connection {
+        assert(request != null) { "ConnectionRequest cannot be null" }
+        assert(connectionManagerPhoneAccount != null) { "ConnectionManagerPhoneAccount cannot be null" }
+
         super.onCreateIncomingConnection(connectionManagerPhoneAccount, request)
         Log.d(TAG, "onCreateIncomingConnection")
 
@@ -512,6 +515,9 @@ class TVConnectionService : ConnectionService() {
     }
 
     override fun onCreateOutgoingConnection(connectionManagerPhoneAccount: PhoneAccountHandle?, request: ConnectionRequest?): Connection {
+        assert(request != null) { "ConnectionRequest cannot be null" }
+        assert(connectionManagerPhoneAccount != null) { "ConnectionManagerPhoneAccount cannot be null" }
+
         super.onCreateOutgoingConnection(connectionManagerPhoneAccount, request)
         Log.d(TAG, "onCreateOutgoingConnection")
 
