@@ -1,5 +1,7 @@
 ## Next release
 
+## 0.1.1
+
 * Fix: [Web] Multiple missed call notifications
 * Fix: [Android] `openPhoneAccountsSettings` not always opening on various Android (mainly Samsung) devices
 * Fix: Showing `CallDirection.outgoing` instead of `CallDirection.incoming` when Incoming call is ringing in `CallEventsListeners`.
