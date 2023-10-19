@@ -472,19 +472,22 @@ class TVConnectionService : ConnectionService() {
     //endregion
 
     override fun onCreateIncomingConnection(connectionManagerPhoneAccount: PhoneAccountHandle?, request: ConnectionRequest?): Connection {
+        assert(request != null) { "ConnectionRequest cannot be null" }
+        assert(connectionManagerPhoneAccount != null) { "ConnectionManagerPhoneAccount cannot be null" }
+
         super.onCreateIncomingConnection(connectionManagerPhoneAccount, request)
         Log.d(TAG, "onCreateIncomingConnection")
 
         val extras = request?.extras
         val myBundle: Bundle = extras?.getBundle(TelecomManager.EXTRA_INCOMING_CALL_EXTRAS) ?: run {
             Log.e(TAG, "onCreateIncomingConnection: request is missing Bundle EXTRA_INCOMING_CALL_EXTRAS")
-            return super.onCreateIncomingConnection(connectionManagerPhoneAccount, request)
+            throw Exception("onCreateIncomingConnection: request is missing Bundle EXTRA_INCOMING_CALL_EXTRAS");
         }
 
         myBundle.classLoader = CallInvite::class.java.classLoader
         val ci: CallInvite = myBundle.getParcelableSafe(EXTRA_INCOMING_CALL_INVITE) ?: run {
             Log.e(TAG, "onCreateIncomingConnection: request is missing CallInvite EXTRA_INCOMING_CALL_INVITE")
-            return super.onCreateIncomingConnection(connectionManagerPhoneAccount, request)
+            throw Exception("onCreateIncomingConnection: request is missing CallInvite EXTRA_INCOMING_CALL_INVITE");
         }
 
         // Create storage instance for call parameters
@@ -512,27 +515,30 @@ class TVConnectionService : ConnectionService() {
     }
 
     override fun onCreateOutgoingConnection(connectionManagerPhoneAccount: PhoneAccountHandle?, request: ConnectionRequest?): Connection {
+        assert(request != null) { "ConnectionRequest cannot be null" }
+        assert(connectionManagerPhoneAccount != null) { "ConnectionManagerPhoneAccount cannot be null" }
+
         super.onCreateOutgoingConnection(connectionManagerPhoneAccount, request)
         Log.d(TAG, "onCreateOutgoingConnection")
 
         val extras = request?.extras
         val myBundle: Bundle = extras?.getBundle(EXTRA_OUTGOING_PARAMS) ?: run {
             Log.e(TAG, "onCreateOutgoingConnection: request is missing Bundle EXTRA_OUTGOING_PARAMS")
-            return super.onCreateOutgoingConnection(connectionManagerPhoneAccount, request)
+            throw Exception("onCreateOutgoingConnection: request is missing Bundle EXTRA_OUTGOING_PARAMS");
         }
 
         // check required EXTRA_TOKEN, EXTRA_TO, EXTRA_FROM
         val token: String = myBundle.getString(EXTRA_TOKEN) ?: run {
             Log.e(TAG, "onCreateOutgoingConnection: ACTION_PLACE_OUTGOING_CALL is missing String EXTRA_TOKEN")
-            return super.onCreateOutgoingConnection(connectionManagerPhoneAccount, request)
+            throw Exception("onCreateOutgoingConnection: ACTION_PLACE_OUTGOING_CALL is missing String EXTRA_TOKEN");
         }
         val to = myBundle.getString(EXTRA_TO) ?: run {
             Log.e(TAG, "onCreateOutgoingConnection: ACTION_PLACE_OUTGOING_CALL is missing String EXTRA_TO")
-            return super.onCreateOutgoingConnection(connectionManagerPhoneAccount, request)
+            throw Exception("onCreateOutgoingConnection: ACTION_PLACE_OUTGOING_CALL is missing String EXTRA_TO");
         }
         val from = myBundle.getString(EXTRA_FROM) ?: run {
             Log.e(TAG, "onCreateOutgoingConnection: ACTION_PLACE_OUTGOING_CALL is missing String EXTRA_FROM")
-            return super.onCreateOutgoingConnection(connectionManagerPhoneAccount, request)
+            throw Exception("onCreateOutgoingConnection: ACTION_PLACE_OUTGOING_CALL is missing String EXTRA_FROM");
         }
 
         // Get all params from bundle
