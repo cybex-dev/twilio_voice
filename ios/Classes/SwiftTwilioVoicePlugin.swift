@@ -651,7 +651,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     }
     
     public func call(call: Call, isReconnectingWithError error: Error) {
-        self.sendPhoneCallEvents(description: "Reconnecting...", isError: false)
+        self.sendPhoneCallEvents(description: "Reconnecting", isError: false)
         
     }
     
