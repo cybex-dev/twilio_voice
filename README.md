@@ -321,6 +321,8 @@ The events sent are the following
 - incoming // web, MacOS only
 - ringing
 - connected
+- reconnected
+- reconnecting
 - callEnded
 - unhold
 - hold
