@@ -985,7 +985,7 @@ class Call extends MethodChannelTwilioCall {
 
   /// On active call reconnecting to Twilio network
   void _onCallReconnecting(dynamic twilioError) {
-    Logger.logLocalEvent("Reconnecting...");
+    Logger.logLocalEvent("Reconnecting");
   }
 
   /// On active call reconnecting to Twilio network

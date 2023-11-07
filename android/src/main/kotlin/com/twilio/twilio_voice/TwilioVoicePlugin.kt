@@ -1771,7 +1771,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             }
 
             TVNativeCallEvents.EVENT_RECONNECTING -> {
-                logEvent("", "Reconnecting...");
+                logEvent("", "Reconnecting");
             }
 
             TVNativeCallEvents.EVENT_RECONNECTED -> {

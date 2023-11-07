@@ -370,6 +370,8 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
       }
 
       return CallEvent.returningCall;
+    } else if (state.startsWith("Reconnecting")) {
+      return CallEvent.reconnecting;
     }
     switch (state) {
       case 'Ringing':
@@ -397,6 +399,8 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
         return CallEvent.bluetoothOn;
       case 'Bluetooth Off':
         return CallEvent.bluetoothOff;
+      case 'Reconnected':
+        return CallEvent.reconnected;
       default:
         if (kDebugMode) {
           printDebug('$state is not a valid CallState.');
