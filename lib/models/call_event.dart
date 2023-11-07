@@ -5,6 +5,7 @@ enum CallEvent {
   ringing,
   connected,
   reconnected,
+  reconnecting,
   callEnded,
   unhold,
   hold,

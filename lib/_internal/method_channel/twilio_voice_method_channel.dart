@@ -370,6 +370,8 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
       }
 
       return CallEvent.returningCall;
+    } else if (state.startsWith("Reconnecting")) {
+      return CallEvent.reconnecting;
     }
     switch (state) {
       case 'Ringing':
