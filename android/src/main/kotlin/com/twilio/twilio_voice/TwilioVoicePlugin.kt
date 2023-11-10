@@ -1065,6 +1065,10 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 Log.e(TAG, "No call phone permission, call `requestCallPhonePermission()` first")
                 return false
             }
+            if (!checkManageOwnCallsPermission()) {
+                Log.e(TAG, "No manage own calls permission, call `requestManageOwnCallsPermission()` first")
+                return false
+            }
 
             val callParams = HashMap<String, String>(params)
             if (params[Constants.PARAM_TO] == null) {

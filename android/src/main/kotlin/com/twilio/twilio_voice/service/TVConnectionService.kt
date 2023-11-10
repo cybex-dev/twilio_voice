@@ -27,6 +27,7 @@ import com.twilio.twilio_voice.types.CallDirection
 import com.twilio.twilio_voice.types.CompletionHandler
 import com.twilio.twilio_voice.types.ContextExtension.appName
 import com.twilio.twilio_voice.types.ContextExtension.hasCallPhonePermission
+import com.twilio.twilio_voice.types.ContextExtension.hasManageOwnCallsPermission
 import com.twilio.twilio_voice.types.IntentExtension.getParcelableExtraSafe
 import com.twilio.twilio_voice.types.TelecomManagerExtension.getPhoneAccountHandle
 import com.twilio.twilio_voice.types.TelecomManagerExtension.hasCallCapableAccount
@@ -395,6 +396,11 @@ class TVConnectionService : ConnectionService() {
 
                     if (!applicationContext.hasCallPhonePermission()) {
                         Log.e(TAG, "onStartCommand: Missing CALL_PHONE permission, request permission with `requestCallPhonePermission()`")
+                        return@let
+                    }
+
+                    if (!applicationContext.hasManageOwnCallsPermission()) {
+                        Log.e(TAG, "onStartCommand: Missing MANAGE_OWN_CALLS permission, request permission with `requestManageOwnCallsPermission()`")
                         return@let
                     }
 
