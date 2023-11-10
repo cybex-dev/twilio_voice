@@ -164,6 +164,8 @@ class _PermissionsBlockState extends State<PermissionsBlock> with WidgetsBinding
         case CallEvent.answer:
         case CallEvent.missedCall:
         case CallEvent.returningCall:
+        case CallEvent.reconnecting:
+        case CallEvent.reconnected:
           _updateStates();
           break;
 

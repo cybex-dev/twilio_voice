@@ -23,6 +23,8 @@ class _OnCallWidgetState extends State<OnCallWidget> {
       case CallEvent.answer:
       case CallEvent.missedCall:
       case CallEvent.returningCall:
+      case CallEvent.reconnecting:
+      case CallEvent.reconnected:
         _events.add(event);
         break;
       default:
