@@ -37,6 +37,8 @@ enum class TVMethodChannels(val method: String) {
     BACKGROUND_CALL_UI("backgroundCallUi"),
     SHOW_NOTIFICATIONS("showNotifications"),
     HAS_READ_PHONE_NUMBERS_PERMISSION("hasReadPhoneNumbersPermission"),
+    HAS_MANAGE_OWN_CALLS_PERMISSION("hasManageOwnCallsPermission"),
+    REQUEST_MANAGE_OWN_CALLS_PERMISSION("requestManageOwnCallsPermission"),
     @Deprecated("No longer required due to Custom UI replaced with native call screen")
     REQUIRES_BACKGROUND_PERMISSIONS("requiresBackgroundPermissions"),
     REQUEST_READ_PHONE_NUMBERS_PERMISSION("requestReadPhoneNumbersPermission"),

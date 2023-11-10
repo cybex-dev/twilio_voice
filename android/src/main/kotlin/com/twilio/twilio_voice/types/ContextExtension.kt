@@ -44,6 +44,14 @@ object ContextExtension {
     }
 
     /**
+     * Check if the app has the MANAGE_OWN_CALLS permission
+     * @return Boolean True if the app has the MANAGE_OWN_CALLS permission
+     */
+    fun Context.hasManageOwnCallsPermission(): Boolean {
+        return checkPermission(android.Manifest.permission.MANAGE_OWN_CALLS)
+    }
+
+    /**
      * Check if the app has the CALL_PHONE permission
      * @return Boolean True if the app has the CALL_PHONE permission
      */
