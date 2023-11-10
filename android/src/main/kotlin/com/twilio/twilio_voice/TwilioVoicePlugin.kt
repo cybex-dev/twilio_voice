@@ -97,6 +97,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     private val REQUEST_CODE_READ_PHONE_NUMBERS = 4
     private val REQUEST_CODE_READ_PHONE_STATE = 5
     private val REQUEST_CODE_MICROPHONE_FOREGROUND = 6
+    private val REQUEST_CODE_MANAGE_CALLS = 7
 
     private var isSpeakerOn: Boolean = false
     private var isBluetoothOn: Boolean = false
@@ -282,6 +283,13 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             if (permissions.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 Log.d(TAG, "Call Phone permission granted")
                 logEventPermission("Call Phone", true)
+                requestPermissionForManagingCalls {
+                    if(it) {
+                        Log.d(TAG, "onRequestPermissionsResult: Manage Calls permission granted");
+                    } else {
+                        Log.d(TAG, "onRequestPermissionsResult: Manage Calls permission not granted");
+                    }
+                }
             } else {
                 Log.d(TAG, "Call Phone permission not granted")
                 logEventPermission("Call Phone State", false)
@@ -293,6 +301,14 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             } else {
                 Log.d(TAG, "Microphone foreground permission not granted")
                 logEventPermission("Microphone", false)
+            }
+        } else if (requestCode == REQUEST_CODE_MANAGE_CALLS) {
+            if (permissions.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                Log.d(TAG, "Manage Calls permission granted")
+                logEventPermission("Manage Calls", true)
+            } else {
+                Log.d(TAG, "Manage Calls permission not granted")
+                logEventPermission("Manage Calls", false)
             }
         }
         return true
@@ -1463,6 +1479,23 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             )
         } else {
             Log.d(TAG, "requestPermissionForMicrophoneForeground: Microphone foreground permission skipped.");
+        }
+    }
+
+    /// Request permission for manage own calls for Android 13 and lower.
+    /// Source: https://developer.android.com/reference/android/Manifest.permission#FOREGROUND_SERVICE_MICROPHONE
+    private fun requestPermissionForManagingCalls(onPermissionResult: (Boolean) -> Unit) {
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.TIRAMISU) {
+            Log.d(TAG, "requestPermissionForManagingCalls: Manage own calls automatically requested.");
+            return requestPermissionOrShowRationale(
+                "Manage Calls",
+                "Manage own calls permission.",
+                Manifest.permission.MANAGE_OWN_CALLS,
+                REQUEST_CODE_MANAGE_CALLS,
+                onPermissionResult
+            )
+        } else {
+            Log.d(TAG, "requestPermissionForManagingCalls: Manage own calls permission skipped.");
         }
     }
 
