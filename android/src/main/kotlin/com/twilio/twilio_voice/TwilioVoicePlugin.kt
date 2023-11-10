@@ -355,6 +355,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
 
                 Log.d(TAG, "Setting up token")
                 this.accessToken = accessToken
+                this.fcmToken = deviceToken;
 
                 Log.d(TAG, "Registering for call events")
                 registerForCallInvites(accessToken, deviceToken)
