@@ -26,6 +26,11 @@ Required for reading phone numbers (e.g. for Telecom App), this is required to c
 * `android.permission.CALL_PHONE`
 Required for `ConnectionService` to interact with the `TelecomManager` to place outgoing calls.
 
+* `android.permission.MANAGE_OWN_CALLS`
+  * Required for `ConnectionService` to interact with the `TelecomManager` to receive incoming calls.
+  * According to Android documentation, this permission is only required for self-managed `ConnectionService`'s, however it seems to be required for system-managed `ConnectionService`'s as well (atleast on Android 13 and lower).
+  * Finally, this permission seems to be required to place outgoing calls on Android 13 and lower, if not will result `java.lang.SecurityException: Self-managed ConnectionServices require MANAGE_OWN_CALLS permission.`
+
 #### ConnectionService integration
  There are a few (additional) permissions added to use the [system-managed `ConnectionService`](https://developer.android.com/reference/android/telecom/ConnectionService), several permissions are required to enable this functionality (see example app). These permissions  `android.permission.READ_PHONE_STATE`, `android.permission.READ_PHONE_NUMBERS`, `android.permission.RECORD_AUDIO` and `android.permission.CALL_PHONE` have already been added to the package, you do not have to add them. Finally, a [PhoneAccount] is required to interact with the `ConnectionService`, this is discussed in more detail below.
 

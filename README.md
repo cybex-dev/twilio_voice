@@ -490,6 +490,7 @@ Similar to CallKit on iOS, Android implements their own via a [ConnectionService
 TwilioVoice.instance.requestCallPhonePermission();  // Gives Android permissions to place outgoing calls
 TwilioVoice.instance.requestReadPhoneStatePermission();  // Gives Android permissions to read Phone State including receiving calls
 TwilioVoice.instance.requestReadPhoneNumbersPermission();  // Gives Android permissions to read Phone Accounts
+TwilioVoice.instance.requestManageOwnCallsPermission();  // Gives Android permissions to manage calls, this isn't necessary to request as the permission is simply required in the Manifest, but added nontheless.
 ```
 
 Following this, to register a Phone Account (required by all applications implementing a system-managed `ConnectionService`, run:
@@ -514,6 +515,8 @@ TwilioVoice.instance.isRejectingCallOnNoPermissions(); // Checks if the plugin i
 ```
 
 If the `CALL_PHONE` permissions group i.e. `READ_PHONE_STATE`, `READ_PHONE_NUMBERS`, `CALL_PHONE` aren't granted nor a Phone Account is registered and enabled, the plugin will either reject the incoming call (true) or not show the incoming call UI (false).
+
+_Note: If `MANAGE_OWN_CALLS` permission is not granted, outbound calls will not work._
 
 See [Android Setup](#android-setup) and [Android Notes](https://github.com/diegogarciar/twilio_voice/blob/master/NOTES.md#android) for more information regarding configuring the `ConnectionService` and registering a Phone Account.
 
