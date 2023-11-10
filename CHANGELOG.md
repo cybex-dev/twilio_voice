@@ -2,6 +2,7 @@
 * Added: CallEvents: 
   * `Reconnected`
   * `Reconnecting`
+* Fix: [Android] Fix `unregister()` from Twilio (assign internal device token)
 
 ## 0.1.1
 
