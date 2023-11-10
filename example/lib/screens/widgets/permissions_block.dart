@@ -52,6 +52,14 @@ class _PermissionsBlockState extends State<PermissionsBlock> with WidgetsBinding
     });
   }
 
+  bool _hasManageCallsPermission = false;
+
+  set setManageCallsPermission(bool value) {
+    setState(() {
+      _hasManageCallsPermission = value;
+    });
+  }
+
   bool _isPhoneAccountEnabled = false;
 
   set setIsPhoneAccountEnabled(bool value) {
@@ -198,6 +206,7 @@ class _PermissionsBlockState extends State<PermissionsBlock> with WidgetsBinding
       FirebaseMessaging.instance.requestPermission().then((value) => setBackgroundPermission = value.authorizationStatus == AuthorizationStatus.authorized);
     }
     _tv.hasCallPhonePermission().then((value) => setCallPhonePermission = value);
+    _tv.hasManageOwnCallsPermission().then((value) => setManageCallsPermission = value);
     _tv.hasRegisteredPhoneAccount().then((value) => setPhoneAccountRegistered = value);
     _tv.isPhoneAccountEnabled().then((value) => setIsPhoneAccountEnabled = value);
   }
@@ -324,6 +333,18 @@ class _PermissionsBlockState extends State<PermissionsBlock> with WidgetsBinding
                   onRequestPermission: () async {
                     await _tv.requestCallPhonePermission();
                     setCallPhonePermission = await _tv.hasCallPhonePermission();
+                  },
+                ),
+
+              // if android
+              if (!kIsWeb && Platform.isAndroid)
+                PermissionTile(
+                  icon: Icons.call_received,
+                  title: "Manage Calls",
+                  granted: _hasManageCallsPermission,
+                  onRequestPermission: () async {
+                    await _tv.requestManageOwnCallsPermission();
+                    setManageCallsPermission = await _tv.hasManageOwnCallsPermission();
                   },
                 ),
 
