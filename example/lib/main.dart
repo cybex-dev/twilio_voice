@@ -324,6 +324,24 @@ class _AppState extends State<App> {
     return Scaffold(
       appBar: AppBar(
         title: const Text("Plugin example app"),
+        actions: [
+          _LogoutAction(
+            onSuccess: () {
+              setState(() {
+                twilioInit = false;
+              });
+            },
+            onFailure: (error) {
+              showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text("Error"),
+                  content: Text("Failed to unregister from calls: $error"),
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: SafeArea(
         child: Center(
@@ -389,5 +407,27 @@ class _AppState extends State<App> {
         );
       },
     );
+  }
+}
+
+class _LogoutAction extends StatelessWidget {
+  final void Function()? onSuccess;
+  final void Function(String error)? onFailure;
+
+  const _LogoutAction({Key? key, this.onSuccess, this.onFailure}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton.icon(
+        onPressed: () async {
+          final result = await TwilioVoice.instance.unregister();
+          if (result == true) {
+            onSuccess?.call();
+          } else {
+            onFailure?.call("Failed to unregister");
+          }
+        },
+        label: const Text("Logout", style: TextStyle(color: Colors.white)),
+        icon: const Icon(Icons.logout, color: Colors.white));
   }
 }
