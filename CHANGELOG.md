@@ -1,4 +1,6 @@
-## 0.1.2
+## Next release
+
+## 0.1.3
 * Added: CallEvents: 
   * `Reconnected`
   * `Reconnecting`
