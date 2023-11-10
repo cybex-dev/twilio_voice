@@ -3,7 +3,7 @@
   * `Reconnected`
   * `Reconnecting`
 * Fix: [Android] Fix `unregister()` from Twilio (assign internal device token)
-* Update: example with logout action
+* Update: example with logout action, new `CallEvent`s
 
 ## 0.1.1
 
