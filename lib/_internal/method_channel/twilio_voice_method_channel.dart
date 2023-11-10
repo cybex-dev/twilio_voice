@@ -180,6 +180,28 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
     return _channel.invokeMethod('requestCallPhonePermission', {});
   }
 
+  /// Checks if device has permission to manage system calls
+  ///
+  /// Android only
+  @override
+  Future<bool> hasManageOwnCallsPermission() {
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      return Future.value(true);
+    }
+    return _channel.invokeMethod<bool?>('hasManageOwnCallsPermission', {}).then<bool>((bool? value) => value ?? false);
+  }
+
+  /// Requests system permission to manage calls
+  ///
+  /// Android only
+  @override
+  Future<bool?> requestManageOwnCallsPermission() {
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      return Future.value(true);
+    }
+    return _channel.invokeMethod('requestManageOwnCallsPermission', {});
+  }
+
   /// Checks if device has read phone numbers permission
   ///
   /// Android only

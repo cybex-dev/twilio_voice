@@ -3,6 +3,7 @@
   * `Reconnected`
   * `Reconnecting`
 * Fix: [Android] Fix `unregister()` from Twilio (assign internal device token)
+* Update: [Android] Add `MANGE_OWN_CALLS` permission to manifest, method channel implementation & example update, see discussion [here](https://github.com/cybex-dev/twilio_voice/issues/194).
 * Update: example with logout action, new `CallEvent`s
 
 ## 0.1.1

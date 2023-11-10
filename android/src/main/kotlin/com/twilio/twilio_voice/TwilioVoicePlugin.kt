@@ -32,6 +32,7 @@ import com.twilio.twilio_voice.types.ContextExtension.hasReadPhoneNumbersPermiss
 import com.twilio.twilio_voice.types.ContextExtension.hasReadPhoneStatePermission
 import com.twilio.twilio_voice.types.ContextExtension.checkPermission
 import com.twilio.twilio_voice.types.ContextExtension.hasCallPhonePermission
+import com.twilio.twilio_voice.types.ContextExtension.hasManageOwnCallsPermission
 import com.twilio.twilio_voice.types.IntentExtension.getParcelableExtraSafe
 import com.twilio.twilio_voice.types.TVMethodChannels
 import com.twilio.twilio_voice.types.TVNativeCallActions
@@ -97,6 +98,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     private val REQUEST_CODE_READ_PHONE_NUMBERS = 4
     private val REQUEST_CODE_READ_PHONE_STATE = 5
     private val REQUEST_CODE_MICROPHONE_FOREGROUND = 6
+    private val REQUEST_CODE_MANAGE_CALLS = 7
 
     private var isSpeakerOn: Boolean = false
     private var isBluetoothOn: Boolean = false
@@ -282,6 +284,13 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             if (permissions.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 Log.d(TAG, "Call Phone permission granted")
                 logEventPermission("Call Phone", true)
+                requestPermissionForManagingCalls {
+                    if(it) {
+                        Log.d(TAG, "onRequestPermissionsResult: Manage Calls permission granted");
+                    } else {
+                        Log.d(TAG, "onRequestPermissionsResult: Manage Calls permission not granted");
+                    }
+                }
             } else {
                 Log.d(TAG, "Call Phone permission not granted")
                 logEventPermission("Call Phone State", false)
@@ -293,6 +302,14 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             } else {
                 Log.d(TAG, "Microphone foreground permission not granted")
                 logEventPermission("Microphone", false)
+            }
+        } else if (requestCode == REQUEST_CODE_MANAGE_CALLS) {
+            if (permissions.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                Log.d(TAG, "Manage Calls permission granted")
+                logEventPermission("Manage Calls", true)
+            } else {
+                Log.d(TAG, "Manage Calls permission not granted")
+                logEventPermission("Manage Calls", false)
             }
         }
         return true
@@ -810,6 +827,21 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 }
             }
 
+            TVMethodChannels.HAS_MANAGE_OWN_CALLS_PERMISSION -> {
+                result.success(checkManageOwnCallsPermission())
+            }
+
+            TVMethodChannels.REQUEST_MANAGE_OWN_CALLS_PERMISSION -> {
+                logEvent("requestingManageOwnCallsPermission")
+                if (!checkManageOwnCallsPermission()) {
+                    requestPermissionForManagingCalls() { granted ->
+                        result.success(granted)
+                    }
+                } else {
+                    result.success(true)
+                }
+            }
+
             TVMethodChannels.HAS_BLUETOOTH_PERMISSION -> {
                 // Deprecated in favour of native call screen handling these permissions
                 result.success(false)
@@ -1031,6 +1063,10 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             }
             if (!checkCallPhonePermission()) {
                 Log.e(TAG, "No call phone permission, call `requestCallPhonePermission()` first")
+                return false
+            }
+            if (!checkManageOwnCallsPermission()) {
+                Log.e(TAG, "No manage own calls permission, call `requestManageOwnCallsPermission()` first")
                 return false
             }
 
@@ -1399,6 +1435,15 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         return context?.hasCallPhonePermission() ?: false
     }
 
+    private fun checkManageOwnCallsPermission(): Boolean {
+        Log.d(TAG, "checkManageOwnCallsPermission")
+        if(Build.VERSION.SDK_INT <= Build.VERSION_CODES.TIRAMISU) {
+            return context?.hasManageOwnCallsPermission() ?: false
+        } else {
+            return true
+        }
+    }
+
     /**
      * Checks if a [PhoneAccount] is registered with the Telecom app, and is enabled.
      * Requires permissions:
@@ -1463,6 +1508,25 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             )
         } else {
             Log.d(TAG, "requestPermissionForMicrophoneForeground: Microphone foreground permission skipped.");
+        }
+    }
+
+    /// Request permission for manage own calls for Android 13 and lower.
+    /// Source: https://developer.android.com/reference/android/Manifest.permission#MANAGE_OWN_CALLS
+    /// Note from source: "Allows a calling application which manages its own calls through the self-managed ConnectionService APIs..."
+    /// Even though we use a system-managed ConnectionService, we still need this permission for Android 13 and lower.
+    private fun requestPermissionForManagingCalls(onPermissionResult: (Boolean) -> Unit) {
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.TIRAMISU) {
+            Log.d(TAG, "requestPermissionForManagingCalls: Manage own calls automatically requested.");
+            return requestPermissionOrShowRationale(
+                "Manage Calls",
+                "Manage own calls permission.",
+                Manifest.permission.MANAGE_OWN_CALLS,
+                REQUEST_CODE_MANAGE_CALLS,
+                onPermissionResult
+            )
+        } else {
+            Log.d(TAG, "requestPermissionForManagingCalls: Manage own calls permission skipped.");
         }
     }
 
