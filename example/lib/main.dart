@@ -120,7 +120,15 @@ class _AppState extends State<App> {
         });
       }
     } else {
-      // for web, we always show the initialisation screen
+      // for web, we always show the initialisation screen unless we specified an
+      if (widget.registrationMethod == RegistrationMethod.env) {
+        bool success = await _registerFromEnvironment();
+        if (success) {
+          setState(() {
+            twilioInit = true;
+          });
+        }
+      }
     }
 
     FirebaseAnalytics.instance.logEvent(name: "registration", parameters: {
