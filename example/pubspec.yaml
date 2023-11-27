@@ -17,6 +17,8 @@ dependencies:
   cloud_functions: ^4.1.0
   firebase_auth: ^4.4.0
   http: ^0.13.5
+  # this is not necessary, only for use in the example web app
+  firebase_analytics: ^10.7.0
 
   twilio_voice:
     # When depending on this package from a real application you should use:

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:twilio_voice/twilio_voice.dart';
@@ -66,6 +67,8 @@ void main() async {
     await Firebase.initializeApp();
   }
 
+  FirebaseAnalytics.instance.logEvent(name: "app_started");
+
   final app = App(registrationMethod: RegistrationMethod.loadFromEnvironment() ?? RegistrationMethod.env);
   return runApp(MaterialApp(home: app));
 }
@@ -119,6 +122,11 @@ class _AppState extends State<App> {
     } else {
       // for web, we always show the initialisation screen
     }
+
+    FirebaseAnalytics.instance.logEvent(name: "registration", parameters: {
+      "method": widget.registrationMethod.name,
+      "platform": kIsWeb ? "web" : Platform.isAndroid ? "android" : Platform.isIOS ? "ios" : Platform.isMacOS ? "macos" : "unknown"
+    });
   }
 
   /// Registers [accessToken] with TwilioVoice plugin, acquires a device token from FirebaseMessaging and registers with TwilioVoice plugin.
