@@ -186,4 +186,7 @@ abstract class TwilioVoicePlatform extends SharedPlatformInterface {
 
   /// Sends call events
   CallEvent parseCallEvent(String state);
+
+  /// Get token identity
+  Future<String?> getIdentity();
 }

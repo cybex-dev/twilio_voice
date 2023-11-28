@@ -587,6 +587,12 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   void _onTokenWillExpire(twilio_js.Device device) {
     logLocalEventEntries(["DEVICETOKEN", device.token], prefix: "");
   }
+
+  /// Get token identity
+  @override
+  Future<String?> getIdentity() {
+    return Future.value(device?.identity);
+  }
 }
 
 class Call extends MethodChannelTwilioCall {

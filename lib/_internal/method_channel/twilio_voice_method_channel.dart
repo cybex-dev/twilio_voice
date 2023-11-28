@@ -430,6 +430,12 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
         throw ArgumentError('$state is not a valid CallState.');
     }
   }
+
+  /// Get token identity
+  @override
+  Future<String?> getIdentity() {
+    return _channel.invokeMethod<String?>('identity', {});
+  }
 }
 
 ActiveCall createCallFromState(String state, {CallDirection? callDirection, bool initiated = false}) {
