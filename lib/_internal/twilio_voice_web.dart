@@ -294,6 +294,17 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
     return true;
   }
 
+  /// Checks if platform & device supports TwilioVoice, defaults to true.
+  ///
+  /// Appropriate for any web-based implementation (i.e. Web, MacOS only)
+  @override
+  Future<bool> isSupported() {
+     if(!kIsWeb) {
+        return Future.value(true);
+     }
+     return Future<bool>.value(twilio_js.Device.isSupported);
+  }
+
   /// Remove registered client by id, if the client is not registered, do nothing.
   /// See [LocalStorageWeb.removeRegisteredClient]
   @override

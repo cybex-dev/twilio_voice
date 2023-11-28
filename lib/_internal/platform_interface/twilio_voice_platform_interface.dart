@@ -186,4 +186,9 @@ abstract class TwilioVoicePlatform extends SharedPlatformInterface {
 
   /// Sends call events
   CallEvent parseCallEvent(String state);
+
+  /// Checks if platform & device supports TwilioVoice, defaults to true.
+  ///
+  /// Appropriate for any web-based implementation (i.e. Web, MacOS only)
+  Future<bool> isSupported();
 }

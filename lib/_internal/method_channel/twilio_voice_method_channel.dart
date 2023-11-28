@@ -430,6 +430,18 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
         throw ArgumentError('$state is not a valid CallState.');
     }
   }
+
+  /// Checks if platform & device supports TwilioVoice, defaults to true.
+  ///
+  /// Appropriate for any web-based implementation (i.e. Web, MacOS only)
+  @override
+  Future<bool> isSupported() {
+    if(defaultTargetPlatform == TargetPlatform.macOS) {
+      return _channel.invokeMethod<bool?>('isSupported', {}).then<bool>((bool? value) => value ?? false);
+    } else {
+      return Future.value(true);
+    }
+  }
 }
 
 ActiveCall createCallFromState(String state, {CallDirection? callDirection, bool initiated = false}) {
