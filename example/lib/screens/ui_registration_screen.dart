@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:twilio_voice/twilio_voice.dart';
+
+import '../utils.dart';
 
 typedef OnRegister = Future<void> Function(String accessToken, [String? identity]);
 
@@ -16,10 +19,32 @@ class _UIRegistrationScreenState extends State<UIRegistrationScreen> {
   late final TextEditingController _identityController = TextEditingController();
   late final GlobalKey<FormFieldState<String>> _accessTokenKey = GlobalKey<FormFieldState<String>>();
 
-  void _onRegisterForCalls() {
+  void _onRegisterForCalls() async {
     if (!_accessTokenKey.currentState!.validate()) {
       return;
     }
+    final isSupported = await TwilioVoice.instance.isSupported();
+    if(!isSupported) {
+      printDebug("webrtc is not supported.");
+      // ignore: use_build_context_synchronously
+      showDialog(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text("Oh no!"),
+            content: const Text("WebRTC is not supported on this device."),
+            actions: [
+              TextButton(
+                child: const Text("OK"),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ],
+          );
+        },
+      );
+      return;
+    }
+
     final identity = _identityController.text;
     final token = _accessTokenController.text;
     widget.onRegister(token, identity);

@@ -98,6 +98,28 @@ class _AppState extends State<App> {
   void register() async {
     printDebug("voip-service registration");
 
+    final supported = await TwilioVoice.instance.isSupported();
+    if (!supported) {
+      printDebug("webrtc is not supported.");
+      // ignore: use_build_context_synchronously
+      showDialog(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text("Oh no!"),
+            content: const Text("WebRTC is not supported on this device."),
+            actions: [
+              TextButton(
+                child: const Text("OK"),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ],
+          );
+        },
+      );
+      return;
+    }
+
     // Use for locally provided token generator e.g. Twilio's quickstarter project: https://github.com/twilio/voice-quickstart-server-node
     if (!kIsWeb) {
       bool success = false;
