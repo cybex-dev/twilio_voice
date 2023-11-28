@@ -38,6 +38,11 @@ class Device extends Twilio {
   // external dynamic get calls;
 
   /// Returns true if the device is on an active call
+  /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#deviceidentity
+  @JS("identity")
+  external String? get identity;
+
+  /// Returns true if the device is on an active call
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#deviceisbusy
   @JS("isBusy")
   external bool get isBusy;
