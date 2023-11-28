@@ -42,6 +42,11 @@ class Device extends Twilio {
   @JS("isBusy")
   external bool get isBusy;
 
+  /// Returns a Boolean for whether or not this SDK is supported by the current browser.
+  /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#deviceissupported
+  @JS("isSupported")
+  external static bool get isSupported;
+
   /// Get current device token
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#devicetoken
   @JS("token")
