@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:twilio_voice/twilio_voice.dart';
 
 import 'widgets/call_actions.dart';
 import 'widgets/call_features.dart';
@@ -23,7 +24,6 @@ class UICallScreen extends StatefulWidget {
 class _UICallScreenState extends State<UICallScreen> {
   late TextEditingController _controller;
   late final GlobalKey<FormFieldState<String>> _identifierKey = GlobalKey<FormFieldState<String>>();
-  bool _copied = false;
 
   String _getRecipientIdFromEnv() {
     return const String.fromEnvironment("RECIPIENT_ID");
@@ -33,18 +33,6 @@ class _UICallScreenState extends State<UICallScreen> {
   void initState() {
     super.initState();
     _controller = TextEditingController(text: _getRecipientIdFromEnv());
-  }
-
-  void _copyToClipboard(String data) {
-    Clipboard.setData(ClipboardData(text: data));
-    setState(() {
-      _copied = true;
-    });
-    Future.delayed(const Duration(seconds: 1), () {
-      setState(() {
-        _copied = false;
-      });
-    });
   }
 
   @override
@@ -63,16 +51,7 @@ class _UICallScreenState extends State<UICallScreen> {
           decoration: const InputDecoration(labelText: 'Client Identifier or Phone Number'),
         ),
         const SizedBox(height: 10),
-        Wrap(
-          children: [
-            Text("My Identity: ${widget.userId}"),
-            const SizedBox(width: 8),
-            GestureDetector(
-              onTap: () => _copyToClipboard(widget.userId),
-              child: _copied ? const Icon(Icons.check, color: Colors.green, size: 16) : const Icon(Icons.copy, size: 16),
-            ),
-          ],
-        ),
+        _Identity(),
         const SizedBox(height: 10),
         CallActions(
           canCall: true,
@@ -115,3 +94,63 @@ class _UICallScreenState extends State<UICallScreen> {
     );
   }
 }
+
+class _Identity extends StatefulWidget {
+
+  const _Identity({super.key});
+
+  @override
+  State<_Identity> createState() => _IdentityState();
+}
+
+class _IdentityState extends State<_Identity> {
+  String? identity;
+  bool _copied = false;
+
+  @override
+  void initState() {
+    super.initState();
+  }
+
+  void _copyToClipboard(String data) {
+    Clipboard.setData(ClipboardData(text: data));
+    setState(() {
+      _copied = true;
+    });
+    Future.delayed(const Duration(seconds: 1), () {
+      setState(() {
+        _copied = false;
+      });
+    });
+  }
+
+  void _refresh() async {
+    final identity = await TwilioVoice.instance.getIdentity();
+    setState(() {
+      this.identity = identity;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Text("My Identity: ${identity ?? "n/a"}"),
+        const SizedBox(width: 8),
+        if(identity != null)
+          GestureDetector(
+            onTap: () => _copyToClipboard(identity ?? ""),
+            child: _copied ? const Icon(Icons.check, color: Colors.green, size: 16) : const Icon(Icons.copy, size: 16),
+          ),
+        const SizedBox(width: 8),
+        InkWell(
+          borderRadius: BorderRadius.circular(24),
+          onTap: _refresh,
+          child: const Icon(Icons.refresh),
+        ),
+      ],
+    );
+  }
+}
+
