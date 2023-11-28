@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:twilio_voice/twilio_voice.dart';
 
-class OnCallWidget extends StatefulWidget {
-  const OnCallWidget({super.key});
+class CallStatus extends StatefulWidget {
+  const CallStatus({super.key});
 
   @override
-  State<OnCallWidget> createState() => _OnCallWidgetState();
+  State<CallStatus> createState() => _CallStatusState();
 }
 
-class _OnCallWidgetState extends State<OnCallWidget> {
+class _CallStatusState extends State<CallStatus> {
   final List<CallEvent> _events = [];
 
   /// Store only call-related events

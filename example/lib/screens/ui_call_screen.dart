@@ -1,16 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:twilio_voice_example/screens/widgets/on_call_widget.dart';
 
+import 'widgets/call_actions.dart';
+import 'widgets/call_features.dart';
+import 'widgets/call_status.dart';
 import 'widgets/permissions_block.dart';
+import 'widgets/twilio_log.dart';
 
 typedef PerformCall = Future<void> Function(String clientIdentifier);
 
 class UICallScreen extends StatefulWidget {
   final String userId;
   final PerformCall onPerformCall;
+  final PerformCall? onCallToQueue;
 
-  const UICallScreen({Key? key, required this.userId, required this.onPerformCall}) : super(key: key);
+  const UICallScreen({Key? key, required this.userId, required this.onPerformCall, this.onCallToQueue}) : super(key: key);
 
   @override
   State<UICallScreen> createState() => _UICallScreenState();
@@ -70,25 +74,43 @@ class _UICallScreenState extends State<UICallScreen> {
           ],
         ),
         const SizedBox(height: 10),
-        ElevatedButton(
-          child: const Text("Make Call"),
-          onPressed: () {
-            if (!_identifierKey.currentState!.validate()) {
-              return;
+        CallActions(
+          canCall: true,
+          onPerformCall: () {
+            final identifier = _identifierKey.currentState?.value;
+            if (identifier != null && identifier.isNotEmpty) {
+              widget.onPerformCall(identifier);
             }
-            final identity = _controller.text;
-            widget.onPerformCall(identity);
           },
         ),
-        const Divider(),
-        const Padding(
-          padding: EdgeInsets.all(8.0),
-          child: OnCallWidget(),
+        const SizedBox(height: 10),
+        const Card(
+          child: Padding(
+            padding: EdgeInsets.all(8.0),
+            child: CallStatus(),
+          ),
+        ),
+        const Card(
+          child: Padding(
+            padding: EdgeInsets.all(8.0),
+            child: CallControls(),
+          ),
+        ),
+        const Card(
+          child: Padding(
+            padding: EdgeInsets.all(8.0),
+            child: PermissionsBlock(),
+          ),
         ),
         const Divider(),
-        const Expanded(
-          child: PermissionsBlock(),
-        )
+        Expanded(
+          child: Column(
+            children: [
+              Text("Events (latest at top)", style: Theme.of(context).textTheme.titleLarge),
+              const TwilioLog(),
+            ],
+          ),
+        ),
       ],
     );
   }
