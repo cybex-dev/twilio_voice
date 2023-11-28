@@ -3,6 +3,7 @@
   * [Web] Update example with Firebase Analytics (Web, optional)
   * [Web] Added environment registration support
   * Added `defines.config.json` file to example to support environment configuration used with ```flutter run --dart-defines-file=defines.config.json```
+* Feat: Added platform supported check with `TwilioVoice.instance.isSupported()`
 
 ## 0.1.3
 * Added: CallEvents: 
