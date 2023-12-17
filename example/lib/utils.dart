@@ -5,3 +5,5 @@ void printDebug(String message) {
     print(message);
   }
 }
+
+const firebaseEnabled = bool.fromEnvironment("FIREBASE_ENABLED");

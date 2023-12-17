@@ -112,7 +112,7 @@ class _PermissionsBlockState extends State<PermissionsBlock> with WidgetsBinding
     _tv.hasMicAccess().then((value) => setMicPermission = value);
     _tv.hasReadPhoneStatePermission().then((value) => setReadPhoneStatePermission = value);
     _tv.hasReadPhoneNumbersPermission().then((value) => setReadPhoneNumbersPermission = value);
-    if (Firebase.apps.isNotEmpty) {
+    if (firebaseEnabled && Firebase.apps.isNotEmpty) {
       FirebaseMessaging.instance.requestPermission().then((value) => setBackgroundPermission = value.authorizationStatus == AuthorizationStatus.authorized);
     }
     _tv.hasCallPhonePermission().then((value) => setCallPhonePermission = value);
@@ -141,7 +141,7 @@ class _PermissionsBlockState extends State<PermissionsBlock> with WidgetsBinding
                 },
               ),
 
-              if (Firebase.apps.isNotEmpty)
+              if (firebaseEnabled && Firebase.apps.isNotEmpty)
                 PermissionTile(
                   icon: Icons.notifications,
                   title: "Notifications",

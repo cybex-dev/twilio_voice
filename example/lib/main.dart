@@ -43,31 +43,34 @@ enum RegistrationMethod {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   if (kIsWeb) {
+    if(firebaseEnabled) {
 
-    // Add firebase config here
-    const options = FirebaseOptions(
-      apiKey: '',
-      appId: '',
-      messagingSenderId: '',
-      projectId: '',
-      authDomain: '',
-      databaseURL: '',
-      storageBucket: '',
-      measurementId: '',
-    );
+      // Add firebase config here
+      const options = FirebaseOptions(
+        apiKey: '',
+        appId: '',
+        messagingSenderId: '',
+        projectId: '',
+        authDomain: '',
+        databaseURL: '',
+        storageBucket: '',
+        measurementId: '',
+      );
 
-    // For web apps only
-    // ignore: body_might_complete_normally_catch_error
-    await Firebase.initializeApp(options: options).catchError((error) {
-      printDebug("Failed to initialise firebase $error");
-    });
-
+      // For web apps only
+      // ignore: body_might_complete_normally_catch_error
+      await Firebase.initializeApp(options: options).catchError((error) {
+        printDebug("Failed to initialise firebase $error");
+      });
+    }
   } else {
     // For Android, iOS - Firebase will search for google-services.json in android/app directory or GoogleService-Info.plist in ios/Runner directory respectively.
     await Firebase.initializeApp();
   }
 
-  FirebaseAnalytics.instance.logEvent(name: "app_started");
+  if(firebaseEnabled) {
+    FirebaseAnalytics.instance.logEvent(name: "app_started");
+  }
 
   final app = App(registrationMethod: RegistrationMethod.loadFromEnvironment() ?? RegistrationMethod.env);
   return runApp(MaterialApp(home: app));
@@ -131,10 +134,12 @@ class _AppState extends State<App> {
       }
     }
 
-    FirebaseAnalytics.instance.logEvent(name: "registration", parameters: {
-      "method": widget.registrationMethod.name,
-      "platform": kIsWeb ? "web" : Platform.isAndroid ? "android" : Platform.isIOS ? "ios" : Platform.isMacOS ? "macos" : "unknown"
-    });
+    if(firebaseEnabled) {
+      FirebaseAnalytics.instance.logEvent(name: "registration", parameters: {
+        "method": widget.registrationMethod.name,
+        "platform": kIsWeb ? "web" : Platform.isAndroid ? "android" : Platform.isIOS ? "ios" : Platform.isMacOS ? "macos" : "unknown"
+      });
+    }
   }
 
   /// Registers [accessToken] with TwilioVoice plugin, acquires a device token from FirebaseMessaging and registers with TwilioVoice plugin.
