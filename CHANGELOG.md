@@ -3,6 +3,7 @@
   * [Web] Update example with Firebase Analytics (Web, optional)
   * [Web] Added environment registration support
   * Added `defines.config.json` file to example to support environment configuration used with ```flutter run --dart-defines-file=defines.config.json```
+  * [Web] Added `FIREBASE_ENABLE` defines to initialize Firebase only if set to true
 
 ## 0.1.3
 * Added: CallEvents: 
