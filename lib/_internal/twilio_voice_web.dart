@@ -809,6 +809,41 @@ class Call extends MethodChannelTwilioCall {
     return true;
   }
 
+  /// Place outgoing call with raw parameters. Returns true if successful, false otherwise.
+  /// Parameters send to Twilio's REST API endpoint 'makeCall' can be passed in [extraOptions];
+  /// Parameters are reduced to this format
+  /// <code>
+  /// {
+  ///  ...extraOptions
+  /// }
+  /// </code>
+  /// See [twilio_js.Device.connect]
+  @override
+  Future<bool?> connect({Map<String, dynamic>? extraOptions}) async {
+    assert(device != null,
+        "Twilio device is null, make sure you have initialized the device first by calling [ setTokens({required String accessToken, String? deviceToken}) ] ");
+
+    Logger.logLocalEvent("Making new call with Connect");
+    // handle parameters
+    final params = <String, String>{};
+    extraOptions?.forEach((key, value) {
+      params[key] = value.toString();
+    });
+
+    try {
+      final callParams = js_util.jsify(params);
+      final options = twilio_js.DeviceConnectOptions(params: callParams);
+      final promise = _device!.connect(options);
+      nativeCall = await js_util.promiseToFuture(promise);
+
+      _attachCallEventListeners(_jsCall!);
+    } catch (e) {
+      printDebug("Failed to place call: $e");
+      return false;
+    }
+    return true;
+  }
+
   /// Attach event listeners to the active call
   /// See [twilio_js.Call.on]
   void _attachCallEventListeners(twilio_js.Call call) {
