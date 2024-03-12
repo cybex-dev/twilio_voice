@@ -2,35 +2,49 @@ group 'com.twilio.twilio_voice'
 version '1.0'
 
 buildscript {
+    ext.kotlin_version = '1.8.0'
     repositories {
         google()
-        jcenter()
+        mavenCentral()
     }
 
     dependencies {
-        classpath 'com.android.tools.build:gradle:4.1.0'
+        classpath 'com.android.tools.build:gradle:7.4.2'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
     }
 }
 
-rootProject.allprojects {
+allprojects {
     repositories {
         google()
-        jcenter()
+        mavenCentral()
     }
 }
 
 apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+apply plugin: 'org.jetbrains.kotlin.android'
 
 android {
-    compileSdkVersion 30
+    compileSdk 34
 
     compileOptions {
-        sourceCompatibility 1.8
-        targetCompatibility 1.8
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
     }
+
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+
+    sourceSets {
+        main.java.srcDirs += 'src/main/kotlin'
+    }
+
     defaultConfig {
-        minSdkVersion 16
+        minSdkVersion 26
     }
+
     buildTypes {
         release {
             minifyEnabled true
@@ -40,10 +54,14 @@ android {
 }
 
 dependencies {
-    implementation platform('com.google.firebase:firebase-bom:26.0.0')
-    implementation 'com.twilio:voice-android:5.8.0'
-    implementation 'com.google.firebase:firebase-messaging'
-    implementation 'androidx.lifecycle:lifecycle-extensions:2.2.0'
-    implementation 'androidx.constraintlayout:constraintlayout:2.0.1'
+    implementation(platform("org.jetbrains.kotlin:kotlin-bom:$kotlin_version"))
+    implementation(platform("com.google.firebase:firebase-bom:32.2.2"))
+    implementation("com.twilio:voice-android:6.3.2")
+    implementation("com.google.firebase:firebase-messaging-ktx:23.2.1")
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'androidx.lifecycle:lifecycle-process:2.6.1'
+    implementation 'androidx.core:core-ktx:+'
+    runtimeOnly("androidx.lifecycle:lifecycle-extensions:2.2.0")
+    runtimeOnly("androidx.constraintlayout:constraintlayout:2.1.4")
 }
 

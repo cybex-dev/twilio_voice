@@ -9,13 +9,13 @@ Pod::Spec.new do |s|
   s.description      = <<-DESC
   Provides an interface to Twilio&#x27;s Programmable Voice SDK to allows adding voice-over-IP (VoIP) calling into your Flutter applications.
                        DESC
-  s.homepage         = 'https://github.com/flopmt/twilio_voice/'
+  s.homepage         = 'https://github.com/cybex-dev/twilio_voice/'
   s.license          = { :file => '../LICENSE' }
-  s.author           = { 'Florian Erlemann' => 'flo@superphone.io' }
+  s.author           = { 'Charles Dyason' => 'charles@earthbase.io' }
   s.source           = { :path => '.' }
   s.source_files = 'Classes/**/*'
   s.dependency 'Flutter'
-  s.dependency 'TwilioVoice','~> 6.4.2'
+  s.dependency 'TwilioVoice','~> 6.9.1'
   s.platform = :ios, '11.0'
 
   # Flutter.framework does not contain a i386 slice.

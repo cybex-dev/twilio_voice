@@ -1,25 +1,31 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.twilio.twilio_voice">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    package="com.twilio.twilio_voice">
 
-  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-  <uses-permission android:name="android.permission.DISABLE_KEYGUARD" />
-  <uses-permission android:name="android.permission.RECORD_AUDIO" />
-  <uses-permission android:name="android.permission.VIBRATE" />
-  <uses-permission android:name="android.permission.WAKE_LOCK" />
-  <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
-  <application>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.READ_PHONE_NUMBERS" />
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
 
-    <activity android:name=".AnswerJavaActivity" android:turnScreenOn="true" android:showWhenLocked="true" android:showOnLockScreen="true" android:theme="@style/Theme.AppCompat" />
+    <application>
+        <service
+            android:name=".service.TVConnectionService"
+            android:exported="true"
+            android:foregroundServiceType="microphone"
+            android:label="@string/connection_service_name"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
 
-    <activity android:name=".BackgroundCallJavaActivity" android:turnScreenOn="true" android:showWhenLocked="true" android:showOnLockScreen="true" android:theme="@style/Theme.AppCompat" />
-
-    <service android:enabled="true" android:name=".IncomingCallNotificationService"
-        android:exported="false">
-      <intent-filter>
-        <action android:name="ACTION_ACCEPT" />
-        <action android:name="ACTION_REJECT" />
-      </intent-filter>
-    </service>
-    <meta-data android:name="flutterEmbedding" android:value="2" />
-  </application>
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+    </application>
 
 </manifest>
