@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -51,6 +52,9 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
   /// Setting is persisted across restarts until overridden
   @override
   set showMissedCallNotifications(bool value) {
+    if(!Platform.isAndroid) {
+      return;
+    }
     _channel.invokeMethod('showNotifications', <String, dynamic>{"show": value});
   }
 
