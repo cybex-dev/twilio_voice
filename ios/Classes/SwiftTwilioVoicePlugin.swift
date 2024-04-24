@@ -558,7 +558,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         
         var from:String = callInvite.from ?? defaultCaller
         from = from.replacingOccurrences(of: "client:", with: "")
-        
+
         self.sendPhoneCallEvents(description: "Ringing|\(from)|\(callInvite.to)|Incoming\(formatCustomParams(params: callInvite.customParameters))", isError: false)
         reportIncomingCall(from: from, uuid: callInvite.uuid)
         self.callInvite = callInvite
@@ -865,12 +865,14 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         }
     }
     
-    func reportIncomingCall(from: String, uuid: UUID) {
-        let callHandle = CXHandle(type: .generic, value: from)
+    func reportIncomingCall(from: String, uuid: UUID) {        
+        // Using .phoneNumber to fetch display name from the Phonebook if the number is saved otherwise show literal string 'from'.
+        let callHandle = CXHandle(type: .phoneNumber, value: from)  
         
         let callUpdate = CXCallUpdate()
         callUpdate.remoteHandle = callHandle
-        callUpdate.localizedCallerName = clients[from] ?? self.clients["defaultCaller"] ?? defaultCaller
+        /// Apparently localizedCallerName overrides remoteHandle, so it was commented out fix "Unknown Caller" issue.
+        //  callUpdate.localizedCallerName = from ?? self.clients["defaultCaller"] ?? defaultCaller
         callUpdate.supportsDTMF = true
         callUpdate.supportsHolding = true
         callUpdate.supportsGrouping = false
