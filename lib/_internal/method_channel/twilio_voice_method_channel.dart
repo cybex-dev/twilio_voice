@@ -430,6 +430,30 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
         throw ArgumentError('$state is not a valid CallState.');
     }
   }
+
+  @override
+  Future<void> notifyingIncomingCall({
+    required String notificationId,
+    required String title,
+    required String subtitle,
+    required Map<String, dynamic> data,
+    bool ring = true,
+  }) {
+    return Future.value();
+  }
+
+  @override
+  Future<void> notifyingCancelCall({
+    required String notificationId,
+    bool forceCancelRing = false,
+  }) {
+    return Future.value();
+  }
+
+  @override
+  Future<void> notifyingMissedCall({required String notificationId, required String title, required String subtitle, required Map<String, dynamic> data, bool forceCancelRing = false}) {
+    return Future.value();
+  }
 }
 
 ActiveCall createCallFromState(String state, {CallDirection? callDirection, bool initiated = false}) {

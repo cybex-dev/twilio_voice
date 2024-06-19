@@ -186,4 +186,13 @@ abstract class TwilioVoicePlatform extends SharedPlatformInterface {
 
   /// Sends call events
   CallEvent parseCallEvent(String state);
+
+  /// Notify handle incoming call event
+  Future<void> notifyingIncomingCall({required String notificationId, required String title, required String subtitle, required Map<String, dynamic> data, bool ring = true});
+
+  /// Notify handle cancel call event, stops ringing if it is ringing
+  Future<void> notifyingCancelCall({required String notificationId, bool forceCancelRing = false});
+
+  /// Notify handle missed call event
+  Future<void> notifyingMissedCall({required String notificationId, required String title, required String subtitle, required Map<String, dynamic> data, bool forceCancelRing = false});
 }

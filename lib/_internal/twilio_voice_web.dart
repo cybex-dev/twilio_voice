@@ -232,6 +232,8 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
 
   late final Call _call = Call();
 
+  late final AudioManager _audioManager = AudioManager();
+
   @override
   Call get call => _call;
 
@@ -586,6 +588,46 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#tokenwillexpire-event
   void _onTokenWillExpire(twilio_js.Device device) {
     logLocalEventEntries(["DEVICETOKEN", device.token], prefix: "");
+  }
+
+  @override
+  Future<void> notifyingCancelCall({required String notificationId, bool forceCancelRing = false}) async {
+    // cancel notification
+    NotificationService.instance.cancelNotification(
+      tag: notificationId,
+    );
+  }
+
+  @override
+  Future<void> notifyingIncomingCall(
+      {required String notificationId, required String title, required String subtitle, required Map<String, dynamic> data, bool ring = true}) async {
+    // show notification
+    NotificationService.instance.showNotification(
+      action: 'incoming',
+      title: title,
+      tag: notificationId,
+      body: subtitle,
+      imageUrl: data["imageUrl"],
+      requiresInteraction: true,
+      actions: [
+        {'action': 'answer', 'title': 'Accept', 'icon': 'icons/answer/128.png'},
+        {'action': 'reject', 'title': 'Reject', 'icon': 'icons/hangup/128.png'},
+      ],
+    );
+  }
+
+  @override
+  Future<void> notifyingMissedCall({required String notificationId, required String title, required String subtitle, required Map<String,
+      dynamic> data, bool forceCancelRing = false}) async {
+    // show notification
+    NotificationService.instance.showNotification(
+      action: 'missed',
+      title: title,
+      tag: notificationId,
+      body: subtitle,
+      imageUrl: data["imageUrl"],
+      requiresInteraction: false,
+    );
   }
 }
 
