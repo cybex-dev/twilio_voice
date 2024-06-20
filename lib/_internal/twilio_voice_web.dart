@@ -24,6 +24,48 @@ import 'method_channel/twilio_call_method_channel.dart';
 import 'method_channel/twilio_voice_method_channel.dart';
 import 'utils.dart';
 
+class AudioManager {
+
+  static const String DEFAULT_RINGTONE_URL = "https://sdk.twilio.com/js/client/sounds/releases/1.0.0/incoming.mp3";
+
+  static final AudioManager _instance = AudioManager._();
+
+  AudioManager._();
+
+  factory AudioManager() => _instance;
+
+  final html.AudioElement _audioElement = html.AudioElement();
+
+  void play(String url, {bool loop = true, double volume = 1.0}) {
+    _audioElement.src = url;
+    _audioElement.play();
+    _audioElement.currentTime = 0;
+    _audioElement.muted = false;
+    _audioElement.loop = loop;
+    _audioElement.volume = volume;
+  }
+
+  void stop() {
+    _audioElement.pause();
+  }
+
+  void setVolume(double volume) {
+    _audioElement.volume = volume;
+  }
+
+  void setLoop(bool loop) {
+    _audioElement.loop = loop;
+  }
+
+  void setMuted(bool muted) {
+    _audioElement.muted = muted;
+  }
+
+  bool isPlaying() {
+    return !_audioElement.paused;
+  }
+}
+
 class TwilioSW {
   TwilioSW._() {
     _setupServiceWorker();
@@ -590,12 +632,25 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
     logLocalEventEntries(["DEVICETOKEN", device.token], prefix: "");
   }
 
+  void _playRingtone({double volume = 1.0, bool loop = true}) async {
+    _audioManager.play(AudioManager.DEFAULT_RINGTONE_URL, loop: loop, volume: volume);
+  }
+
+  void _stopRingtone() async {
+    _audioManager.stop();
+  }
+
   @override
   Future<void> notifyingCancelCall({required String notificationId, bool forceCancelRing = false}) async {
     // cancel notification
     NotificationService.instance.cancelNotification(
       tag: notificationId,
     );
+
+    // stop ringtone
+    if (forceCancelRing) {
+      _stopRingtone();
+    }
   }
 
   @override
@@ -614,6 +669,11 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
         {'action': 'reject', 'title': 'Reject', 'icon': 'icons/hangup/128.png'},
       ],
     );
+
+    // play ringtone
+    if (ring) {
+      _playRingtone();
+    }
   }
 
   @override
@@ -628,6 +688,11 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
       imageUrl: data["imageUrl"],
       requiresInteraction: false,
     );
+
+    // stop ringtone
+    if (forceCancelRing) {
+      _stopRingtone();
+    }
   }
 }
 
