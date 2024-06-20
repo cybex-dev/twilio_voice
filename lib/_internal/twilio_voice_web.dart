@@ -218,7 +218,6 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
 
     // setup SW listener
     final sw = TwilioSW.instance;
-    sw._setupServiceWorker();
     sw.onMessageReceived = _handleServiceWorkerMessage;
   }
 
