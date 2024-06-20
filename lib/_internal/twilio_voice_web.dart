@@ -41,7 +41,7 @@ class NotificationService {
     String? body,
     String? imageUrl,
     bool? requiresInteraction,
-    List<Map<String, String>>? actions,
+    List<Map<String, String>> actions = const [],
   }) async {
     // request background permissions
     if(!await hasPermission()) {
