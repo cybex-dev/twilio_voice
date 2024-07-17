@@ -495,7 +495,10 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                 self.sendPhoneCallEvents(description: "LOG|Successfully unregistered from VoIP push notifications.", isError: false)
             }
         }
-        UserDefaults.standard.removeObject(forKey: kCachedDeviceToken)
+
+        //DO NOT REMOVE DEVICE TOKEN , AS IT IS UNNECESSARY AND USER WILL HAVE TO RESTART THE APP TO GET NEW DEVICE TOKEN 
+        //IF WE REMOVED FROM HERE , WHICH WILL CAUSE TO FAILURE IN REGISTRATION 
+//        UserDefaults.standard.removeObject(forKey: kCachedDeviceToken)
         
         // Remove the cached binding as credentials are invalidated
         UserDefaults.standard.removeObject(forKey: kCachedBindingDate)
@@ -870,7 +873,8 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         
         let callUpdate = CXCallUpdate()
         callUpdate.remoteHandle = callHandle
-        callUpdate.localizedCallerName = clients[from] ?? self.clients["defaultCaller"] ?? defaultCaller
+        // If the client is not registered, USE THE THE FROM NUMBER
+        callUpdate.localizedCallerName = clients[from] ?? self.clients["defaultCaller"] ?? formatUSPhoneNumber(from)
         callUpdate.supportsDTMF = true
         callUpdate.supportsHolding = true
         callUpdate.supportsGrouping = false
@@ -884,6 +888,29 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                 self.sendPhoneCallEvents(description: "LOG|Incoming call successfully reported.", isError: false)
             }
         }
+    }
+    
+    // Format the phone number to US format if it is a valid US number else return the number as is
+    func formatUSPhoneNumber(_ number: String) -> String {
+        // Ensure the number starts with "+1" and has exactly 12 characters
+        guard number.hasPrefix("+1"), number.count == 12 else {
+            return number
+        }
+        
+        // Extract the digits after "+1"
+        let digits = number.suffix(10)
+        
+        // Check if all characters are digits
+        guard digits.allSatisfy({ $0.isNumber }) else {
+            return number
+        }
+        
+        // Format the number
+        let areaCode = digits.prefix(3)
+        let middle = digits.dropFirst(3).prefix(3)
+        let last = digits.suffix(4)
+        
+        return "+1 (\(areaCode)) \(middle)-\(last)"
     }
     
     func performEndCallAction(uuid: UUID) {
