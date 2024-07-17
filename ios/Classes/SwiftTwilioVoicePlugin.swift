@@ -875,7 +875,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         let callUpdate = CXCallUpdate()
         callUpdate.remoteHandle = callHandle
         // If the client is not registered, USE THE THE FROM NUMBER
-        callUpdate.localizedCallerName = clients[from] ?? self.clients["defaultCaller"] ?? formatUSPhoneNumber(from)
+        callUpdate.localizedCallerName = formatUSPhoneNumber(from)
         callUpdate.supportsDTMF = true
         callUpdate.supportsHolding = true
         callUpdate.supportsGrouping = false
