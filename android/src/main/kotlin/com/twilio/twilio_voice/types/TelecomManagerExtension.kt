@@ -60,7 +60,7 @@ object TelecomManagerExtension {
     }
 
     fun TelecomManager.openPhoneAccountSettings(activity: Activity) {
-        if (Build.MANUFACTURER.equals("Samsung", ignoreCase = true)) {
+        if (Build.MANUFACTURER.equals("Samsung", ignoreCase = true)|| Build.MANUFACTURER.equals("OnePlus", ignoreCase = true)) {
             try {
                 val intent = Intent(TelecomManager.ACTION_CHANGE_PHONE_ACCOUNTS)
                 intent.component = ComponentName(
