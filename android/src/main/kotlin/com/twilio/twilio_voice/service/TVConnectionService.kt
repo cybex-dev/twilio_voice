@@ -325,6 +325,7 @@ class TVConnectionService : ConnectionService() {
                 ACTION_HANGUP -> {
                     val callHandle = it.getStringExtra(EXTRA_CALL_HANDLE) ?: getActiveCallHandle() ?: run {
                         Log.e(TAG, "onStartCommand: ACTION_HANGUP is missing String EXTRA_CALL_HANDLE")
+                        activeConnections.clear()
                         return@let
                     }
 
