@@ -299,7 +299,7 @@ class TVConnectionService : ConnectionService() {
                             putString(TelecomManager.EXTRA_CALL_SUBJECT, callInvite.customParameters["_TWI_SUBJECT"])
                         }
                     }
-
+                    android.util.Log.d(TAG, "onCallRecived basil: $extras")
                     // Add new incoming call to the telecom manager
                     telecomManager.addNewIncomingCall(phoneAccountHandle, extras)
                 }
@@ -650,9 +650,44 @@ class TVConnectionService : ConnectionService() {
             connection.extras.putString(TelecomManager.EXTRA_CALL_SUBJECT, it)
         }
         val name = if(connection.callDirection == CallDirection.OUTGOING) params.to else params.from
-        connection.setAddress(Uri.fromParts(PhoneAccount.SCHEME_TEL, name, null), TelecomManager.PRESENTATION_ALLOWED)
-        connection.setCallerDisplayName(name, TelecomManager.PRESENTATION_ALLOWED)
+
+        val userName = extractClient(name)
+        val userNumber = extractUserNumber(name)
+
+        if(connection.callDirection == CallDirection.OUTGOING){
+
+            connection.setAddress(Uri.fromParts(PhoneAccount.SCHEME_TEL, name, null), TelecomManager.PRESENTATION_ALLOWED)
+            connection.setCallerDisplayName(name, TelecomManager.PRESENTATION_ALLOWED)
+        } else {
+            connection.setAddress(Uri.fromParts(PhoneAccount.SCHEME_TEL, userNumber, null), TelecomManager.PRESENTATION_ALLOWED)
+            connection.setCallerDisplayName(userName, TelecomManager.PRESENTATION_ALLOWED)
+        }
+
     }
+
+    fun extractUserNumber(input: String): String {
+        // Define the regular expression pattern to match the user_number part
+        val pattern = Regex("""user_number:([^\s:]+)""")
+
+        // Search for the first match in the input string
+        val match = pattern.find(input)
+
+        // Extract the matched part (user_number:+11230123)
+        return match?.groups?.get(1)?.value ?: input
+    }
+
+    fun extractClient(input: String): String {
+        // Define the regular expression pattern to match the client part
+        val pattern = Regex("""client:([^\s:]+)""")
+
+        // Search for the first match in the input string
+        val match = pattern.find(input)
+
+        // Extract the matched part (client:+11230(123))
+        return match?.groups?.get(1)?.value ?: input
+    }
+
+
 
     private fun sendBroadcastEvent(ctx: Context, event: String, callSid: String?, extras: Bundle? = null) {
         Intent(ctx, TVBroadcastReceiver::class.java).apply {

@@ -1530,6 +1530,18 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         }
     }
 
+
+    fun extractUserNumber(input: String): String {
+        // Define the regular expression pattern to match the user_number part
+        val pattern = Regex("""user_number:([^\s:]+)""")
+
+        // Search for the first match in the input string
+        val match = pattern.find(input)
+
+        // Extract the matched part (user_number:+11230123)
+        return match?.groups?.get(1)?.value ?: input
+    }
+
     private fun requestPermissionForPhoneState(onPermissionResult: (Boolean) -> Unit) {
         return requestPermissionOrShowRationale(
             "Read Phone State",
@@ -1660,7 +1672,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                             )
                             return
                         }
-                val from = callInvite.from ?: ""
+                val from = extractUserNumber(callInvite.from ?: "")
                 val to = callInvite.to
                 val params = JSONObject().apply {
                     callInvite.customParameters.forEach { (key, value) ->
@@ -1727,7 +1739,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                             )
                             return
                         }
-                val from = ci.from ?: ""
+                val from = extractUserNumber(ci.from ?: "")
                 val to = ci.to
                 val params = JSONObject().apply {
                     ci.customParameters.forEach { (key, value) ->
@@ -1861,6 +1873,9 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             }
         }
     }
+
+
+
 
 //    override fun onConnectFailure(call: Call, callException: CallException) {
 //        Log.e(TAG, "onConnectFailure: ${callException.message}")

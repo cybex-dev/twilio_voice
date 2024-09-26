@@ -559,14 +559,51 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
          */
         UserDefaults.standard.set(Date(), forKey: kCachedBindingDate)
         
-        var from:String = callInvite.from ?? defaultCaller
-        from = from.replacingOccurrences(of: "client:", with: "")
-        
-        self.sendPhoneCallEvents(description: "Ringing|\(from)|\(callInvite.to)|Incoming\(formatCustomParams(params: callInvite.customParameters))", isError: false)
-        reportIncomingCall(from: from, uuid: callInvite.uuid)
-        self.callInvite = callInvite
-    }
-    
+        let incomingCallerDetails:String = callInvite.from ?? defaultCaller
+        let client:String = (extractClient(from: incomingCallerDetails) ?? "").replacingOccurrences(of: "_", with: " ")
+        let userNumber:String = extractUserNumber(from: incomingCallerDetails) ?? ""
+         
+         var from:String = callInvite.from ?? defaultCaller
+         from = userNumber
+         
+         self.sendPhoneCallEvents(description: "Ringing|\(from)|\(callInvite.to)|Incoming\(formatCustomParams(params: callInvite.customParameters))", isError: false)
+         reportIncomingCall(from: client, uuid: callInvite.uuid)
+         self.callInvite = callInvite
+     }
+     
+     func extractUserNumber(from input: String) -> String {
+         // Define the regular expression pattern to match the user_number part
+         let pattern = #"user_number:([^\s:]+)"#
+         
+         // Create a regular expression object
+         let regex = try? NSRegularExpression(pattern: pattern)
+         
+         // Search for the first match in the input string
+         if let match = regex?.firstMatch(in: input, range: NSRange(location: 0, length: input.utf16.count)) {
+             // Extract the matched part (user_number:+11230123)
+             if let range = Range(match.range(at: 1), in: input) {
+                 return String(input[range])
+             }
+         }
+         return from
+     }
+     
+     func extractClient(from input: String) -> String {
+         // Define the regular expression pattern to match the client part
+         let pattern = #"client:([^\s:]+)"#
+         
+         // Create a regular expression object
+         let regex = try? NSRegularExpression(pattern: pattern)
+         
+         // Search for the first match in the input string
+         if let match = regex?.firstMatch(in: input, range: NSRange(location: 0, length: input.utf16.count)) {
+             // Extract the matched part (client:+11230(123))
+             if let range = Range(match.range(at: 1), in: input) {
+                 return String(input[range])
+             }
+         }
+         return from
+     }
     func formatCustomParams(params: [String:Any]?)->String{
         guard let customParameters = params else{return ""}
         do{
@@ -634,16 +671,16 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     // MARK: TVOCallDelegate
     public func callDidStartRinging(call: Call) {
         let direction = (self.callOutgoing ? "Outgoing" : "Incoming")
-        let from = (call.from ?? self.identity)
+        let from = extractUserNumber(from: (call.from ?? "")) ?? ""
         let to = (call.to ?? self.callTo)
-        self.sendPhoneCallEvents(description: "Ringing|\(from)|\(to)|\(direction)", isError: false)
+        self.sendPhoneCallEvents(description: "Ringing|\(String(describing: from))|\(to)|\(direction)", isError: false)
         
         //self.placeCallButton.setTitle("Ringing", for: .normal)
     }
     
     public func callDidConnect(call: Call) {
         let direction = (self.callOutgoing ? "Outgoing" : "Incoming")
-        let from = (call.from ?? self.identity)
+        let from = extractUserNumber(from:(call.from ?? self.identity)) ?? ""
         let to = (call.to ?? self.callTo)
         self.sendPhoneCallEvents(description: "Connected|\(from)|\(to)|\(direction)", isError: false)
         
@@ -956,7 +993,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             }
             self.sendPhoneCallEvents(description: "LOG|performAnswerVoiceCall: answering call", isError: false)
             let theCall = ci.accept(options: acceptOptions, delegate: self)
-            self.sendPhoneCallEvents(description: "Answer|\(theCall.from!)|\(theCall.to!)\(formatCustomParams(params: ci.customParameters))", isError:false)
+            self.sendPhoneCallEvents(description: "Answer|\(String(describing: extractUserNumber(from: theCall.from!) ?? ""))|\(theCall.to!)\(formatCustomParams(params: ci.customParameters))", isError:false)
             self.call = theCall
             self.callKitCompletionCallback = completionHandler
             self.callInvite = nil
