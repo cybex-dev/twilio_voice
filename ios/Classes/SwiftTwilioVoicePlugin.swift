@@ -585,7 +585,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                  return String(input[range])
              }
          }
-         return from
+         return input
      }
      
      func extractClient(from input: String) -> String {
@@ -602,7 +602,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                  return String(input[range])
              }
          }
-         return from
+         return input
      }
     func formatCustomParams(params: [String:Any]?)->String{
         guard let customParameters = params else{return ""}
