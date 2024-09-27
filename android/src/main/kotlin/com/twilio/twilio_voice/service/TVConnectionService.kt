@@ -685,7 +685,7 @@ class TVConnectionService : ConnectionService() {
         val match = pattern.find(input)
 
         // Extract the matched part (client:+11230(123))
-        return match?.groups?.get(1)?.value ?: input
+        return match?.groups?.get(1)?.value?.replace(oldValue = "_", newValue = " " ) ?: input
     }
 
 
