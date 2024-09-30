@@ -560,8 +560,8 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         UserDefaults.standard.set(Date(), forKey: kCachedBindingDate)
         
         let incomingCallerDetails:String = callInvite.from ?? defaultCaller
-        let client:String = (extractClient(from: incomingCallerDetails) ?? "").replacingOccurrences(of: "_", with: " ")
-        let userNumber:String = extractUserNumber(from: incomingCallerDetails) ?? ""
+        let client:String = (extractClient(from: incomingCallerDetails) ).replacingOccurrences(of: "_", with: " ")
+        let userNumber:String = extractUserNumber(from: incomingCallerDetails)
          
          var from:String = callInvite.from ?? defaultCaller
          from = userNumber
@@ -571,39 +571,42 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
          self.callInvite = callInvite
      }
      
-     func extractUserNumber(from input: String) -> String {
-         // Define the regular expression pattern to match the user_number part
-         let pattern = #"user_number:([^\s:]+)"#
-         
-         // Create a regular expression object
-         let regex = try? NSRegularExpression(pattern: pattern)
-         
-         // Search for the first match in the input string
-         if let match = regex?.firstMatch(in: input, range: NSRange(location: 0, length: input.utf16.count)) {
-             // Extract the matched part (user_number:+11230123)
-             if let range = Range(match.range(at: 1), in: input) {
-                 return String(input[range])
-             }
-         }
-         return input
-     }
-     
-     func extractClient(from input: String) -> String {
-         // Define the regular expression pattern to match the client part
-         let pattern = #"client:([^\s:]+)"#
-         
-         // Create a regular expression object
-         let regex = try? NSRegularExpression(pattern: pattern)
-         
-         // Search for the first match in the input string
-         if let match = regex?.firstMatch(in: input, range: NSRange(location: 0, length: input.utf16.count)) {
-             // Extract the matched part (client:+11230(123))
-             if let range = Range(match.range(at: 1), in: input) {
-                 return String(input[range])
-             }
-         }
-         return input
-     }
+    func extractUserNumber(from input: String) -> String {
+        // Define the regular expression pattern to match the user_number part
+        let pattern = #"user_number:([^\s:]+)"#
+        
+        // Create a regular expression object
+        let regex = try? NSRegularExpression(pattern: pattern)
+        
+        // Search for the first match in the input string
+        if let match = regex?.firstMatch(in: input, range: NSRange(location: 0, length: input.utf16.count)) {
+            // Extract the matched part (user_number:+11230123)
+            if let range = Range(match.range(at: 1), in: input) {
+                return String(input[range])
+            }
+        }
+        // Return the input if no match is found
+        return input
+    }
+
+    func extractClient(from input: String) -> String {
+        // Define the regular expression pattern to match the client part
+        let pattern = #"client:([^\s:]+)"#
+        
+        // Create a regular expression object
+        let regex = try? NSRegularExpression(pattern: pattern)
+        
+        // Search for the first match in the input string
+        if let match = regex?.firstMatch(in: input, range: NSRange(location: 0, length: input.utf16.count)) {
+            // Extract the matched part (client:+11230(123))
+            if let range = Range(match.range(at: 1), in: input) {
+                return String(input[range])
+            }
+        }
+        // Return the input if no match is found
+        return input
+    }
+
     func formatCustomParams(params: [String:Any]?)->String{
         guard let customParameters = params else{return ""}
         do{
@@ -671,7 +674,8 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     // MARK: TVOCallDelegate
     public func callDidStartRinging(call: Call) {
         let direction = (self.callOutgoing ? "Outgoing" : "Incoming")
-        let from = extractUserNumber(from: (call.from ?? "")) ?? ""
+        let from = call.from ?? self.identity
+//        extractUserNumber(from: (call.from ?? ""))
         let to = (call.to ?? self.callTo)
         self.sendPhoneCallEvents(description: "Ringing|\(String(describing: from))|\(to)|\(direction)", isError: false)
         
@@ -680,7 +684,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     
     public func callDidConnect(call: Call) {
         let direction = (self.callOutgoing ? "Outgoing" : "Incoming")
-        let from = extractUserNumber(from:(call.from ?? self.identity)) ?? ""
+        let from = extractUserNumber(from:(call.from ?? self.identity))
         let to = (call.to ?? self.callTo)
         self.sendPhoneCallEvents(description: "Connected|\(from)|\(to)|\(direction)", isError: false)
         
@@ -993,7 +997,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             }
             self.sendPhoneCallEvents(description: "LOG|performAnswerVoiceCall: answering call", isError: false)
             let theCall = ci.accept(options: acceptOptions, delegate: self)
-            self.sendPhoneCallEvents(description: "Answer|\(String(describing: extractUserNumber(from: theCall.from!) ?? ""))|\(theCall.to!)\(formatCustomParams(params: ci.customParameters))", isError:false)
+            self.sendPhoneCallEvents(description: "Answer|\(String(describing: extractUserNumber(from: theCall.from!)))|\(theCall.to!)\(formatCustomParams(params: ci.customParameters))", isError:false)
             self.call = theCall
             self.callKitCompletionCallback = completionHandler
             self.callInvite = nil
