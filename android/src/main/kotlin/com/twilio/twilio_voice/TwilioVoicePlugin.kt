@@ -478,11 +478,14 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
              val hasActiveCalls = isOnCall()
                 if(hasActiveCalls){
                     val activeCalls = TVConnectionService.Companion.activeConnections
-                    val call = activeCalls.values.firstOrNull()
-                    val from = call?.twilioCall?.from ?: ""
-                    val to = call?.twilioCall?.to ?: ""
-                    val callDirection = call?.callDirection ?: CallDirection.INCOMING
-                     logEvents("", arrayOf("Connected", from, to, callDirection.label ))
+                    val currentCall = activeCalls.values.firstOrNull()
+                    val isAnsweredCall = currentCall?.twilioCall?.state == Call.State.CONNECTED
+                    if(isAnsweredCall){
+                        val from = currentCall?.twilioCall?.from ?: ""
+                        val to = currentCall?.twilioCall?.to ?: ""
+                        val callDirection = currentCall?.callDirection ?: CallDirection.INCOMING
+                        logEvents("", arrayOf("Connected", from, to, callDirection.label ))
+                    }
                     }
                     result.success(true)
 
