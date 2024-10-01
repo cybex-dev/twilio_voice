@@ -674,8 +674,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     // MARK: TVOCallDelegate
     public func callDidStartRinging(call: Call) {
         let direction = (self.callOutgoing ? "Outgoing" : "Incoming")
-        let from = call.from ?? self.identity
-//        extractUserNumber(from: (call.from ?? ""))
+        let from =  self.callOutgoing ? call.from ?? self.identity : extractUserNumber(from: (call.from ?? ""))
         let to = (call.to ?? self.callTo)
         self.sendPhoneCallEvents(description: "Ringing|\(String(describing: from))|\(to)|\(direction)", isError: false)
         
