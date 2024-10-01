@@ -208,6 +208,8 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 Log.d(TAG, "onReconnecting")
             }
 
+
+
             override fun onReconnected(call: Call) {
                 Log.d(TAG, "onReconnected")
             }
@@ -471,6 +473,21 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 }
             }
 
+            TVMethodChannels.GetActiveCallOnResumeFromTerminatedState -> {
+             //is on call
+             val hasActiveCalls = isOnCall()
+                if(hasActiveCalls){
+                    val activeCalls = TVConnectionService.Companion.activeConnections
+                    val call = activeCalls.values.firstOrNull()
+                    val from = call?.twilioCall?.from ?: ""
+                    val to = call?.twilioCall?.to ?: ""
+                    val callDirection = call?.callDirection ?: CallDirection.INCOMING
+                     logEvents("", arrayOf("Connected", from, to, callDirection.label ))
+                    }
+                    result.success(true)
+
+            }
+
             TVMethodChannels.IS_BLUETOOTH_ON -> {
                 Log.d(TAG, "isBluetoothOn invoked")
                 result.success(isBluetoothOn)
@@ -513,6 +530,8 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             TVMethodChannels.IS_ON_CALL -> {
                 result.success(isOnCall())
                 return
+
+
 
                 // Disabled for now until a better solution for TelecomManager.isInCall() is found - this returns true for any ConnectionService including Cellular calls.
 //                context?.let { ctx ->
