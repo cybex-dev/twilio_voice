@@ -29,7 +29,10 @@ abstract class TwilioCallPlatform extends SharedPlatformInterface {
   /// Places new call
   ///
   /// [extraOptions] will be added to the callPayload sent to your server
-  Future<bool?> place({required String from, required String to, Map<String, dynamic>? extraOptions});
+  Future<bool?> place(
+      {required String from,
+      required String to,
+      Map<String, dynamic>? extraOptions});
 
   /// Place outgoing call with raw parameters. Returns true if successful, false otherwise.
   /// Parameters send to Twilio's REST API endpoint 'makeCall' can be passed in [extraOptions];
@@ -83,4 +86,7 @@ abstract class TwilioCallPlatform extends SharedPlatformInterface {
 
   /// Send digits to active call
   Future<bool?> sendDigits(String digits);
+
+  //getActiveCallOnResumeFromTerminatedState
+  Future<bool?> getActiveCallOnResumeFromTerminatedState();
 }

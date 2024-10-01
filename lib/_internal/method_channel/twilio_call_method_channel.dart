@@ -23,8 +23,12 @@ class MethodChannelTwilioCall extends TwilioCallPlatform {
   ///
   /// [extraOptions] will be added to the callPayload sent to your server
   @override
-  Future<bool?> place({required String from, required String to, Map<String, dynamic>? extraOptions}) {
-    _activeCall = ActiveCall(from: from, to: to, callDirection: CallDirection.outgoing);
+  Future<bool?> place(
+      {required String from,
+      required String to,
+      Map<String, dynamic>? extraOptions}) {
+    _activeCall =
+        ActiveCall(from: from, to: to, callDirection: CallDirection.outgoing);
 
     var options = extraOptions ?? <String, dynamic>{};
     options['From'] = from;
@@ -41,13 +45,15 @@ class MethodChannelTwilioCall extends TwilioCallPlatform {
   /// Checks if there is an ongoing call
   @override
   Future<bool> isOnCall() {
-    return _channel.invokeMethod<bool?>('isOnCall', <String, dynamic>{}).then<bool>((bool? value) => value ?? false);
+    return _channel.invokeMethod<bool?>('isOnCall',
+        <String, dynamic>{}).then<bool>((bool? value) => value ?? false);
   }
 
   /// Gets the active call's SID. This will be null until the first Ringing event occurs
   @override
   Future<String?> getSid() {
-    return _channel.invokeMethod<String?>('call-sid', <String, dynamic>{}).then<String?>((String? value) => value);
+    return _channel.invokeMethod<String?>('call-sid',
+        <String, dynamic>{}).then<String?>((String? value) => value);
   }
 
   /// Answers incoming call
@@ -61,7 +67,8 @@ class MethodChannelTwilioCall extends TwilioCallPlatform {
   /// In future, native mobile will also respect the [holdCall] value.
   @override
   Future<bool?> holdCall({bool holdCall = true}) {
-    return _channel.invokeMethod('holdCall', <String, dynamic>{"shouldHold": holdCall});
+    return _channel
+        .invokeMethod('holdCall', <String, dynamic>{"shouldHold": holdCall});
   }
 
   /// Query's active call holding state
@@ -73,7 +80,8 @@ class MethodChannelTwilioCall extends TwilioCallPlatform {
   /// Toggles mute state to provided value
   @override
   Future<bool?> toggleMute(bool isMuted) {
-    return _channel.invokeMethod('toggleMute', <String, dynamic>{"muted": isMuted});
+    return _channel
+        .invokeMethod('toggleMute', <String, dynamic>{"muted": isMuted});
   }
 
   /// Query's mute status of call, true if call is muted
@@ -85,7 +93,8 @@ class MethodChannelTwilioCall extends TwilioCallPlatform {
   /// Toggles speaker state to provided value
   @override
   Future<bool?> toggleSpeaker(bool speakerIsOn) {
-    return _channel.invokeMethod('toggleSpeaker', <String, dynamic>{"speakerIsOn": speakerIsOn});
+    return _channel.invokeMethod(
+        'toggleSpeaker', <String, dynamic>{"speakerIsOn": speakerIsOn});
   }
 
   /// Switches Audio Device
@@ -101,12 +110,14 @@ class MethodChannelTwilioCall extends TwilioCallPlatform {
 
   @override
   Future<bool?> sendDigits(String digits) {
-    return _channel.invokeMethod('sendDigits', <String, dynamic>{"digits": digits});
+    return _channel
+        .invokeMethod('sendDigits', <String, dynamic>{"digits": digits});
   }
 
   @override
   Future<bool?> toggleBluetooth({bool bluetoothOn = true}) {
-    return _channel.invokeMethod('toggleBluetooth', <String, dynamic>{"bluetoothOn": bluetoothOn});
+    return _channel.invokeMethod(
+        'toggleBluetooth', <String, dynamic>{"bluetoothOn": bluetoothOn});
   }
 
   @override
@@ -118,5 +129,12 @@ class MethodChannelTwilioCall extends TwilioCallPlatform {
   @override
   Future<bool?> connect({Map<String, dynamic>? extraOptions}) {
     return Future.value(false);
+  }
+
+  //getActiveCallOnResumeFromTerminatedState
+  @override
+  Future<bool?> getActiveCallOnResumeFromTerminatedState() {
+    return _channel.invokeMethod(
+        'getActiveCallOnResumeFromTerminatedState', <String, dynamic>{});
   }
 }

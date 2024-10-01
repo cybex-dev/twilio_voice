@@ -200,6 +200,19 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                 self.call!.sendDigits(digits);
             }
         }
+         else if flutterCall.method == "getActiveCallOnResumeFromTerminatedState"
+        {
+            let isCallAnswered = self.call != nil
+            if let call = self.call{
+                let direction = (self.callOutgoing ? "Outgoing" : "Incoming")
+                let from = extractUserNumber(from: call.from ?? self.identity)
+                let to = call.to ?? self.callTo
+                self.sendPhoneCallEvents(description: "Connected|\(from)|\(to)|\(direction)", isError: false)
+            }
+            result(true)
+        }
+        
+
         /* else if flutterCall.method == "receiveCalls"
          {
          guard let clientIdentity = arguments["clientIdentifier"] as? String else {return}
