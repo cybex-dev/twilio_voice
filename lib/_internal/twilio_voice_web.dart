@@ -212,6 +212,9 @@ class Logger {
 
 /// The web implementation of [TwilioVoicePlatform].
 class TwilioVoiceWeb extends MethodChannelTwilioVoice {
+
+  String _defaultMessageFormatter(Map<String, dynamic> _) => "Incoming Call";
+
   TwilioVoiceWeb() {
     // TODO(cybex-dev) - load twilio.min.js via [TwilioLoader] in future
     // loadTwilio();
@@ -231,6 +234,9 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   html.Permissions? get _webPermissionsDelegate => _webNavigatorDelegate.permissions;
 
   late final Call _call = Call();
+
+  MessageFormatter? _incomingMessageFormatter;
+  Map<String, String>? _incomingMessageDefaultValues;
 
   @override
   Call get call => _call;
@@ -556,10 +562,12 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
     // request permission to show notification
     NotificationService.instance.requestPermission();
 
+    final formatter = _incomingMessageFormatter ?? _defaultMessageFormatter;
+
     const action = 'incoming';
     final callParams = getCallParams(call);
     final title = _resolveCallerName(callParams);
-    const body = 'Incoming Call';
+    final body =  formatter.call(callParams);
     final callSid = callParams["CallSid"] as String;
     final imageUrl = _resolveImageUrl(callParams);
     final actions = <Map<String, String>>[
@@ -586,6 +594,12 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#tokenwillexpire-event
   void _onTokenWillExpire(twilio_js.Device device) {
     logLocalEventEntries(["DEVICETOKEN", device.token], prefix: "");
+  }
+
+  @override
+  void setIncomingMessageFormatter(MessageFormatter? formatter, {Map<String, String>? defaultValues}) {
+    _incomingMessageFormatter = formatter;
+    _incomingMessageDefaultValues = defaultValues;
   }
 }
 

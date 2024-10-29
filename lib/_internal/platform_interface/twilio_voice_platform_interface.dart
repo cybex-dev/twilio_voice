@@ -9,6 +9,8 @@ import 'twilio_call_platform_interface.dart';
 
 typedef OnDeviceTokenChanged = Function(String token);
 
+typedef MessageFormatter = String Function(Map<String, dynamic> data);
+
 abstract class TwilioVoicePlatform extends SharedPlatformInterface {
   TwilioVoicePlatform() : super(token: _token);
 
@@ -42,6 +44,13 @@ abstract class TwilioVoicePlatform extends SharedPlatformInterface {
   ///
   /// Setting is persisted across restarts until overridden
   set showMissedCallNotifications(bool value);
+
+  /// Set incoming message formatter, placeholders are replaced with data from [Call.customParameters]
+  /// Format: "Hello {name}, you have a call from {callerName}"
+  /// The call custom parameters are passed as a map, e.g. {"name": "John", "callerName": "Jane"}. If they don't exist, the default value is used provided [defaultValues].
+  ///
+  /// Web only
+  void setIncomingMessageFormatter(MessageFormatter formatter, {Map<String, String>? defaultValues});
 
   /// Unregisters from Twilio
   ///

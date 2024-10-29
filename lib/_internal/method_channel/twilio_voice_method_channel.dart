@@ -430,6 +430,11 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
         throw ArgumentError('$state is not a valid CallState.');
     }
   }
+
+  @override
+  void setIncomingMessageFormatter(MessageFormatter formatter, {Map<String, String>? defaultValues}) {
+
+  }
 }
 
 ActiveCall createCallFromState(String state, {CallDirection? callDirection, bool initiated = false}) {
