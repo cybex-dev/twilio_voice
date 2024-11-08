@@ -639,11 +639,22 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                     )
                     return@onMethodCall
                 }
+
+                val callerName = call.argument<String>(Constants.CALLER_NAME) ?: run {
+                    result.error(
+                            FlutterErrorCodes.MALFORMED_ARGUMENTS,
+                            "No '${Constants.CALLER_NAME}' provided or invalid type",
+                            null
+                    )
+                    return@onMethodCall
+                }
+
+
                 Log.d(TAG, "calling $from -> $to")
 
                 accessToken?.let { token ->
                     context?.let { ctx ->
-                        val success = placeCall(ctx, token, from, to, params)
+                        val success = placeCall(ctx, token, from, to, params,callerName )
                         result.success(success)
                     } ?: run {
                         Log.e(TAG, "Context is null, cannot place call")
@@ -1064,7 +1075,8 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         accessToken: String,
         from: String,
         to: String,
-        params: Map<String, String>
+        params: Map<String, String>,
+        callerName: String,
     ): Boolean {
         assert(accessToken.isNotEmpty()) { "Twilio Access Token cannot be empty" }
         assert(to.isNotEmpty()) { "To cannot be empty" }
@@ -1107,6 +1119,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 putExtra(TVConnectionService.EXTRA_TOKEN, accessToken)
                 putExtra(TVConnectionService.EXTRA_TO, to)
                 putExtra(TVConnectionService.EXTRA_FROM, from)
+                putExtra(TVConnectionService.EXTRA_CALLER_NAME, callerName)
                 putExtra(TVConnectionService.EXTRA_OUTGOING_PARAMS, Bundle().apply {
                     for ((key, value) in params) {
                         putString(key, value)

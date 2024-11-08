@@ -18,4 +18,5 @@ object Constants {
 
     const val kDefaultCaller: String = "defaultCaller"
     const val kDEVICETOKEN: String = "DEVICETOKEN"
+    const val CALLER_NAME: String = "CallerName"
 }

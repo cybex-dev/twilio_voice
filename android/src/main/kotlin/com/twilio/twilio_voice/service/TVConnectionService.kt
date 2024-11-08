@@ -143,6 +143,8 @@ class TVConnectionService : ConnectionService() {
          */
         const val EXTRA_TO: String = "EXTRA_TO"
 
+        const val EXTRA_CALLER_NAME: String = "EXTRA_CALLER_NAME"
+
         /**
          * Extra used with [ACTION_PLACE_OUTGOING_CALL] to place an outgoing call connection. Denotes the caller's identity.
          */
@@ -349,6 +351,11 @@ class TVConnectionService : ConnectionService() {
                         return@let
                     }
 
+                    val outgoingName = it.getStringExtra(EXTRA_CALLER_NAME) ?: run {
+                        Log.e(TAG, "onStartCommand: ACTION_PLACE_OUTGOING_CALL is missing String EXTRA_FROM")
+                        return@let
+                    }
+
                     // Get all params from bundle
                     val params = HashMap<String, String>()
                     val outGoingParams = it.getParcelableExtraSafe<Bundle>(EXTRA_OUTGOING_PARAMS)
@@ -362,6 +369,8 @@ class TVConnectionService : ConnectionService() {
                     params[EXTRA_FROM] = from
                     params[EXTRA_TO] = to
                     params[EXTRA_TOKEN] = token
+                    params[EXTRA_CALLER_NAME] = outgoingName
+
 
                     // Create Twilio Param bundles
                     val myBundle = Bundle().apply {
@@ -514,7 +523,7 @@ class TVConnectionService : ConnectionService() {
 
         // Setup connection event listeners and UI parameters
         attachCallEventListeners(connection, ci.callSid)
-        applyParameters(connection, callParams)
+        applyParameters(connection, callParams,null)
         connection.setRinging()
 
         startForegroundService()
@@ -546,6 +555,11 @@ class TVConnectionService : ConnectionService() {
         val from = myBundle.getString(EXTRA_FROM) ?: run {
             Log.e(TAG, "onCreateOutgoingConnection: ACTION_PLACE_OUTGOING_CALL is missing String EXTRA_FROM")
             throw Exception("onCreateOutgoingConnection: ACTION_PLACE_OUTGOING_CALL is missing String EXTRA_FROM");
+        }
+
+        val outGoingCallerName = myBundle.getString(EXTRA_CALLER_NAME) ?: run {
+            Log.e(TAG, "onCreateOutgoingConnection: ACTION_PLACE_OUTGOING_CALL is missing String EXTRA_FROM")
+            throw Exception("onCreateOutgoingConnection: ACTION_PLACE_OUTGOING_CALL is missing String EXTRA_CALLER_NAME");
         }
 
         // Get all params from bundle
@@ -589,7 +603,7 @@ class TVConnectionService : ConnectionService() {
 
                 // If call is not attached, attach it
                 if (!activeConnections.containsKey(callSid)) {
-                    applyParameters(connection, callParams)
+                    applyParameters(connection, callParams,outGoingCallerName )
                     attachCallEventListeners(connection, callSid)
                     callParams.callSid = callSid
                 }
@@ -646,7 +660,7 @@ class TVConnectionService : ConnectionService() {
      * @param connection The connection to apply the parameters to.
      * @param params The parameters to apply to the connection.
      */
-    private fun <T: TVCallConnection> applyParameters(connection: T, params: TVParameters) {
+    private fun <T: TVCallConnection> applyParameters(connection: T, params: TVParameters, outgoingCallerName: String?) {
         params.getExtra(TVParameters.PARAM_SUBJECT, null)?.let {
             connection.extras.putString(TelecomManager.EXTRA_CALL_SUBJECT, it)
         }
@@ -658,7 +672,7 @@ class TVConnectionService : ConnectionService() {
         if(connection.callDirection == CallDirection.OUTGOING){
 
             connection.setAddress(Uri.fromParts(PhoneAccount.SCHEME_TEL, name, null), TelecomManager.PRESENTATION_ALLOWED)
-            connection.setCallerDisplayName(name, TelecomManager.PRESENTATION_ALLOWED)
+            connection.setCallerDisplayName(outgoingCallerName, TelecomManager.PRESENTATION_ALLOWED)
         } else {
             connection.setAddress(Uri.fromParts(PhoneAccount.SCHEME_TEL, userNumber, null), TelecomManager.PRESENTATION_ALLOWED)
             connection.setCallerDisplayName(userName, TelecomManager.PRESENTATION_ALLOWED)
