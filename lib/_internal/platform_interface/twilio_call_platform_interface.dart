@@ -32,6 +32,7 @@ abstract class TwilioCallPlatform extends SharedPlatformInterface {
   Future<bool?> place(
       {required String from,
       required String to,
+      required String callerName,
       Map<String, dynamic>? extraOptions});
 
   /// Place outgoing call with raw parameters. Returns true if successful, false otherwise.

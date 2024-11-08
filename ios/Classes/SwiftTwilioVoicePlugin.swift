@@ -43,6 +43,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     var callKitCallController: CXCallController
     var userInitiatedDisconnect: Bool = false
     var callOutgoing: Bool = false
+    var outgoingCallerName = ""
     
     static var appName: String {
         get {
@@ -122,6 +123,8 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         } else if flutterCall.method == "makeCall" {
             guard let callTo = arguments["To"] as? String else {return}
             guard let callFrom = arguments["From"] as? String else {return}
+            let callerName = arguments["CallerName"] as? String
+            outgoingCallerName = callerName ?? ""
             self.callArgs = arguments
             self.callOutgoing = true
             if let accessToken = arguments["accessToken"] as? String{
@@ -893,6 +896,8 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         } else {
             action.fail()
         }
+        
+        
     }
     
     // MARK: Call Kit Actions
@@ -911,7 +916,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             
             let callUpdate = CXCallUpdate()
             callUpdate.remoteHandle = callHandle
-            callUpdate.localizedCallerName = self.clients[handle] ?? self.clients["defaultCaller"] ?? self.defaultCaller
+            callUpdate.localizedCallerName = self.outgoingCallerName
             callUpdate.supportsDTMF = false
             callUpdate.supportsHolding = true
             callUpdate.supportsGrouping = false

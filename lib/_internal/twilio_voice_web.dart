@@ -5,15 +5,13 @@ import 'dart:html' as html;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
-
 // Added as temporary measure till sky_engine includes js_util (allowInterop())
 import 'package:js/js.dart' as js;
-import 'package:js/js_util.dart' as js_util;
-import 'package:twilio_voice/_internal/js/call/call_status.dart';
-
 // This is required for JS interop, do not remove even though linter complains
 // ignore: unused_import
 import 'package:js/js_util.dart';
+import 'package:js/js_util.dart' as js_util;
+import 'package:twilio_voice/_internal/js/call/call_status.dart';
 import 'package:twilio_voice/_internal/platform_interface/twilio_voice_platform_interface.dart';
 
 import '../twilio_voice.dart';
@@ -50,7 +48,8 @@ class TwilioSW {
   void _setupServiceWorker() {
     _webServiceWorkerContainerDelegate = html.window.navigator.serviceWorker;
     if (_webServiceWorkerContainerDelegate == null) {
-      printDebug("No service worker found, check if you've registered the `twilio-sw.js` service worker and if the script is present.");
+      printDebug(
+          "No service worker found, check if you've registered the `twilio-sw.js` service worker and if the script is present.");
       return;
     }
 
@@ -59,7 +58,8 @@ class TwilioSW {
 
     _webServiceWorkerDelegate = _webServiceWorkerContainerDelegate?.controller;
     if (_webServiceWorkerDelegate == null) {
-      printDebug("No service worker registered and/or controlling the page. Try (soft) refreshing?");
+      printDebug(
+          "No service worker registered and/or controlling the page. Try (soft) refreshing?");
       return;
     }
   }
@@ -70,7 +70,8 @@ class TwilioSW {
         // already registered, we don't have to register again
         return;
       }
-      _webServiceWorkerMessageSubscription = _webServiceWorkerContainerDelegate!.onMessage.listen((event) {
+      _webServiceWorkerMessageSubscription =
+          _webServiceWorkerContainerDelegate!.onMessage.listen((event) {
         _messageReceived?.call(event.data);
       });
     }
@@ -110,9 +111,9 @@ class NotificationService {
     List<Map<String, String>>? actions,
   }) async {
     // request background permissions
-    if(!await hasPermission()) {
+    if (!await hasPermission()) {
       bool result = await requestPermission();
-      if(!result) {
+      if (!result) {
         printDebug("Cannot show notification with permission.");
         return;
       }
@@ -180,8 +181,10 @@ class Logger {
   /// The event will be sent as a String with the following format:
   /// - (if prefix is not empty): "prefix|description", where '|' is separator
   /// - (if prefix is empty): "description"
-  static void logLocalEventEntries(List<String> entries, {String prefix = "LOG", String separator = "|"}) {
-    logLocalEvent(entries.join(separator), prefix: prefix, separator: separator);
+  static void logLocalEventEntries(List<String> entries,
+      {String prefix = "LOG", String separator = "|"}) {
+    logLocalEvent(entries.join(separator),
+        prefix: prefix, separator: separator);
   }
 
   /// Logs event to EventChannel.
@@ -189,9 +192,11 @@ class Logger {
   /// The event will be sent as a String with the following format:
   /// - (if prefix is not empty): "prefix|description", where '|' is separator
   /// - (if prefix is empty): "description"
-  static void logLocalEvent(String description, {String prefix = "LOG", String separator = "|"}) async {
+  static void logLocalEvent(String description,
+      {String prefix = "LOG", String separator = "|"}) async {
     if (!kIsWeb) {
-      throw UnimplementedError("Use eventChannel() via sendPhoneEvents on platform implementation");
+      throw UnimplementedError(
+          "Use eventChannel() via sendPhoneEvents on platform implementation");
     }
     // eventChannel.binaryMessenger.handlePlatformMessage(
     //   _kEventChannelName,
@@ -228,7 +233,8 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
 
   html.Navigator get _webNavigatorDelegate => html.window.navigator;
 
-  html.Permissions? get _webPermissionsDelegate => _webNavigatorDelegate.permissions;
+  html.Permissions? get _webPermissionsDelegate =>
+      _webNavigatorDelegate.permissions;
 
   late final Call _call = Call();
 
@@ -326,7 +332,8 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
 
       /// This dirty hack to get media stream. Request (to show permissions popup on Chrome and other browsers, then stop the stream to release the permission)
       /// TODO(cybex-dev) - check supported media streams
-      html.MediaStream mediaStream = await _webNavigatorDelegate.getUserMedia(audio: true);
+      html.MediaStream mediaStream =
+          await _webNavigatorDelegate.getUserMedia(audio: true);
       mediaStream.getTracks().forEach((track) => track.stop());
       return hasMicAccess();
     } catch (e) {
@@ -422,7 +429,8 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   /// See [twilio_js.Device.new]
   /// Note: [deviceToken] is ignored for web
   @override
-  Future<bool?> setTokens({required String accessToken, String? deviceToken}) async {
+  Future<bool?> setTokens(
+      {required String accessToken, String? deviceToken}) async {
     // TODO use updateOptions for Twilio device
     assert(accessToken.isNotEmpty, "Access token cannot be empty");
     // assert(deviceToken != null && deviceToken.isNotEmpty, "Device token cannot be null or empty");
@@ -542,7 +550,9 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
     final from = params["From"] ?? "";
     if (from.startsWith("client:")) {
       final clientName = from.substring(7);
-      return _localStorage.getRegisteredClient(clientName) ?? _localStorage.getRegisteredClient("defaultCaller") ?? clientName;
+      return _localStorage.getRegisteredClient(clientName) ??
+          _localStorage.getRegisteredClient("defaultCaller") ??
+          clientName;
     } else {
       return from;
     }
@@ -641,7 +651,8 @@ class Call extends MethodChannelTwilioCall {
   /// Not currently implemented for web
   @override
   Future<bool?> toggleSpeaker(bool speakerIsOn) async {
-    Logger.logLocalEvent(speakerIsOn ? "Speaker On" : "Speaker Off", prefix: "");
+    Logger.logLocalEvent(speakerIsOn ? "Speaker On" : "Speaker Off",
+        prefix: "");
     return Future.value(false);
   }
 
@@ -749,7 +760,8 @@ class Call extends MethodChannelTwilioCall {
 
       CallStatus callStatus = getCallStatus(_jsCall!);
       // reject incoming call that is both outbound ringing or inbound pending
-      if (callStatus == CallStatus.ringing || callStatus == CallStatus.pending) {
+      if (callStatus == CallStatus.ringing ||
+          callStatus == CallStatus.pending) {
         _jsCall!.reject();
       } else {
         _jsCall!.disconnect();
@@ -774,13 +786,20 @@ class Call extends MethodChannelTwilioCall {
   /// </code>
   /// See [twilio_js.Device.connect]
   @override
-  Future<bool?> place({required String from, required String to, Map<String, dynamic>? extraOptions}) async {
+  Future<bool?> place({
+    required String from,
+    required String to,
+    required String callerName,
+    Map<String, dynamic>? extraOptions,
+  }) async {
     assert(device != null,
         "Twilio device is null, make sure you have initialized the device first by calling [ setTokens({required String accessToken, String? deviceToken}) ] ");
     assert(from.isNotEmpty, "From cannot be empty");
     assert(to.isNotEmpty, "To cannot be empty");
-    assert(extraOptions?.keys.contains("From") ?? true, "From cannot be passed in extraOptions");
-    assert(extraOptions?.keys.contains("To") ?? true, "To cannot be passed in extraOptions");
+    assert(extraOptions?.keys.contains("From") ?? true,
+        "From cannot be passed in extraOptions");
+    assert(extraOptions?.keys.contains("To") ?? true,
+        "To cannot be passed in extraOptions");
 
     Logger.logLocalEvent("Making new call");
     // handle parameters
@@ -911,7 +930,8 @@ class Call extends MethodChannelTwilioCall {
       final params = getCallParams(_jsCall!);
       final from = params["From"] ?? "";
       final to = params["To"] ?? "";
-      final direction = _jsCall!.direction == "INCOMING" ? "Incoming" : "Outgoing";
+      final direction =
+          _jsCall!.direction == "INCOMING" ? "Incoming" : "Outgoing";
       Logger.logLocalEventEntries(
         ["Ringing", from, to, direction],
         prefix: "",
@@ -964,8 +984,6 @@ class Call extends MethodChannelTwilioCall {
     Logger.logLocalEvent("Missed Call", prefix: "");
     Logger.logLocalEvent("Call Ended", prefix: "");
   }
-
-
 
   Future<void> _showMissedCallNotification(twilio_js.Call call) async {
     const action = 'missed';
@@ -1050,7 +1068,8 @@ Map<String, String> _getCustomCallParameters(dynamic callParameters) {
   final list = toArray(callParameters) as List<dynamic>;
   final entries = list.map((e) {
     final entry = e as List;
-    return MapEntry<String, String>(entry.first.toString(), entry.last.toString());
+    return MapEntry<String, String>(
+        entry.first.toString(), entry.last.toString());
   });
   return Map<String, String>.fromEntries(entries);
 }
@@ -1063,7 +1082,8 @@ Map<String, String> getCallParams(twilio_js.Call call) {
   return Map<String, String>.from(customParams)..addAll(params);
 }
 
-ActiveCall activeCallFromNativeJsCall(twilio_js.Call call, {DateTime? initiated}) {
+ActiveCall activeCallFromNativeJsCall(twilio_js.Call call,
+    {DateTime? initiated}) {
   final params = getCallParams(call);
   final from = params["From"] ?? params["from"] ?? "";
   final to = params["To"] ?? params["to"] ?? "";
@@ -1080,7 +1100,9 @@ ActiveCall activeCallFromNativeJsCall(twilio_js.Call call, {DateTime? initiated}
     // call.customParameters["To"] ?? "",
     customParams: params,
     //call.customParameters as Map<String, dynamic>?,
-    callDirection: direction == "INCOMING" ? CallDirection.incoming : CallDirection.outgoing,
+    callDirection: direction == "INCOMING"
+        ? CallDirection.incoming
+        : CallDirection.outgoing,
     initiated: date,
   );
 }

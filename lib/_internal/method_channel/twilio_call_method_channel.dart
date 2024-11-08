@@ -26,6 +26,7 @@ class MethodChannelTwilioCall extends TwilioCallPlatform {
   Future<bool?> place(
       {required String from,
       required String to,
+      required String callerName,
       Map<String, dynamic>? extraOptions}) {
     _activeCall =
         ActiveCall(from: from, to: to, callDirection: CallDirection.outgoing);
@@ -33,6 +34,7 @@ class MethodChannelTwilioCall extends TwilioCallPlatform {
     var options = extraOptions ?? <String, dynamic>{};
     options['From'] = from;
     options['To'] = to;
+    options['CallerName'] = callerName;
     return _channel.invokeMethod('makeCall', options);
   }
 
