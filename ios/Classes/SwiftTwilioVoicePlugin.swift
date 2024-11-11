@@ -576,9 +576,8 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         UserDefaults.standard.set(Date(), forKey: kCachedBindingDate)
         
         let incomingCallerDetails:String = callInvite.from ?? defaultCaller
-        let client:String = (extractClient(from: incomingCallerDetails) ).replacingOccurrences(of: "_", with: " ")
         let userNumber:String = extractUserNumber(from: incomingCallerDetails)
-         
+        let client:String = callInvite.customParameters?["client_name"] ?? userNumber
          var from:String = callInvite.from ?? defaultCaller
          from = userNumber
          
@@ -605,23 +604,23 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         return input
     }
 
-    func extractClient(from input: String) -> String {
-        // Define the regular expression pattern to match the client part
-        let pattern = #"client:([^\s:]+)"#
-        
-        // Create a regular expression object
-        let regex = try? NSRegularExpression(pattern: pattern)
-        
-        // Search for the first match in the input string
-        if let match = regex?.firstMatch(in: input, range: NSRange(location: 0, length: input.utf16.count)) {
-            // Extract the matched part (client:+11230(123))
-            if let range = Range(match.range(at: 1), in: input) {
-                return String(input[range])
-            }
-        }
-        // Return the input if no match is found
-        return input
-    }
+//    func extractClient(from input: String) -> String {
+//        // Define the regular expression pattern to match the client part
+//        let pattern = #"client:([^\s:]+)"#
+//        
+//        // Create a regular expression object
+//        let regex = try? NSRegularExpression(pattern: pattern)
+//        
+//        // Search for the first match in the input string
+//        if let match = regex?.firstMatch(in: input, range: NSRange(location: 0, length: input.utf16.count)) {
+//            // Extract the matched part (client:+11230(123))
+//            if let range = Range(match.range(at: 1), in: input) {
+//                return String(input[range])
+//            }
+//        }
+//        // Return the input if no match is found
+//        return input
+//    }
 
     func formatCustomParams(params: [String:Any]?)->String{
         guard let customParameters = params else{return ""}

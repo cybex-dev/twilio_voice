@@ -666,7 +666,7 @@ class TVConnectionService : ConnectionService() {
         }
         val name = if(connection.callDirection == CallDirection.OUTGOING) params.to else params.from
 
-        val userName = extractClient(name)
+        val userName =  params.customParameters["client_name"]
         val userNumber = extractUserNumber(name)
 
         if(connection.callDirection == CallDirection.OUTGOING){
@@ -691,16 +691,16 @@ class TVConnectionService : ConnectionService() {
         return match?.groups?.get(1)?.value ?: input
     }
 
-    fun extractClient(input: String): String {
-        // Define the regular expression pattern to match the client part
-        val pattern = Regex("""client:([^\s:]+)""")
-
-        // Search for the first match in the input string
-        val match = pattern.find(input)
-
-        // Extract the matched part (client:+11230(123))
-        return match?.groups?.get(1)?.value?.replace(oldValue = "_", newValue = " " ) ?: input
-    }
+//    fun extractClient(input: String): String {
+//        // Define the regular expression pattern to match the client part
+//        val pattern = Regex("""client:([^\s:]+)""")
+//
+//        // Search for the first match in the input string
+//        val match = pattern.find(input)
+//
+//        // Extract the matched part (client:+11230(123))
+//        return match?.groups?.get(1)?.value?.replace(oldValue = "_", newValue = " " ) ?: input
+//    }
 
 
 
