@@ -481,7 +481,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                     val currentCall = activeCalls.values.firstOrNull()
                     val isAnsweredCall = currentCall?.twilioCall?.state == Call.State.CONNECTED
                     if(isAnsweredCall){
-                        val from = currentCall?.twilioCall?.from ?: ""
+                        val from = extractUserNumber(currentCall?.twilioCall?.from ?: "") 
                         val to = currentCall?.twilioCall?.to ?: ""
                         val callDirection = currentCall?.callDirection ?: CallDirection.INCOMING
                         logEvents("", arrayOf("Connected", from, to, callDirection.label ))
