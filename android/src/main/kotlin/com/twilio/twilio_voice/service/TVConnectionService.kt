@@ -180,6 +180,14 @@ class TVConnectionService : ConnectionService() {
             return activeConnections.isNotEmpty()
         }
 
+        //clear active connections
+        fun clearActiveConnections() {
+            activeConnections.clear()
+        }
+
+
+        
+
         /**
          * Active call definition is extended to include calls in which one can actively communicate, or call is on hold, or call is ringing or dialing. This applies only to this and calling functions.
          * Gets the first ongoing call handle, if any. Else, gets the first call on hold. Lastly, gets the first call in either a ringing or dialing state, if any. Returns null if there are no active calls. If there are more than one active calls, the first call handle is returned.
@@ -725,6 +733,9 @@ class TVConnectionService : ConnectionService() {
     override fun onCreateOutgoingConnectionFailed(connectionManagerPhoneAccount: PhoneAccountHandle?, request: ConnectionRequest?) {
         super.onCreateOutgoingConnectionFailed(connectionManagerPhoneAccount, request)
         Log.d(TAG, "onCreateOutgoingConnectionFailed")
+        println("Call error happened  basil")
+        //clear the active connections
+        activeConnections.clear()
         stopForegroundService()
     }
 
