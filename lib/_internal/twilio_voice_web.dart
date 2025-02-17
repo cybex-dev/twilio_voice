@@ -786,8 +786,9 @@ class Call extends MethodChannelTwilioCall {
         "Twilio device is null, make sure you have initialized the device first by calling [ setTokens({required String accessToken, String? deviceToken}) ] ");
     assert(from.isNotEmpty, "'from' cannot be empty");
     assert(to.isNotEmpty, "'to' cannot be empty");
-    assert(extraOptions?.keys.contains("From") ?? true, "From cannot be passed in extraOptions");
-    assert(extraOptions?.keys.contains("To") ?? true, "To cannot be passed in extraOptions");
+    final options = (extraOptions ?? {});
+    assert(!options.keys.contains("From"), "'from' cannot be passed in 'extraOptions'");
+    assert(!options.keys.contains("To"), "'to' cannot be passed in 'extraOptions'");
 
     Logger.logLocalEvent("Making new call");
     // handle parameters
