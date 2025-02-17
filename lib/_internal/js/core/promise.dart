@@ -2,7 +2,7 @@
 // ignore: deprecated_member_use
 import 'dart:js_util';
 
-import 'package:js/js.dart';
+import 'dart:js_interop';
 
 @JS()
 abstract class Promise<T> {

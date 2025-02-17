@@ -1,4 +1,4 @@
-import 'package:js/js.dart';
+import 'dart:js_interop';
 import 'package:twilio_voice/_internal/js/call/call.dart';
 import 'package:twilio_voice/_internal/js/core/core.dart';
 import 'package:twilio_voice/_internal/js/twilio.dart';

@@ -21,7 +21,7 @@
 // library directive must come first in file
 library twilio.js;
 
-import 'package:js/js.dart';
+import 'dart:js_interop';
 
 @JS("Twilio")
 class Twilio {
