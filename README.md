@@ -149,7 +149,7 @@ To customize the `label` and `shortDescription` of the calling account, add the 
 
 This can be found in alternatively the Phone App's settings, `Other/Advanced Call Settings -> Calling Accounts -> (Example App)` (then toggle the switch)
 
-![enter image description here](https://i.imgur.com/6mhjFWZ.gif)
+![enter image description here](https://camo.githubusercontent.com/f483d950b603c08d07f566849b06c489ef8331919b8b50b6cb5b94f92d2a29be/68747470733a2f2f692e696d6775722e636f6d2f366d686a46575a2e676966)
 
 See [example](https://github.com/cybex-dev/twilio_voice/blob/master/example/android/app/src/main/res/values/strings.xml) for more details
 
