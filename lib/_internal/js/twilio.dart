@@ -16,7 +16,9 @@
 /// to call a specific JS function, add this inside the @JS annotation's parentheses e.g. [@JS("JSON.stringify")].
 /// Declare external functions that will be called from JS - keep JS and dart names synonymous - for readers, future devs, and debugging.
 /// These external functions are called from the main `plugin_name_web.dart` file.
+
 @JS()
+// library directive must come first in file
 library twilio.js;
 
 import 'package:js/js.dart';

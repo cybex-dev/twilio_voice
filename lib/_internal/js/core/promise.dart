@@ -1,3 +1,5 @@
+// TODO(cybex-dev) implement js_interop for js_util package
+// ignore: deprecated_member_use
 import 'dart:js_util';
 
 import 'package:js/js.dart';

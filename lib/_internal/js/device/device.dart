@@ -23,7 +23,7 @@ enum TwilioDeviceEvents {
 @JS("Twilio.Device")
 class Device extends Twilio {
   // private constructor
-  // ignore: unused_element
+  // ignore: unused_element_parameter, unused_element
   external Device._(token, [DeviceInitOptions? options]);
 
   // factory used by js lib
