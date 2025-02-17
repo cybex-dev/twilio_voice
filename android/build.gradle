@@ -26,8 +26,8 @@ apply plugin: 'kotlin-android'
 apply plugin: 'org.jetbrains.kotlin.android'
 
 android {
-    compileSdk 34
-
+    compileSdk 35
+    namespace = "com.twilio.twilio_voice"
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
