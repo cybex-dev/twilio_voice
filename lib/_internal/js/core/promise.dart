@@ -2,7 +2,10 @@
 // ignore: deprecated_member_use
 import 'dart:js_util';
 
-import 'dart:js_interop';
+// import 'dart:js_interop';
+// TODO(cybex-dev) implement js_interop for js package
+// ignore: deprecated_member_use
+import 'package:js/js.dart';
 
 @JS()
 abstract class Promise<T> {
