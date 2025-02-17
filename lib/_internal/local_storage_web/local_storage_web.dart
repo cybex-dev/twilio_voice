@@ -1,4 +1,4 @@
-import 'dart:html';
+import 'package:web/web.dart';
 
 import 'i_local_storage_web.dart';
 
@@ -33,6 +33,6 @@ class LocalStorageWeb extends ILocalStorageWeb {
 
   @override
   void removeRegisteredClient(String id) {
-    _localStorage.remove(id);
+    _localStorage.removeItem(id);
   }
 }
