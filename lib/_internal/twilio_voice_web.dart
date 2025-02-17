@@ -784,8 +784,8 @@ class Call extends MethodChannelTwilioCall {
   Future<bool?> place({required String from, required String to, Map<String, dynamic>? extraOptions}) async {
     assert(device != null,
         "Twilio device is null, make sure you have initialized the device first by calling [ setTokens({required String accessToken, String? deviceToken}) ] ");
-    assert(from.isNotEmpty, "From cannot be empty");
-    assert(to.isNotEmpty, "To cannot be empty");
+    assert(from.isNotEmpty, "'from' cannot be empty");
+    assert(to.isNotEmpty, "'to' cannot be empty");
     assert(extraOptions?.keys.contains("From") ?? true, "From cannot be passed in extraOptions");
     assert(extraOptions?.keys.contains("To") ?? true, "To cannot be passed in extraOptions");
 
