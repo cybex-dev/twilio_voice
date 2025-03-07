@@ -5,6 +5,7 @@ buildscript {
     ext {
         kotlinVersion           = "2.0.0"
         agpVersion              = "8.5.2"
+        twilioVoiceVersion      = "6.9.0"
     }
     repositories {
         google()
@@ -60,7 +61,7 @@ android {
 dependencies {
     implementation(platform("org.jetbrains.kotlin:kotlin-bom:${kotlinVersion}"))
     implementation(platform("com.google.firebase:firebase-bom:33.10.0"))
-    implementation("com.twilio:voice-android:6.3.2")
+    implementation("com.twilio:voice-android:${twilioVoiceVersion}")
     implementation("com.google.firebase:firebase-messaging-ktx:24.1.0")
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'androidx.lifecycle:lifecycle-process:2.8.7'
