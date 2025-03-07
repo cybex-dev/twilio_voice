@@ -20,14 +20,14 @@ Any and all [Feature Requests](https://github.com/cybex-dev/twilio_voice/issues/
 
 ## Features
 
-- Receive and place calls from iOS devices, uses Callkit to receive calls.
-- Receive and place calls from Android devices, uses ~~custom UI~~ native call screen to receive calls (via a `ConnectionService` impl).
+- Receive and place calls from iOS devices, uses Callkit to receive calls (Twilio Voice SDK [v6.13.0](https://www.twilio.com/docs/voice/sdks/ios/changelog#6130)).
+- Receive and place calls from Android devices, uses ~~custom UI~~ native call screen to receive calls (via a `ConnectionService` impl) (Twilio Voice SDK [v6.9.0](https://www.twilio.com/docs/voice/sdks/android/3x-changelog#690)).
 - Receive and place calls from Web (FCM push notification integration not yet supported by Twilio Voice Web, see [here](https://github.com/twilio/twilio-voice.js/pull/159#issuecomment-1551553299) for discussion)
 - Receive and place calls from MacOS devices, uses custom UI to receive calls (in future & macOS
   13.0+, we'll be using CallKit).
 - Interpret TwiML parameters to populate UI, see below [Interpreting Parameters](#interpreting-parameters)
 
-## Feature addition schedule:
+### Feature addition schedule:
 
 - Audio device selection support (select input/output audio devices, on-hold)
 - Update plugin to Flutter federated packages (step 1 of 2 with Web support merge)
@@ -54,7 +54,17 @@ This limits macOS to not support remote push notifications `.voip` and `.apns` a
 not support this. Instead, it uses a web socket connection to listen for incoming calls, arguably
 more efficient vs time but forces the app to be open at all times to receive incoming calls.
 
-### Setup
+## Getting Started
+
+First, add the package to your `pubspec.yaml` file:
+
+```yaml
+dependencies:
+  ...
+  twilio_voice: ^0.2.0+1
+```
+
+Then run `flutter pub get` in your terminal.
 
 Please follow Twilio's quickstart setup for each platform, you don't need to write the native code
 but it will help you understand the basic functionality of setting up your server, registering your
