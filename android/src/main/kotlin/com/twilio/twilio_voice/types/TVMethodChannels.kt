@@ -33,7 +33,6 @@ enum class TVMethodChannels(val method: String) {
     REQUEST_READ_PHONE_STATE_PERMISSION("requestReadPhoneStatePermission"),
     HAS_CALL_PHONE_PERMISSION("hasCallPhonePermission"),
     REQUEST_CALL_PHONE_PERMISSION("requestCallPhonePermission"),
-    @Deprecated("No longer required due to Custom UI replaced with native call screen")
     BACKGROUND_CALL_UI("backgroundCallUi"),
     SHOW_NOTIFICATIONS("showNotifications"),
     HAS_READ_PHONE_NUMBERS_PERMISSION("hasReadPhoneNumbersPermission"),
