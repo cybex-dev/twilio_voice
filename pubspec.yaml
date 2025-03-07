@@ -21,7 +21,7 @@ dependencies:
     sdk: flutter
   plugin_platform_interface: ^2.1.4
   # temporarily - upgrade to js: 0.7.2 then finally js_interop:
-  js: 0.7.1
+  js: ^0.7.1
   web: ^1.1.0
 
 dev_dependencies:
