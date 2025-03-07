@@ -1,3 +1,8 @@
+## 0.2.0+1
+
+* Fix: [Web] `window.localStorage` deprecated members
+* Updated README.md
+
 ## 0.2.0
 * [Android] Support (long-awaited) AGP 8 update
 * [Android, iOS] Update Twilio SDKs to latest versions, see release notes for:
