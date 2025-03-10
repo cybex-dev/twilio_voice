@@ -29,7 +29,9 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
   /// Sends call events
   @override
   Stream<CallEvent> get callEventsListener {
-    _callEventsListener ??= _eventChannel.receiveBroadcastStream().map((dynamic event) => parseCallEvent(event));
+    _callEventsListener ??= _eventChannel
+        .receiveBroadcastStream()
+        .map((dynamic event) => parseCallEvent(event));
     return _callEventsListener!;
   }
 
@@ -43,7 +45,10 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
   /// ios device token is obtained internally
   @override
   Future<bool?> setTokens({required String accessToken, String? deviceToken}) {
-    return _channel.invokeMethod('tokens', <String, dynamic>{"accessToken": accessToken, "deviceToken": deviceToken});
+    return _channel.invokeMethod('tokens', <String, dynamic>{
+      "accessToken": accessToken,
+      "deviceToken": deviceToken
+    });
   }
 
   /// Whether or not should the user receive a notification after a missed call, default to true.
@@ -51,7 +56,8 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
   /// Setting is persisted across restarts until overridden
   @override
   set showMissedCallNotifications(bool value) {
-    _channel.invokeMethod('show-notifications', <String, dynamic>{"show": value});
+    _channel
+        .invokeMethod('show-notifications', <String, dynamic>{"show": value});
   }
 
   /// Unregisters from Twilio
@@ -59,7 +65,8 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
   /// If no accessToken is provided, previously registered accessToken will be used
   @override
   Future<bool?> unregister({String? accessToken}) {
-    return _channel.invokeMethod('unregister', <String, dynamic>{"accessToken": accessToken});
+    return _channel.invokeMethod(
+        'unregister', <String, dynamic>{"accessToken": accessToken});
   }
 
   /// Checks if device needs background permission
@@ -68,7 +75,8 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
   @Deprecated('custom call UI not used anymore, has no effect')
   @override
   Future<bool> requiresBackgroundPermissions() {
-    return _channel.invokeMethod<bool?>('requiresBackgroundPermissions', {}).then<bool>((bool? value) => value ?? false);
+    return _channel.invokeMethod<bool?>('requiresBackgroundPermissions',
+        {}).then<bool>((bool? value) => value ?? false);
   }
 
   /// Requests background permission
@@ -88,7 +96,8 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
     if (defaultTargetPlatform != TargetPlatform.android) {
       return Future.value(true);
     }
-    return _channel.invokeMethod<bool?>('hasRegisteredPhoneAccount', {}).then<bool>((bool? value) => value ?? false);
+    return _channel.invokeMethod<bool?>('hasRegisteredPhoneAccount',
+        {}).then<bool>((bool? value) => value ?? false);
   }
 
   /// Register phone account with TelecomManager
@@ -99,7 +108,8 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
     if (defaultTargetPlatform != TargetPlatform.android) {
       return Future.value(true);
     }
-    return _channel.invokeMethod<bool?>('registerPhoneAccount', {}).then<bool>((bool? value) => value ?? false);
+    return _channel.invokeMethod<bool?>(
+        'registerPhoneAccount', {}).then<bool>((bool? value) => value ?? false);
   }
 
   /// Checks if App's phone account is enabled
@@ -110,7 +120,8 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
     if (defaultTargetPlatform != TargetPlatform.android) {
       return Future.value(true);
     }
-    return _channel.invokeMethod<bool?>('isPhoneAccountEnabled', {}).then<bool>((bool? value) => value ?? false);
+    return _channel.invokeMethod<bool?>('isPhoneAccountEnabled', {}).then<bool>(
+        (bool? value) => value ?? false);
   }
 
   /// Open phone account settings
@@ -121,13 +132,15 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
     if (defaultTargetPlatform != TargetPlatform.android) {
       return Future.value(true);
     }
-    return _channel.invokeMethod<bool?>('openPhoneAccountSettings', {}).then<bool>((bool? value) => value ?? false);
+    return _channel.invokeMethod<bool?>('openPhoneAccountSettings',
+        {}).then<bool>((bool? value) => value ?? false);
   }
 
   /// Checks if device has microphone permission
   @override
   Future<bool> hasMicAccess() {
-    return _channel.invokeMethod<bool?>('hasMicPermission', {}).then<bool>((bool? value) => value ?? false);
+    return _channel.invokeMethod<bool?>(
+        'hasMicPermission', {}).then<bool>((bool? value) => value ?? false);
   }
 
   /// Request microphone permission
@@ -144,7 +157,8 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
     if (defaultTargetPlatform != TargetPlatform.android) {
       return Future.value(true);
     }
-    return _channel.invokeMethod<bool?>('hasReadPhoneStatePermission', {}).then<bool>((bool? value) => value ?? false);
+    return _channel.invokeMethod<bool?>('hasReadPhoneStatePermission',
+        {}).then<bool>((bool? value) => value ?? false);
   }
 
   /// Request read phone state permission
@@ -166,7 +180,8 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
     if (defaultTargetPlatform != TargetPlatform.android) {
       return Future.value(true);
     }
-    return _channel.invokeMethod<bool?>('hasCallPhonePermission', {}).then<bool>((bool? value) => value ?? false);
+    return _channel.invokeMethod<bool?>('hasCallPhonePermission',
+        {}).then<bool>((bool? value) => value ?? false);
   }
 
   /// request 'android.permission.CALL_PHONE' permission
@@ -188,7 +203,8 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
     if (defaultTargetPlatform != TargetPlatform.android) {
       return Future.value(true);
     }
-    return _channel.invokeMethod<bool?>('hasManageOwnCallsPermission', {}).then<bool>((bool? value) => value ?? false);
+    return _channel.invokeMethod<bool?>('hasManageOwnCallsPermission',
+        {}).then<bool>((bool? value) => value ?? false);
   }
 
   /// Requests system permission to manage calls
@@ -210,7 +226,8 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
     if (defaultTargetPlatform != TargetPlatform.android) {
       return Future.value(true);
     }
-    return _channel.invokeMethod<bool?>('hasReadPhoneNumbersPermission', {}).then<bool>((bool? value) => value ?? false);
+    return _channel.invokeMethod<bool?>('hasReadPhoneNumbersPermission',
+        {}).then<bool>((bool? value) => value ?? false);
   }
 
   /// Request read phone numbers permission
@@ -249,7 +266,9 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
     if (defaultTargetPlatform != TargetPlatform.android) {
       return Future.value(true);
     }
-    return _channel.invokeMethod<bool?>('rejectCallOnNoPermissions', {"shouldReject": shouldReject}).then<bool>((bool? value) => value ?? false);
+    return _channel.invokeMethod<bool?>('rejectCallOnNoPermissions', {
+      "shouldReject": shouldReject
+    }).then<bool>((bool? value) => value ?? false);
   }
 
   /// Returns true if call is rejected when no `CALL_PHONE` permissions are granted nor Phone Account (via `isPhoneAccountEnabled`) is registered. Defaults to false.
@@ -260,7 +279,8 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
     if (defaultTargetPlatform != TargetPlatform.android) {
       return Future.value(false);
     }
-    return _channel.invokeMethod<bool?>('isRejectingCallOnNoPermissions', {}).then<bool>((bool? value) => value ?? false);
+    return _channel.invokeMethod<bool?>('isRejectingCallOnNoPermissions',
+        {}).then<bool>((bool? value) => value ?? false);
   }
 
   /// Set iOS call kit icon
@@ -277,7 +297,8 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
   /// Use `TwilioVoice.instance.updateCallKitIcon(icon: "TransparentIcon")`
   @override
   Future<bool?> updateCallKitIcon({String? icon}) {
-    return _channel.invokeMethod('updateCallKitIcon', <String, dynamic>{"icon": icon});
+    return _channel
+        .invokeMethod('updateCallKitIcon', <String, dynamic>{"icon": icon});
   }
 
   /// Register clientId for background calls
@@ -285,13 +306,15 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
   /// Register the client name for incoming calls while calling using ids
   @override
   Future<bool?> registerClient(String clientId, String clientName) {
-    return _channel.invokeMethod('registerClient', <String, dynamic>{"id": clientId, "name": clientName});
+    return _channel.invokeMethod('registerClient',
+        <String, dynamic>{"id": clientId, "name": clientName});
   }
 
   /// Unregister clientId for background calls
   @override
   Future<bool?> unregisterClient(String clientId) {
-    return _channel.invokeMethod('unregisterClient', <String, dynamic>{"id": clientId});
+    return _channel
+        .invokeMethod('unregisterClient', <String, dynamic>{"id": clientId});
   }
 
   /// Set default caller name for no registered clients
@@ -299,14 +322,16 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
   /// This caller name will be shown for incoming calls
   @override
   Future<bool?> setDefaultCallerName(String callerName) {
-    return _channel.invokeMethod('defaultCaller', <String, dynamic>{"defaultCaller": callerName});
+    return _channel.invokeMethod(
+        'defaultCaller', <String, dynamic>{"defaultCaller": callerName});
   }
 
   /// Android-only, shows background call UI
   /// Deprecated, has no effect
   @override
-  Future<bool?> showBackgroundCallUI() {
-    return Future.value(true);
+  Future<bool?> showBackgroundCallUI(Map<String, dynamic> fcmData) {
+    printDebug("Calling background UI");
+    return _channel.invokeMethod("backgroundCallUi", fcmData);
   }
 
   @override
@@ -362,10 +387,12 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
       return CallEvent.connected;
     } else if (state.startsWith("Incoming|")) {
       // Added as temporary override for incoming calls, not breaking current (expected) Ringing behaviour
-      call.activeCall = createCallFromState(state, callDirection: CallDirection.incoming);
+      call.activeCall =
+          createCallFromState(state, callDirection: CallDirection.incoming);
 
       if (kDebugMode) {
-        printDebug('Incoming - From: ${call.activeCall!.from}, To: ${call.activeCall!.to}, Direction: ${call.activeCall!.callDirection}');
+        printDebug(
+            'Incoming - From: ${call.activeCall!.from}, To: ${call.activeCall!.to}, Direction: ${call.activeCall!.callDirection}');
       }
 
       return CallEvent.incoming;
@@ -373,22 +400,27 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
       call.activeCall = createCallFromState(state);
 
       if (kDebugMode) {
-        printDebug('Ringing - From: ${call.activeCall!.from}, To: ${call.activeCall!.to}, Direction: ${call.activeCall!.callDirection}');
+        printDebug(
+            'Ringing - From: ${call.activeCall!.from}, To: ${call.activeCall!.to}, Direction: ${call.activeCall!.callDirection}');
       }
 
       return CallEvent.ringing;
     } else if (state.startsWith("Answer")) {
-      call.activeCall = createCallFromState(state, callDirection: CallDirection.incoming);
+      call.activeCall =
+          createCallFromState(state, callDirection: CallDirection.incoming);
       if (kDebugMode) {
-        printDebug('Answer - From: ${call.activeCall!.from}, To: ${call.activeCall!.to}, Direction: ${call.activeCall!.callDirection}');
+        printDebug(
+            'Answer - From: ${call.activeCall!.from}, To: ${call.activeCall!.to}, Direction: ${call.activeCall!.callDirection}');
       }
 
       return CallEvent.answer;
     } else if (state.startsWith("ReturningCall")) {
-      call.activeCall = createCallFromState(state, callDirection: CallDirection.outgoing);
+      call.activeCall =
+          createCallFromState(state, callDirection: CallDirection.outgoing);
 
       if (kDebugMode) {
-        printDebug('Returning Call - From: ${call.activeCall!.from}, To: ${call.activeCall!.to}, Direction: ${call.activeCall!.callDirection}');
+        printDebug(
+            'Returning Call - From: ${call.activeCall!.from}, To: ${call.activeCall!.to}, Direction: ${call.activeCall!.callDirection}');
       }
 
       return CallEvent.returningCall;
@@ -432,9 +464,13 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
   }
 }
 
-ActiveCall createCallFromState(String state, {CallDirection? callDirection, bool initiated = false}) {
+ActiveCall createCallFromState(String state,
+    {CallDirection? callDirection, bool initiated = false}) {
   List<String> tokens = state.split('|');
-  final direction = callDirection ?? ("incoming" == tokens[3].toLowerCase() ? CallDirection.incoming : CallDirection.outgoing);
+  final direction = callDirection ??
+      ("incoming" == tokens[3].toLowerCase()
+          ? CallDirection.incoming
+          : CallDirection.outgoing);
   return ActiveCall(
     from: tokens[1],
     to: tokens[2],
