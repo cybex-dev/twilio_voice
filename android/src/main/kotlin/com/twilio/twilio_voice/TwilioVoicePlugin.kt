@@ -1735,7 +1735,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                     }
                 }.toString()
 //                callSid = callHandle
-                logEvents("", arrayOf("Answer", from, to, params))
+                logEvents("", arrayOf("Answer", from, to, CallDirection.INCOMING.label, params))
             }
 
             TVNativeCallActions.ACTION_DTMF -> {
