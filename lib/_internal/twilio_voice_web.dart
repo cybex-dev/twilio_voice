@@ -329,10 +329,10 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   Future<bool?> requestMicAccess() async {
     Logger.logLocalEvent("requesting mic permission");
     try {
-      final isSafari = RegExp(r'^((?!chrome|android).)*safari', caseSensitive: false)
+      final isSafariOrFirefox = RegExp(r'^((?!chrome|android).)*safari|firefox', caseSensitive: false)
           .hasMatch(_webNavigatorDelegate.userAgent);
       
-      if (isSafari && _webPermissionsDelegate != null) {
+      if (isSafariOrFirefox && _webPermissionsDelegate != null) {
         try {
           final result = await _webPermissionsDelegate!.request({"name": "microphone"});
           if (result.state == "granted") return true;
