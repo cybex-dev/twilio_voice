@@ -6,7 +6,8 @@ import TwilioVoice
 import CallKit
 import UserNotifications
 
-public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHandler, PKPushRegistryDelegate, NotificationDelegate, CallDelegate, AVAudioPlayerDelegate, CXProviderDelegate {
+public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHandler, PKPushRegistryDelegate, NotificationDelegate, CallDelegate, AVAudioPlayerDelegate, CXProviderDelegate, CXCallObserverDelegate {
+    let callObserver = CXCallObserver()
     
     final let defaultCallKitIcon = "callkit_icon"
     var callKitIcon: String?
@@ -44,6 +45,8 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     var userInitiatedDisconnect: Bool = false
     var callOutgoing: Bool = false
     
+    private var activeCalls: [UUID: CXCall] = [:]
+    
     static var appName: String {
         get {
             return (Bundle.main.infoDictionary!["CFBundleName"] as? String) ?? "Define CFBundleName"
@@ -65,6 +68,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         
         //super.init(coder: aDecoder)
         super.init()
+        callObserver.setDelegate(self, queue: DispatchQueue.main)
         
         callKitProvider.setDelegate(self, queue: nil)
         _ = updateCallKitIcon(icon: defaultIcon)
@@ -535,6 +539,17 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
              * CallKit and fulfill the completion before exiting this callback method.
              */
             completion()
+        }
+    }
+
+    // MARK: CXCallObserverDelegate
+    public func callObserver(_ callObserver: CXCallObserver, callChanged call: CXCall) {
+        let uuid = call.uuid
+
+        if call.hasEnded {
+            activeCalls.removeValue(forKey: uuid) // Remove ended calls
+        } else {
+            activeCalls[uuid] = call // Add or update call
         }
     }
     
