@@ -955,7 +955,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             }
             self.sendPhoneCallEvents(description: "LOG|performAnswerVoiceCall: answering call", isError: false)
             let theCall = ci.accept(options: acceptOptions, delegate: self)
-            self.sendPhoneCallEvents(description: "Answer|\(theCall.from!)|\(theCall.to!)\(formatCustomParams(params: ci.customParameters))", isError:false)
+            self.sendPhoneCallEvents(description: "Answer|\(theCall.from!)|\(theCall.to!)|Incoming\(formatCustomParams(params: ci.customParameters))", isError:false)
             self.call = theCall
             self.callKitCompletionCallback = completionHandler
             self.callInvite = nil
