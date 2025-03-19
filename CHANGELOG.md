@@ -1,3 +1,7 @@
+## 0.2.1
+
+* Fix: [iOS] Race condition ending call remotely and locally results in a "End Call Failed: The operation couldn’t be completed." error. [Issue #184](https://github.com/cybex-dev/twilio_voice/issues/184)
+
 ## 0.2.0+1
 
 * Fix: [Web] `window.localStorage` deprecated members
