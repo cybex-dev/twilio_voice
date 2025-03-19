@@ -553,6 +553,11 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         }
     }
     
+    // Check if a call with a given UUID exists
+    func isCallActive(uuid: UUID) -> Bool {
+        return activeCalls[uuid] != nil
+    }
+    
     func incomingPushHandled() {
         if let completion = self.incomingPushCompletionCallback {
             self.incomingPushCompletionCallback = nil
@@ -904,6 +909,13 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     func performEndCallAction(uuid: UUID) {
         
         self.sendPhoneCallEvents(description: "LOG|performEndCallAction method invoked", isError: false)
+        
+        // check if call is still active, preventing a race condition ending the call throwing an End Call Failed transaction error 4 error
+        guard isCallActive(uuid: uuid) else {
+            print("Call not found or already ended. Skipping end request.")
+            self.sendPhoneCallEvents(description: "Call Ended", isError: false)
+            return
+        }
         
         let endCallAction = CXEndCallAction(call: uuid)
         let transaction = CXTransaction(action: endCallAction)
