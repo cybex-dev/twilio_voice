@@ -1,11 +1,25 @@
-## Next release
-* Update example
-  * [Web] Update example with Firebase Analytics (Web, optional)
-  * [Web] Added environment registration support
+## 0.2.1
+
+* Fix: [iOS] Race condition ending call remotely and locally results in a "End Call Failed: The operation couldn’t be completed." error. [Issue #184](https://github.com/cybex-dev/twilio_voice/issues/184)
+
+## 0.2.0+1
+
+* Fix: [Web] `window.localStorage` deprecated members
+* Updated README.md
+
+## 0.2.0
+* [Android] Support (long-awaited) AGP 8 update
+* [Android, iOS] Update Twilio SDKs to latest versions, see release notes for:
+    * [Android 6.9.0](https://www.twilio.com/docs/voice/sdks/android/3x-changelog#690), and 
+    * [iOS 6.13.0](https://www.twilio.com/docs/voice/sdks/ios/changelog#6130),
+    * _web coming soon with callkit integration_
+* Update: example
+  * Added: [Web] environment registration support
   * Added `defines.config.json` file to example to support environment configuration used with ```flutter run --dart-defines-file=defines.config.json```
-  * [Web] Added `FIREBASE_ENABLE` defines to initialize Firebase only if set to true
-* [Web] Added raw `Connect({Map<String, dynamic>?})` sent to TwiML webhook.
-  * [Android] Fix `showMissedCallNotifications` not working due to incorrect method channel name
+  * Added: [Web] `FIREBASE_ENABLE` defines to initialize Firebase only if set to true
+  * Update: [Web] Update example with Firebase Analytics (Web, optional)
+* Added: [Web] Added raw `Connect({Map<String, dynamic>?})` sent to TwiML webhook.
+* Fix: [Android] `showMissedCallNotifications` not working due to incorrect method channel name
 
 ## 0.1.3
 * Added: CallEvents: 

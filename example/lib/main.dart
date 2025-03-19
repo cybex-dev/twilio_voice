@@ -326,6 +326,7 @@ class _AppState extends State<App> {
     return _registerFromCredentials(identity ?? "Unknown", token).then((value) {
       if (!value) {
         showDialog(
+          // ignore: use_build_context_synchronously
           context: context,
           builder: (context) => const AlertDialog(
             title: Text("Error"),

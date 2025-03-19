@@ -1,4 +1,4 @@
-import 'dart:html';
+import 'package:web/web.dart';
 
 abstract class ILocalStorageWeb {
   /// local storage mapping keys

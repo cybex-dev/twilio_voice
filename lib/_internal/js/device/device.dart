@@ -1,3 +1,6 @@
+// import 'dart:js_interop';
+// TODO(cybex-dev) implement js_interop for js package
+// ignore: deprecated_member_use
 import 'package:js/js.dart';
 import 'package:twilio_voice/_internal/js/call/call.dart';
 import 'package:twilio_voice/_internal/js/core/core.dart';
@@ -23,7 +26,7 @@ enum TwilioDeviceEvents {
 @JS("Twilio.Device")
 class Device extends Twilio {
   // private constructor
-  // ignore: unused_element
+  // ignore: unused_element_parameter, unused_element
   external Device._(token, [DeviceInitOptions? options]);
 
   // factory used by js lib

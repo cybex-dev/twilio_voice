@@ -30,7 +30,7 @@ abstract class TwilioVoicePlatform extends SharedPlatformInterface {
 
   OnDeviceTokenChanged? deviceTokenChanged;
   void setOnDeviceTokenChanged(OnDeviceTokenChanged deviceTokenChanged) {
-    deviceTokenChanged = deviceTokenChanged;
+    this.deviceTokenChanged = deviceTokenChanged;
   }
 
   /// register fcm token, and device token for android

@@ -1,4 +1,4 @@
-import 'dart:html';
+import 'package:web/web.dart';
 
 import 'i_local_storage_web.dart';
 
@@ -13,26 +13,26 @@ class LocalStorageWeb extends ILocalStorageWeb {
 
   @override
   String getDefaultCallerName(String defaultValue) {
-    return _localStorage[kDefaultCallerName] ?? defaultValue;
+    return _localStorage.getItem(kDefaultCallerName) ?? defaultValue;
   }
 
   @override
   void saveDefaultCallerName(String value) {
-    _localStorage[kDefaultCallerName] = value;
+    _localStorage.setItem(kDefaultCallerName, value);
   }
 
   @override
   void addRegisteredClient(String id, String name) {
-    _localStorage[id] = name;
+    _localStorage.setItem(id, name);
   }
 
   @override
   String? getRegisteredClient(String id, {String? defaultValue}) {
-    return _localStorage[id] ?? defaultValue;
+    return _localStorage.getItem(id) ?? defaultValue;
   }
 
   @override
   void removeRegisteredClient(String id) {
-    _localStorage.remove(id);
+    _localStorage.removeItem(id);
   }
 }

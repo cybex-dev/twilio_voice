@@ -21,7 +21,7 @@
   <meta name="description" content="A new Flutter project.">
 
   <!-- iOS meta tags & icons -->
-  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <meta name="apple-mobile-web-app-title" content="example">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
@@ -34,29 +34,33 @@
 
   <script>
     // The value below is injected by flutter build, do not touch.
-    var serviceWorkerVersion = null;
+    var serviceWorkerVersion = '{{flutter_service_worker_version}}';
   </script>
   <!-- This script adds the flutter initialization JS code -->
   <script src="flutter.js" defer></script>
 </head>
 <body>
+  <script>
+    {{flutter_bootstrap_js}}
+  </script>
+
   <!--twilio native js library-->
   <script type="text/javascript" src="./twilio.min.js"></script>
 
-  <script>
-    window.addEventListener('load', function(ev) {
-      // Download main.dart.js
-      _flutter.loader.loadEntrypoint({
-        serviceWorker: {
-          serviceWorkerVersion: serviceWorkerVersion,
-        },
-        onEntrypointLoaded: function(engineInitializer) {
-          engineInitializer.initializeEngine().then(function(appRunner) {
-            appRunner.runApp();
-          });
-        }
-      });
-    });
-  </script>
+<!--  <script>-->
+<!--    window.addEventListener('load', function(ev) {-->
+<!--      // Download main.dart.js-->
+<!--      _flutter.loader.load({-->
+<!--        serviceWorker: {-->
+<!--          serviceWorkerVersion: serviceWorkerVersion,-->
+<!--        },-->
+<!--        onEntrypointLoaded: function(engineInitializer) {-->
+<!--          engineInitializer.initializeEngine().then(function(appRunner) {-->
+<!--            appRunner.runApp();-->
+<!--          });-->
+<!--        }-->
+<!--      });-->
+<!--    });-->
+<!--  </script>-->
 </body>
 </html>
