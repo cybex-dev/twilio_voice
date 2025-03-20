@@ -990,23 +990,26 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     
     private func sendPhoneCallEvents(description: String, isError: Bool) {
         NSLog(description)
-        guard let eventSink = eventSink else {
-            return
-        }
         
         if isError
         {
-            eventSink(FlutterError(code: "unavailable",
-                                   message: description,
-                                   details: nil))
+            let err = FlutterError(code: "unavailable", message: description, details: nil);
+            sendEvent(err)
         }
         else
         {
-            eventSink(description)
+            sendEvent(description)
         }
     }
     
-
+    private func sendEvent(_ event: Any) {
+        guard let eventSink = eventSink else {
+            return
+        }
+        DispatchQueue.main.async {
+            eventSink(event)
+        }
+    }
 
     public func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
         let userInfo = response.notification.request.content.userInfo
