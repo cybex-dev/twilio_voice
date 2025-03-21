@@ -237,6 +237,8 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
 
   html.Permissions? get _webPermissionsDelegate => _webNavigatorDelegate.permissions;
 
+  html.MediaDevices? get _webMediaDevicesDelegate => _webNavigatorDelegate.mediaDevices;
+
   late final Call _call = Call();
 
   @override
@@ -327,13 +329,25 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   Future<bool?> requestMicAccess() async {
     Logger.logLocalEvent("requesting mic permission");
     try {
-      /// TODO(cybex-dev) - Check browser type, if it is Firefox (or Safari), use the permissions API else use the getUserMedia API
-      // final perm = await _webPermissionsDelegate?.request({"name": "microphone"});
-      // return (perm == "granted");
-
-      /// This dirty hack to get media stream. Request (to show permissions popup on Chrome and other browsers, then stop the stream to release the permission)
+      final isSafariOrFirefox = RegExp(r'^((?!chrome|android).)*safari|firefox', caseSensitive: false)
+          .hasMatch(_webNavigatorDelegate.userAgent);
+      
+      if (isSafariOrFirefox && _webPermissionsDelegate != null) {
+        try {
+          final result = await _webPermissionsDelegate!.request({"name": "microphone"});
+          if (result.state == "granted") return true;
+        } catch (e) {
+          printDebug("Failed to request microphone permission");
+          printDebug(e);
+        }
+      }
+      
+      // Default approach for all browsers (and fallback for Safari & Firefox)
+      /// This dirty hack to get media stream. Request (to show permissions popup on Chrome 
+      /// and other browsers, then stop the stream to release the permission)
       /// TODO(cybex-dev) - check supported media streams
-      html.MediaStream mediaStream = await _webNavigatorDelegate.getUserMedia(audio: true);
+      html.MediaStream mediaStream = await _webMediaDevicesDelegate?.getUserMedia({"audio": true}) ?? 
+          await _webNavigatorDelegate.getUserMedia(audio: true);
       mediaStream.getTracks().forEach((track) => track.stop());
       return hasMicAccess();
     } catch (e) {
