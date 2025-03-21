@@ -342,7 +342,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
         }
       }
       
-      // Default approach for all browsers (and fallback for Safari)
+      // Default approach for all browsers (and fallback for Safari & Firefox)
       /// This dirty hack to get media stream. Request (to show permissions popup on Chrome 
       /// and other browsers, then stop the stream to release the permission)
       /// TODO(cybex-dev) - check supported media streams
