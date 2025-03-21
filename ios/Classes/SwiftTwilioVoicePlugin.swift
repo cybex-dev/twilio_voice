@@ -6,7 +6,8 @@ import TwilioVoice
 import CallKit
 import UserNotifications
 
-public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHandler, PKPushRegistryDelegate, NotificationDelegate, CallDelegate, AVAudioPlayerDelegate, CXProviderDelegate {
+public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHandler, PKPushRegistryDelegate, NotificationDelegate, CallDelegate, AVAudioPlayerDelegate, CXProviderDelegate, CXCallObserverDelegate {
+    let callObserver = CXCallObserver()
     
     final let defaultCallKitIcon = "callkit_icon"
     var callKitIcon: String?
@@ -44,6 +45,8 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     var userInitiatedDisconnect: Bool = false
     var callOutgoing: Bool = false
     
+    private var activeCalls: [UUID: CXCall] = [:]
+    
     static var appName: String {
         get {
             return (Bundle.main.infoDictionary!["CFBundleName"] as? String) ?? "Define CFBundleName"
@@ -65,6 +68,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         
         //super.init(coder: aDecoder)
         super.init()
+        callObserver.setDelegate(self, queue: DispatchQueue.main)
         
         callKitProvider.setDelegate(self, queue: nil)
         _ = updateCallKitIcon(icon: defaultIcon)
@@ -537,6 +541,22 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             completion()
         }
     }
+
+    // MARK: CXCallObserverDelegate
+    public func callObserver(_ callObserver: CXCallObserver, callChanged call: CXCall) {
+        let uuid = call.uuid
+
+        if call.hasEnded {
+            activeCalls.removeValue(forKey: uuid) // Remove ended calls
+        } else {
+            activeCalls[uuid] = call // Add or update call
+        }
+    }
+    
+    // Check if a call with a given UUID exists
+    func isCallActive(uuid: UUID) -> Bool {
+        return activeCalls[uuid] != nil
+    }
     
     func incomingPushHandled() {
         if let completion = self.incomingPushCompletionCallback {
@@ -890,6 +910,13 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         
         self.sendPhoneCallEvents(description: "LOG|performEndCallAction method invoked", isError: false)
         
+        // check if call is still active, preventing a race condition ending the call throwing an End Call Failed transaction error 4 error
+        guard isCallActive(uuid: uuid) else {
+            print("Call not found or already ended. Skipping end request.")
+            self.sendPhoneCallEvents(description: "Call Ended", isError: false)
+            return
+        }
+        
         let endCallAction = CXEndCallAction(call: uuid)
         let transaction = CXTransaction(action: endCallAction)
         
@@ -928,7 +955,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             }
             self.sendPhoneCallEvents(description: "LOG|performAnswerVoiceCall: answering call", isError: false)
             let theCall = ci.accept(options: acceptOptions, delegate: self)
-            self.sendPhoneCallEvents(description: "Answer|\(theCall.from!)|\(theCall.to!)\(formatCustomParams(params: ci.customParameters))", isError:false)
+            self.sendPhoneCallEvents(description: "Answer|\(theCall.from!)|\(theCall.to!)|Incoming\(formatCustomParams(params: ci.customParameters))", isError:false)
             self.call = theCall
             self.callKitCompletionCallback = completionHandler
             self.callInvite = nil
@@ -963,23 +990,26 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     
     private func sendPhoneCallEvents(description: String, isError: Bool) {
         NSLog(description)
-        guard let eventSink = eventSink else {
-            return
-        }
         
         if isError
         {
-            eventSink(FlutterError(code: "unavailable",
-                                   message: description,
-                                   details: nil))
+            let err = FlutterError(code: "unavailable", message: description, details: nil);
+            sendEvent(err)
         }
         else
         {
-            eventSink(description)
+            sendEvent(description)
         }
     }
     
-
+    private func sendEvent(_ event: Any) {
+        guard let eventSink = eventSink else {
+            return
+        }
+        DispatchQueue.main.async {
+            eventSink(event)
+        }
+    }
 
     public func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
         let userInfo = response.notification.request.content.userInfo
