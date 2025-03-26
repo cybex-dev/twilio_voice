@@ -1,6 +1,6 @@
 import Cocoa
 import FlutterMacOS
-import WebKit
+@preconcurrency import WebKit
 import SwiftUI
 import UserNotifications
 import AVFoundation
@@ -663,7 +663,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
 
             // TODO: toggle bluetooth
             // toggleAudioRoute(toSpeaker: speakerIsOn)
-            guard let eventSink = eventSink else {
+            guard eventSink != nil else {
                 return
             }
             logEvent(description: bluetoothOn ? "Bluetooth On" : "Bluetooth Off")
@@ -1142,9 +1142,9 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
         if let category = NotificationCategory(rawValue: notification.request.content.categoryIdentifier) {
             switch category {
             case .incoming:
-                completionHandler([.alert, .banner, .sound])
+                completionHandler([.banner, .sound])
             case .missed:
-                completionHandler([.alert, .banner, .sound])
+                completionHandler([.banner, .sound])
 //            default:
 //                completionHandler([])
             }
@@ -1436,8 +1436,34 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     }
 
     @available(macOS 12.0, *)
-    public func webView(_ webView: WKWebView, decideMediaCapturePermissionsFor origin: WKSecurityOrigin, initiatedBy frame: WKFrameInfo, type: WKMediaCaptureType) async -> WKPermissionDecision {
-        WKPermissionDecision.grant
+    public func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping @MainActor (WKPermissionDecision) -> Void) {
+        switch type {
+        case .microphone:
+            // For microphone access, we'll check the current permission status
+            switch AVCaptureDevice.authorizationStatus(for: .audio) {
+            case .authorized:
+                decisionHandler(.grant)
+            case .notDetermined:
+                // Request permission and handle the result
+                AVCaptureDevice.requestAccess(for: .audio) { granted in
+                    Task { @MainActor in
+                        decisionHandler(granted ? .grant : .deny)
+                    }
+                }
+            case .denied, .restricted:
+                decisionHandler(.deny)
+            @unknown default:
+                decisionHandler(.deny)
+            }
+        case .camera:
+            // We don't need camera access for Twilio Voice
+            decisionHandler(.deny)
+        case .cameraAndMicrophone:
+            // We don't need camera and microphone access for Twilio Voice
+            decisionHandler(.deny)
+        @unknown default:
+            decisionHandler(.deny)
+        }
     }
 }
 
