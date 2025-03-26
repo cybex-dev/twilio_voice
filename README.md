@@ -85,7 +85,17 @@ see [[Limitations]](https://github.com/diegogarciar/twilio_voice/blob/master/NOT
 
 ### Android Setup:
 
-register in your `AndroidManifest.xml` the service in charge of displaying incoming call
+Firstly, ensure you place this in your app's proguard-rules.pro file:
+```proguard
+# Twilio Programmable Voice
+-keep class com.twilio.** { *; }
+-keep class tvo.webrtc.** { *; }
+-dontwarn tvo.webrtc.**
+-keep class com.twilio.voice.** { *; }
+-keepattributes InnerClasses
+```
+
+next, register in your `AndroidManifest.xml` the service in charge of displaying incoming call
 notifications:
 
 ```xml
