@@ -265,7 +265,7 @@ However, you'll need to:
 2. include Hardened Runtime entitlements (this is required for App Store distributed MacOS apps):
 
    ```xml
-   <key>com.apple.security.audio-input</key>
+   <key>com.apple.security.device.audio-input</key>
    <true/>
 
    <!--Optionally for bluetooth support/permissions-->
