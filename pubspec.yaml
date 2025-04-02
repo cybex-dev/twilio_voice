@@ -24,6 +24,7 @@ dependencies:
   # temporarily - upgrade to js: 0.7.2 then finally js_interop:
   js: ^0.7.1
   web: ^1.1.0
+  web_callkit: ^0.0.2
 
 dev_dependencies:
   flutter_lints: ^2.0.2
