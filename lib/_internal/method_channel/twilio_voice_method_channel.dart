@@ -9,8 +9,6 @@ import '../platform_interface/twilio_voice_platform_interface.dart';
 import '../utils.dart';
 import 'twilio_call_method_channel.dart';
 
-typedef OnDeviceTokenChanged = Function(String token);
-
 /// Implementation of [TwilioVoicePlatform] that uses method channels.
 class MethodChannelTwilioVoice extends TwilioVoicePlatform {
   static TwilioVoicePlatform get instance => TwilioVoicePlatform.instance;
