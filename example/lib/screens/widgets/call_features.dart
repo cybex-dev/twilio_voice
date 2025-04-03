@@ -72,19 +72,19 @@ class _CallControlsState extends State<CallControls> {
           _updateStates();
           break;
 
+        case CallEvent.incoming:
+        case CallEvent.ringing:
         case CallEvent.connected:
           activeCall = true;
           _updateStates();
           break;
 
+        case CallEvent.declined:
         case CallEvent.callEnded:
           activeCall = false;
           _updateStates();
           break;
 
-        case CallEvent.incoming:
-        case CallEvent.ringing:
-        case CallEvent.declined:
         case CallEvent.answer:
         case CallEvent.missedCall:
         case CallEvent.returningCall:
