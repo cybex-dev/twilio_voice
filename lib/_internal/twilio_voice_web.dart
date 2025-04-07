@@ -24,7 +24,7 @@ import 'package:twilio_voice/_internal/js/call/call_status.dart';
 // ignore: unused_import,deprecated_member_use
 import 'package:js/js_util.dart';
 import 'package:twilio_voice/_internal/platform_interface/twilio_voice_platform_interface.dart';
-import 'package:web_callkit/web_callkit.dart' as ck;
+import 'package:web_callkit/web_callkit.dart';
 
 import '../twilio_voice.dart';
 import './js/js.dart' as twilio_js;
@@ -82,59 +82,59 @@ class Logger {
 
 /// The web implementation of [TwilioVoicePlatform].
 class TwilioVoiceWeb extends MethodChannelTwilioVoice {
-  final webCallkit = ck.WebCallkit.instance;
-  late ck.CKConfiguration _ckConfiguration;
+  final webCallkit = WebCallkit.instance;
+  late CKConfiguration _ckConfiguration;
 
   TwilioVoiceWeb() {
     // TODO(cybex-dev) - load twilio.min.js via [TwilioLoader] in future
     // loadTwilio();
-    _ckConfiguration = const ck.CKConfiguration(
-        capabilities: {
-          ck.CallKitCapability.supportHold,
-          ck.CallKitCapability.hold,
-          ck.CallKitCapability.mute,
-          ck.CallKitCapability.silence,
-        },
-        timer: ck.CKTimer(),
-        attributes: {
-          ck.CallAttributes.hold,
-          ck.CallAttributes.mute,
-        },
-        icons: {
-          ck.CKCallAction.answer: "icons/answer/128.png",
-          ck.CKCallAction.decline: "icons/hangup/128.png",
-          ck.CKCallAction.hangUp: "icons/hangup/128.png",
-        });
+    _ckConfiguration = const CKConfiguration(
+      capabilities: {
+        CKCapability.supportHold,
+        CKCapability.hold,
+        CKCapability.mute,
+        CKCapability.silence,
+      },
+      timer: CKTimer(),
+      attributes: {
+        CKCallAttributes.hold,
+        CKCallAttributes.mute,
+      },
+      icons: {
+        CKCallAction.answer: "icons/answer/128.png",
+        CKCallAction.decline: "icons/hangup/128.png",
+        CKCallAction.hangUp: "icons/hangup/128.png",
+      },
+    );
     webCallkit.setConfiguration(_ckConfiguration);
-
     webCallkit.setOnCallActionHandler(_onCallkitCallActionListener);
   }
 
-  void _onCallkitCallActionListener(String uuid, ck.CKCallAction action, ck.ActionSource source) {
+  void _onCallkitCallActionListener(String uuid, CKCallAction action, CKActionSource source) {
     printDebug("CallKit action: $action");
     switch (action) {
-      case ck.CKCallAction.answer:
+      case CKCallAction.answer:
         call.answer();
         break;
-      case ck.CKCallAction.decline:
+      case CKCallAction.decline:
         call.hangUp();
         break;
-      case ck.CKCallAction.mute:
+      case CKCallAction.mute:
         call.toggleMute(true);
         break;
-      case ck.CKCallAction.unmute:
+      case CKCallAction.unmute:
         call.toggleMute(false);
         break;
-      case ck.CKCallAction.hold:
+      case CKCallAction.hold:
         call.holdCall(holdCall: true);
         break;
-      case ck.CKCallAction.unhold:
+      case CKCallAction.unhold:
         call.holdCall(holdCall: false);
         break;
-      // case ck.CKCallAction.callback:
+      // case CKCallAction.callback:
       //   _onRequestCallback(uuid);
       //   break;
-      case ck.CKCallAction.silence:
+      case CKCallAction.silence:
         // repost silent notification
         break;
       default:
@@ -327,7 +327,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
 
   void _clearCalls() {
     webCallkit.getCalls().toList().forEach((element) {
-      webCallkit.reportCallDisconnected(element.uuid, response: ck.DisconnectResponse.local);
+      webCallkit.reportCallDisconnected(element.uuid, response: CKDisconnectResponse.local);
     });
   }
 
@@ -508,7 +508,7 @@ class Call extends MethodChannelTwilioCall {
     _device = value;
   }
 
-  final webCallkit = ck.WebCallkit.instance;
+  final webCallkit = WebCallkit.instance;
 
   Call({twilio_js.Call? call}) : _jsCall = call;
 
@@ -623,7 +623,7 @@ class Call extends MethodChannelTwilioCall {
 
       // notify SW to cancel notification
       final callSid = await getSid();
-      webCallkit.updateCallStatus(callSid!, callStatus: ck.CallState.active);
+      webCallkit.updateCallStatus(callSid!, callStatus: CKCallState.active);
 
       return true;
     }
@@ -659,10 +659,10 @@ class Call extends MethodChannelTwilioCall {
       // reject incoming call that is both outbound ringing or inbound pending
       if (callStatus == CallStatus.ringing || callStatus == CallStatus.pending) {
         _jsCall!.reject();
-        webCallkit.reportCallDisconnected(callSid!, response: ck.DisconnectResponse.rejected);
+        webCallkit.reportCallDisconnected(callSid!, response: CKDisconnectResponse.rejected);
       } else {
         _jsCall!.disconnect();
-        webCallkit.reportCallDisconnected(callSid!, response: ck.DisconnectResponse.local);
+        webCallkit.reportCallDisconnected(callSid!, response: CKDisconnectResponse.local);
       }
 
       return true;
@@ -810,29 +810,30 @@ class Call extends MethodChannelTwilioCall {
       }
     }
 
+    print("Twilio Call Status: ${status}");
     final params = getCallParams(_jsCall!);
     final callSid = params["CallSid"] as String;
     switch (callStatus) {
       case CallStatus.open:
       case CallStatus.pending:
-        webCallkit.updateCallStatus(callSid, callStatus: ck.CallState.initiated);
+        // webCallkit.updateCallStatus(callSid, callStatus: CallState.initiated);
         break;
       case CallStatus.ringing:
-        webCallkit.updateCallStatus(callSid, callStatus: ck.CallState.ringing);
+        // webCallkit.updateCallStatus(callSid, callStatus: CallState.ringing);
         break;
       case CallStatus.connected:
       case CallStatus.reconnected:
-        webCallkit.updateCallStatus(callSid, callStatus: ck.CallState.active);
+        // webCallkit.updateCallStatus(callSid, callStatus: CallState.active);
         break;
       case CallStatus.reconnecting:
-        webCallkit.updateCallStatus(callSid, callStatus: ck.CallState.reconnecting);
+        // webCallkit.updateCallStatus(callSid, callStatus: CallState.reconnecting);
         break;
       case CallStatus.answer:
-        webCallkit.updateCallStatus(callSid, callStatus: ck.CallState.active);
+        // webCallkit.updateCallStatus(callSid, callStatus: CallState.active);
         break;
       case CallStatus.rejected:
       case CallStatus.closed:
-        webCallkit.updateCallStatus(callSid, callStatus: ck.CallState.disconnected);
+        // webCallkit.updateCallStatus(callSid, callStatus: CallState.disconnected);
         break;
       default:
         break;
@@ -854,7 +855,7 @@ class Call extends MethodChannelTwilioCall {
         prefix: "",
       );
       final callSid = params["CallSid"] as String;
-      webCallkit.updateCallStatus(callSid, callStatus: ck.CallState.ringing);
+      webCallkit.updateCallStatus(callSid, callStatus: CKCallState.ringing);
     }
   }
 
@@ -874,7 +875,7 @@ class Call extends MethodChannelTwilioCall {
 
       await webCallkit.requestPermissions();
       final callSid = params["CallSid"] as String;
-      webCallkit.updateCallStatus(callSid, callStatus: ck.CallState.active);
+      webCallkit.updateCallStatus(callSid, callStatus: CKCallState.active);
     }
   }
 
@@ -891,7 +892,7 @@ class Call extends MethodChannelTwilioCall {
     await webCallkit.requestPermissions();
     final params = getCallParams(call);
     final callSid = params["CallSid"] as String;
-    webCallkit.reportCallDisconnected(callSid, response: ck.DisconnectResponse.remote);
+    webCallkit.reportCallDisconnected(callSid, response: CKDisconnectResponse.remote);
   }
 
   /// On cancels active (outbound/inbound) call
@@ -915,12 +916,12 @@ class Call extends MethodChannelTwilioCall {
       Logger.logLocalEvent("Missed Call", prefix: "");
       _showMissedCallNotification(callSid!);
     } else {
-      webCallkit.reportCallDisconnected(callSid!, response: ck.DisconnectResponse.local);
+      webCallkit.reportCallDisconnected(callSid!, response: CKDisconnectResponse.local);
     }
   }
 
   Future<void> _showMissedCallNotification(String callSid) async {
-    webCallkit.reportCallDisconnected(callSid, response: ck.DisconnectResponse.missed);
+    webCallkit.reportCallDisconnected(callSid, response: CKDisconnectResponse.missed);
   }
 
   /// On reject (inbound) call
@@ -932,7 +933,7 @@ class Call extends MethodChannelTwilioCall {
       nativeCall = null;
     }
     Logger.logLocalEvent("Call Rejected");
-    webCallkit.reportCallDisconnected(callSid!, response: ck.DisconnectResponse.rejected);
+    webCallkit.reportCallDisconnected(callSid!, response: CKDisconnectResponse.rejected);
   }
 
   /// On reject (inbound) call
@@ -951,7 +952,7 @@ class Call extends MethodChannelTwilioCall {
     final to = params["To"] ?? "";
     final callSid = params["CallSid"] as String;
     Logger.logLocalEventEntries(["Connected", from, to, direction], prefix: "");
-    webCallkit.updateCallStatus(callSid, callStatus: ck.CallState.active);
+    webCallkit.updateCallStatus(callSid, callStatus: CKCallState.active);
   }
 
   /// On active call reconnecting to Twilio network
@@ -959,7 +960,7 @@ class Call extends MethodChannelTwilioCall {
     Logger.logLocalEvent("Reconnecting");
     final params = getCallParams(_jsCall!);
     final callSid = params["CallSid"] as String;
-    webCallkit.updateCallStatus(callSid, callStatus: ck.CallState.reconnecting);
+    webCallkit.updateCallStatus(callSid, callStatus: CKCallState.reconnecting);
   }
 
   /// On active call reconnecting to Twilio network
@@ -967,7 +968,7 @@ class Call extends MethodChannelTwilioCall {
     Logger.logLocalEvent("Reconnected");
     final params = getCallParams(_jsCall!);
     final callSid = params["CallSid"] as String;
-    webCallkit.updateCallStatus(callSid, callStatus: ck.CallState.active);
+    webCallkit.updateCallStatus(callSid, callStatus: CKCallState.active);
   }
 
   CallStatus getCallStatus(twilio_js.Call call) {
