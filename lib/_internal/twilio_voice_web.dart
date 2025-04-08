@@ -667,10 +667,8 @@ class Call extends MethodChannelTwilioCall {
       // reject incoming call that is both outbound ringing or inbound pending
       if (callStatus == CallStatus.ringing || callStatus == CallStatus.pending) {
         _jsCall!.reject();
-        webCallkit.reportCallDisconnected(callSid!, response: CKDisconnectResponse.rejected);
       } else {
         _jsCall!.disconnect();
-        webCallkit.reportCallDisconnected(callSid!, response: CKDisconnectResponse.local);
       }
 
       return true;
