@@ -82,12 +82,13 @@ class Logger {
 
 /// The web implementation of [TwilioVoicePlatform].
 class TwilioVoiceWeb extends MethodChannelTwilioVoice {
-  final webCallkit = WebCallkit.instance;
+  late WebCallkitPlatform webCallkit;
   late CKConfiguration _ckConfiguration;
 
   TwilioVoiceWeb() {
     // TODO(cybex-dev) - load twilio.min.js via [TwilioLoader] in future
     // loadTwilio();
+    webCallkit = WebCallkitWeb.instance;
     _ckConfiguration = const CKConfiguration(
       capabilities: {
         CKCapability.supportHold,
@@ -508,9 +509,11 @@ class Call extends MethodChannelTwilioCall {
     _device = value;
   }
 
-  final webCallkit = WebCallkit.instance;
+  late WebCallkitPlatform webCallkit;
 
-  Call({twilio_js.Call? call}) : _jsCall = call;
+  Call({twilio_js.Call? call})
+      : _jsCall = call,
+        webCallkit = WebCallkitWeb.instance;
 
   twilio_js.Call? get nativeCall {
     return _jsCall;
