@@ -106,6 +106,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
         CKCallAction.decline: "icons/hangup/128.png",
         CKCallAction.hangUp: "icons/hangup/128.png",
       },
+      strictMode: false,
     );
     webCallkit.setConfiguration(_ckConfiguration);
     webCallkit.setOnCallActionHandler(_onCallkitCallActionListener);
