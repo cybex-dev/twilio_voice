@@ -133,6 +133,9 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
       case CKCallAction.unhold:
         call.holdCall(holdCall: false);
         break;
+      case CKCallAction.hangUp:
+        call.hangUp();
+        break;
       // case CKCallAction.callback:
       //   _onRequestCallback(uuid);
       //   break;
