@@ -441,6 +441,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   void _onDeviceIncoming(twilio_js.Call call) {
     requestMicAccess();
     this.call.nativeCall = call;
+    this.call._attachCallEventListeners(call);
     final params = getCallParams(call);
     final from = params["From"] ?? "";
     final to = params["To"] ?? "";
@@ -527,7 +528,7 @@ class Call extends MethodChannelTwilioCall {
     _jsCall = value;
     if (value != null) {
       activeCall = activeCallFromNativeJsCall(value);
-      _attachCallEventListeners(_jsCall!);
+      // _attachCallEventListeners(_jsCall!);
     }
   }
 
@@ -617,7 +618,7 @@ class Call extends MethodChannelTwilioCall {
       activeCall = activeCallFromNativeJsCall(_jsCall!);
 
       // attach event listeners
-      _attachCallEventListeners(_jsCall!);
+      // _attachCallEventListeners(_jsCall!);
 
       // log event
       final params = getCallParams(_jsCall!);
