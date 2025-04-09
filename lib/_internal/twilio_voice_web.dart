@@ -718,6 +718,7 @@ class Call extends MethodChannelTwilioCall {
       nativeCall = await js_util.promiseToFuture(promise);
 
       _attachCallEventListeners(_jsCall!);
+      Logger.logLocalEvent("Call placed");
     } catch (e) {
       printDebug("Failed to place call: $e");
       return false;
