@@ -75,6 +75,9 @@ class _CallControlsState extends State<CallControls> {
         case CallEvent.incoming:
         case CallEvent.ringing:
         case CallEvent.connected:
+        case CallEvent.answer:
+        case CallEvent.reconnecting:
+        case CallEvent.reconnected:
           activeCall = true;
           _updateStates();
           break;
@@ -85,11 +88,8 @@ class _CallControlsState extends State<CallControls> {
           _updateStates();
           break;
 
-        case CallEvent.answer:
         case CallEvent.missedCall:
         case CallEvent.returningCall:
-        case CallEvent.reconnecting:
-        case CallEvent.reconnected:
           _updateStates();
           break;
 
