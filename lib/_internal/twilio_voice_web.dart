@@ -565,6 +565,8 @@ class Call extends MethodChannelTwilioCall {
     if (_jsCall != null) {
       _jsCall!.mute(isMuted);
     }
+    final sid = await getSid();
+    await _toggleAttribute(isMuted, sid!, CKCallAttributes.mute);
     return isMuted;
   }
 
@@ -585,10 +587,12 @@ class Call extends MethodChannelTwilioCall {
   /// See this for more info on how to use cold holding, and its requirements: https://github.com/twilio/twilio-voice.js/issues/32#issuecomment-1331081241
   /// TODO(cybex-dev) - implement call holding feature in [twilio-voice.js](https://github.com/twilio/twilio-voice.js) for use in twilio_voice_web
   @override
-  Future<bool?> holdCall({bool holdCall = true}) {
+  Future<bool?> holdCall({bool holdCall = true}) async {
     // Logger.logLocalEvent(holdCall ? "Unhold" : "Hold", prefix: "");
     // return Future.value(false);
     Logger.logLocalEvent("Unhold");
+    final sid = await getSid();
+    await _toggleAttribute(false, sid!, CKCallAttributes.hold);
     return Future.value(false);
   }
 
@@ -977,6 +981,26 @@ class Call extends MethodChannelTwilioCall {
   CallStatus getCallStatus(twilio_js.Call call) {
     final status = call.status();
     return parseCallStatus(status);
+  }
+
+  Future<void> _toggleAttribute(bool value, String uuid, CKCallAttributes attribute) {
+    if (value) {
+      return _addAttribute(uuid, attribute);
+    } else {
+      return _removeAttribute(uuid, attribute);
+    }
+  }
+
+  Future<void> _addAttribute(String uuid, CKCallAttributes attribute) {
+    final call = webCallkit.getCall(uuid)!;
+    final attrs = call.attributes..add(attribute);
+    return webCallkit.updateCallAttributes(uuid, attributes: attrs);
+  }
+
+  Future<void> _removeAttribute(String uuid, CKCallAttributes attribute) {
+    final call = webCallkit.getCall(uuid)!;
+    final attrs = call.attributes..remove(attribute);
+    return webCallkit.updateCallAttributes(uuid, attributes: attrs);
   }
 }
 
