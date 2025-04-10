@@ -919,16 +919,12 @@ class Call extends MethodChannelTwilioCall {
 
     // reject incoming call that is both outbound ringing or inbound pending
     // TODO(cybex-dev): check call status for call disconnects
-    if (callStatus == CallStatus.ringing || callStatus == CallStatus.pending) {
+    if (callStatus == CallStatus.ringing || callStatus == CallStatus.pending || callStatus == CallStatus.closed) {
       Logger.logLocalEvent("Missed Call", prefix: "");
-      _showMissedCallNotification(callSid!);
+      webCallkit.reportCallDisconnected(callSid!, response: CKDisconnectResponse.missed);
     } else {
       webCallkit.reportCallDisconnected(callSid!, response: CKDisconnectResponse.local);
     }
-  }
-
-  Future<void> _showMissedCallNotification(String callSid) async {
-    webCallkit.reportCallDisconnected(callSid, response: CKDisconnectResponse.missed);
   }
 
   /// On reject (inbound) call
