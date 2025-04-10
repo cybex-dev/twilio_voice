@@ -25,6 +25,11 @@ dependencies:
   js: ^0.7.1
   web: ^1.1.0
   web_callkit: ^0.0.2
+  web_callkit:
+#    path: ../web_callkit
+    git:
+      url: https://github.com/cybex-dev/web_callkit
+      ref: cbb1cc83c4ecd33c02ef2c431b09c40d280f82de
 
 dev_dependencies:
   flutter_lints: ^2.0.2
