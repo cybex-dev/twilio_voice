@@ -97,10 +97,6 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
         CKCapability.silence,
       },
       timer: CKTimer(),
-      attributes: {
-        CKCallAttributes.hold,
-        CKCallAttributes.mute,
-      },
       icons: {
         CKCallAction.answer: "icons/answer/128.png",
         CKCallAction.decline: "icons/hangup/128.png",
