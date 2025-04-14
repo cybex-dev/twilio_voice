@@ -630,6 +630,15 @@ class TVConnectionService : ConnectionService() {
             stopForegroundService()
             stopSelfSafe()
         }
+        val onCallState: CompletionHandler<Call.State> = CompletionHandler { state ->
+            if (state == Call.State.DISCONNECTED) {
+                if (activeConnections.containsKey(callSid)) {
+                    activeConnections.remove(callSid)
+                }
+                stopForegroundService()
+                stopSelfSafe()
+            }
+        }
 
         // Add to local connection cache
         activeConnections[callSid] = connection
@@ -638,6 +647,7 @@ class TVConnectionService : ConnectionService() {
         connection.setOnCallActionListener(onAction)
         connection.setOnCallEventListener(onEvent)
         connection.setOnCallDisconnected(onDisconnect)
+        connection.setOnCallStateListener(onCallState);
     }
 
     /**
