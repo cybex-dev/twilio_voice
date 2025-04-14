@@ -156,6 +156,7 @@ open class TVCallConnection(
         }
         val disconnectCause = DisconnectCause(disconnectCauseCode, callException.message);
         this@TVCallConnection.setDisconnected(disconnectCause)
+        onDisconnected?.withValue(disconnectCause)
         onEvent?.onChange(TVNativeCallEvents.EVENT_CONNECT_FAILURE, callException.toBundle())
         onCallStateListener?.withValue(call.state)
     }
