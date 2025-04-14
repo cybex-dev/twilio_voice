@@ -1827,7 +1827,11 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             }
 
             TVNativeCallEvents.EVENT_CONNECT_FAILURE -> {
-                val code = intent.getIntExtra(CallExceptionExtension.EXTRA_CODE, -1)
+                var code = intent.getIntExtra(CallExceptionExtension.EXTRA_CODE, -1)
+                if(code == -1) {
+                    // Fallback to the old code
+                    code = intent.getIntExtra("code", -1)
+                }
                 val message = intent.getStringExtra(CallExceptionExtension.EXTRA_MESSAGE) ?: run {
                     Log.e(TAG, "No 'EXTRA_MESSAGE' provided or invalid type")
                     return
