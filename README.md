@@ -99,13 +99,17 @@ next, register in your `AndroidManifest.xml` the service in charge of displaying
 notifications:
 
 ```xml
+
 <Application>
- .....
- <service
- android:name="com.twilio.twilio_voice.fcm.VoiceFirebaseMessagingService"
- android:stopWithTask="false">
-<intent-filter> <action android:name="com.google.firebase.MESSAGING_EVENT" />
-</intent-filter> </service>
+    ...
+    <service android:name="com.twilio.twilio_voice.fcm.VoiceFirebaseMessagingService"
+        android:stopWithTask="false">
+        <intent-filter>
+            <action android:name="com.google.firebase.MESSAGING_EVENT" />
+        </intent-filter>
+    </service>
+    ...
+</Application>
 ```
 
 #### Phone Account
