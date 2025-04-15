@@ -59,6 +59,7 @@ class _CallControlsState extends State<CallControls> {
   void initState() {
     super.initState();
     _subscription = _tv.callEventsListener.listen((event) {
+      print("CallFeatures TV event: $event");
       _events.add(event);
       switch (event) {
         case CallEvent.unhold:
@@ -69,31 +70,18 @@ class _CallControlsState extends State<CallControls> {
         case CallEvent.speakerOff:
         case CallEvent.bluetoothOn:
         case CallEvent.bluetoothOff:
-          _updateStates();
-          break;
-
         case CallEvent.incoming:
         case CallEvent.ringing:
         case CallEvent.connected:
         case CallEvent.answer:
         case CallEvent.reconnecting:
         case CallEvent.reconnected:
-          activeCall = true;
-          _updateStates();
-          break;
-
         case CallEvent.declined:
         case CallEvent.callEnded:
-          activeCall = false;
-          _updateStates();
-          break;
-
         case CallEvent.missedCall:
         case CallEvent.returningCall:
-          _updateStates();
-          break;
-
         case CallEvent.log:
+          _updateState();
           break;
 
         case CallEvent.permission:
@@ -101,15 +89,29 @@ class _CallControlsState extends State<CallControls> {
           break;
       }
     });
-    _updateStates();
   }
 
-  void _updateStates() {
+  void _updateState() {
     // get all states from call
-    _tv.call.isMuted().then((value) => stateMute = value ?? false);
-    _tv.call.isHolding().then((value) => stateHold = value ?? false);
-    _tv.call.isOnSpeaker().then((value) => stateSpeaker = value ?? false);
-    _tv.call.isBluetoothOn().then((value) => stateBluetooth = value ?? false);
+    final futures = [
+      _tv.call.isMuted(),
+      _tv.call.isHolding(),
+      _tv.call.isOnSpeaker(),
+      _tv.call.isBluetoothOn(),
+      _tv.call.isOnCall(),
+    ];
+    Future.wait<bool?>(futures).then((value) {
+      setState(() {
+        stateMute = value[0] ?? false;
+        stateHold = value[1] ?? false;
+        stateSpeaker = value[2] ?? false;
+        stateBluetooth = value[3] ?? false;
+        activeCall = value[4] ?? false;
+      });
+    });
+    if((_tv.call.activeCall != null) != activeCall) {
+      print("Call state changed: $activeCall");
+    }
   }
 
   @override
