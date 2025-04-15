@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'ui_permissions_screen.dart';
 import 'widgets/call_actions.dart';
 import 'widgets/call_features.dart';
 import 'widgets/call_status.dart';
@@ -96,11 +97,18 @@ class _UICallScreenState extends State<UICallScreen> {
             child: CallControls(),
           ),
         ),
-        const Card(
-          child: Padding(
-            padding: EdgeInsets.all(8.0),
-            child: PermissionsBlock(),
-          ),
+        ListTile(
+          title: Text("Permissions"),
+          subtitle: Text("Please allow all permissions to use the app"),
+          trailing: Icon(Icons.arrow_forward_ios),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const UiPermissionsScreen(),
+              ),
+            );
+          },
         ),
         const Divider(),
         Expanded(
