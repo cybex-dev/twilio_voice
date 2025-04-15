@@ -181,8 +181,7 @@ abstract class TwilioVoicePlatform extends SharedPlatformInterface {
   Future<bool?> setDefaultCallerName(String callerName);
 
   /// Android-only, shows background call UI
-  @Deprecated('custom call UI not used anymore, has no effect')
-  Future<bool?> showBackgroundCallUI();
+  Future<bool?> showBackgroundCallUI(Map<String, dynamic> fcmData);
 
   /// Sends call events
   CallEvent parseCallEvent(String state);
