@@ -3,6 +3,8 @@
 * Fix: [Android] `call.isOnCall()` returns true when call is declined
 * Fix: [Android] handle reject vs error disconnect cause with message.
 * Logging: [Android] Added error code fallback
+* Feat: Update example permissions screen & changed `local` to `URL` registration method
+* Update Readme
 
 ## 0.2.2
 
