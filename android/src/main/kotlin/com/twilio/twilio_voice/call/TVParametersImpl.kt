@@ -68,7 +68,7 @@ class TVCallInviteParametersImpl(storage: Storage, callInvite: CallInvite) : TVP
     }
 }
 
-class TVCallParametersImpl(storage: Storage, call: Call, callTo: String, callFrom: String, customParameters: Map<String, String> = emptyMap()) : TVParametersImpl(storage) {
+class TVCallParametersImpl(storage: Storage, call: Call, callTo: String, callFrom: String, customParameters: Map<String, String> = emptyMap()) : TVParametersImpl(storage, "", customParameters) {
     private var mCallSid: String? = null
 
     private val mCall: Call
