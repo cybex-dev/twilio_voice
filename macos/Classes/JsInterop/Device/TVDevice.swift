@@ -208,8 +208,6 @@ public class TVDevice: JSObject, TVDeviceDelegate, JSMessageHandlerDelegate {
             case .registering:
                 onDeviceRegistering()
                 break
-            default:
-                print("Unhandled event: \(event)")
             }
         }
     }
