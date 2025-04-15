@@ -4,6 +4,9 @@
 * Fix: [Android] handle reject vs error disconnect cause with message.
 * Logging: [Android] Added error code fallback
 * Feat: Update example permissions screen & changed `local` to `URL` registration method
+* Fix: [macOS] Remove deprecated `.alert` presentation option. [@AndreiMisiukevich](https://github.com/AndreiMisiukevich)
+* Feat: [macOS] Add native microphone permission with `AVCaptureDevice` (this replaces `getUserMedia()` from js interop available on localhost/https only). [@AndreiMisiukevich](https://github.com/AndreiMisiukevich)
+* Fix/Update: [macOS] correct runtime entitlement for `audio-input` permission. [@AndreiMisiukevich](https://github.com/AndreiMisiukevich)
 * Update Readme
 
 ## 0.2.2
