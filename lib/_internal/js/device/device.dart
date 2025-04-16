@@ -111,7 +111,10 @@ class DeviceInitOptions {
   /// set to false by default
   external bool allowIncomingWhileBusy;
 
-  external factory DeviceInitOptions({int logLevel = 1, List<String>? codecPreferences, bool closeProtection = false, /*bool allowIncomingWhileBusy = false*/});
+  /// The sound files to use for the Device's ringtone and other sounds.
+  external Map<SoundName, String> sounds;
+
+  external factory DeviceInitOptions({int logLevel = 1, List<String>? codecPreferences, bool closeProtection = false, Map<SoundName, String>? sounds, /*bool allowIncomingWhileBusy = false*/});
 }
 
 /// Device Connect options
