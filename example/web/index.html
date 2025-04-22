@@ -47,6 +47,25 @@
   <!--twilio native js library-->
   <script type="text/javascript" src="./twilio.min.js"></script>
 
+  <script>
+    var serviceWorkerVersion = '{{flutter_service_worker_version}}';
+
+    if ('serviceWorker' in navigator) {
+       // Service workers are supported. Use them.
+       window.addEventListener('load', function () {
+         navigator.serviceWorker.register('/twilio-sw.js', {
+           scope: '/twilio-scope',
+         });
+
+         // Wait for registration to finish before dropping the <script> tag.
+         // Otherwise, the browser will load the script multiple times, potentially different versions.
+         var serviceWorkerUrl = 'flutter_service_worker.js?v=' + serviceWorkerVersion;
+       });
+    } else {
+      console.error("Service workers are not supported.");
+    }
+  </script>
+
 <!--  <script>-->
 <!--    window.addEventListener('load', function(ev) {-->
 <!--      // Download main.dart.js-->
