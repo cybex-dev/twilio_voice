@@ -462,7 +462,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
       /// opus set as primary code
       /// https://www.twilio.com/blog/client-javascript-sdk-1-7-ga
       List<String> codecs = ["opus", "pcmu"];
-      twilio_js.DeviceInitOptions options = twilio_js.DeviceInitOptions(
+      twilio_js.DeviceOptions options = twilio_js.DeviceOptions(
         codecPreferences: codecs,
         closeProtection: true,
       );

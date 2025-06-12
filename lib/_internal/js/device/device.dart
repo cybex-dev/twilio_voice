@@ -27,12 +27,12 @@ enum TwilioDeviceEvents {
 class Device extends Twilio {
   // private constructor
   // ignore: unused_element_parameter, unused_element
-  external Device._(token, [DeviceInitOptions? options]);
+  external Device._(token, [DeviceOptions? options]);
 
   // factory used by js lib
   external factory Device(
     String token, [
-    DeviceInitOptions? options,
+    DeviceOptions? options,
   ]);
 
   // /// Returns array of active calls
@@ -83,7 +83,7 @@ class Device extends Twilio {
 /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#deviceoptions
 @anonymous
 @JS()
-class DeviceInitOptions {
+class DeviceOptions {
   /// The Voice JavaScript SDK exposes a loglevel-based logger to allow for runtime logging configuration.
   ///
   /// You can set this property to a number which corresponds to the log levels shown below.
@@ -117,7 +117,7 @@ class DeviceInitOptions {
   /// The sound files to use for the Device's ringtone and other sounds.
   external Map<SoundName, String> sounds;
 
-  external factory DeviceInitOptions({int logLevel = 1, List<String>? codecPreferences, bool closeProtection = false, Map<SoundName, String>? sounds, bool enableImprovedSignalingErrorPrecision = true, /*bool allowIncomingWhileBusy = false*/});
+  external factory DeviceOptions({int logLevel = 1, List<String>? codecPreferences, bool closeProtection = false, Map<SoundName, String>? sounds, bool enableImprovedSignalingErrorPrecision = true, bool allowIncomingWhileBusy = false, int? tokenRefreshMs});
 }
 
 /// Device Connect options
