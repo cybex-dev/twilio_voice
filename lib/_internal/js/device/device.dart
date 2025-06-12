@@ -122,7 +122,10 @@ class DeviceOptions {
   /// The sound files to use for the Device's ringtone and other sounds. This should be a map of sound names to URLs but the Map type is not supported in JS interop yet so we use dynamic with jsify.
   external dynamic sounds;
 
-  external factory DeviceOptions({int logLevel = 1, List<String>? codecPreferences, bool closeProtection = false, dynamic sounds, bool enableImprovedSignalingErrorPrecision = true, bool allowIncomingWhileBusy = false});
+  /// The time in milliseconds after which the Device will attempt to refresh its access token.
+  external int? tokenRefreshMs;
+
+  external factory DeviceOptions({int logLevel = 1, List<String>? codecPreferences, bool closeProtection = false, dynamic sounds, bool enableImprovedSignalingErrorPrecision = true, bool allowIncomingWhileBusy = false, int? tokenRefreshMs});
 }
 
 /// Device Connect options
