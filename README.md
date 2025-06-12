@@ -181,22 +181,32 @@ See [example](https://github.com/cybex-dev/twilio_voice/blob/master/example/andr
 - Callback action on post dialer screen may not work as expected - this is platform and manufacturer specific. PRs are welcome here.
 - Complete integration with showing missed calls. This is a work in progress.
 
-### Web Setup:
 
-There are 4 important files for Twilio incoming/missed call notifications to work:
+Web requires 2 files to be copied over/provided for web implementation to work correctly. These files are:
+1. `twilio.min.js`
+2. `js_notifications-sw.js`
 
-- `notifications.js` is the main file, it handles the notifications and the service worker.
-- `twilio-sw.js` is the service worker _content_ used to work with the default `flutter_service_worker.js` (this can be found in `build/web/flutter_service_worker.js` after calling `flutter build web`). This file's contents are to be copied into the `flutter_service_worker.js` file after you've built your application.
+Both of these files need to be copied over to the `web/` directory of your project. See [[Notes]](https://github.com/cybex-dev/twilio_voice/blob/master/NOTES.md#ios--macos)
 
-Also, the twilio javascript SDK itself, `twilio.min.js` is needed.
+_The names of these files are very important, so make sure to have the file names exactly as described above._
 
-### To ensure proper/as intended setup:
+The folder structure should look like this:
 
-1. Copy files `example/web/notifications.js` and `example/web/twilio.min.js` into your application's `web` folder.
-2. This step should be done AFTER you've built your application, every time the `flutter_service_worker.js` changes (this includes hot reloads on your local machine unfortunately)
-   1. Copy the contents of `example/web/twilio-sw.js` into your `build/web/flutter_service_worker.js` file, **at the end of the file**. See [service-worker](#service-worker) for more information.
+```
+your_project/
+├── ...
+├── lib/
+├── web/
+│   ├── ...
+│   ├── index.html
+│   ├── twilio.min.js
+│   ├── js_notifications-sw.js
+│   ├── ...
+├── ...
+```
 
-Note, these files can be changed to suite your needs - however the core functionality should remain the same: responding to `notificationclick`, `notificationclose`, `message` events and associated sub-functions.
+**Note:** This is required for the browser to handle notifications in the background. The service
+worker will handle incoming call notifications and display them even when the app is not in focus.
 
 Finally, add the following code to your `index.html` file, **at the end of body tag**:
 
@@ -217,32 +227,11 @@ Finally, add the following code to your `index.html` file, **at the end of body 
 #### Web Considerations
 
 _If you need to debug the service worker, open up Chrome Devtools, go to Application tab, and select Service Workers from the left menu. There you can see the service workers and their status.
-To review service worker `notificationclick`, `notificationclose`, `message`, etc events - do this using Chrome Devtools (Sources tab, left panel below 'site code' the service workers are listed)_
-
-##### Service Worker
-
-Unifying the service worker(s) is best done via post-compilation tools or a CI/CD pipeline (suggested).
-
-A snippet of the suggested service worker integration is as follows:
-
-```yaml
-#...
-- run: cd ./example; flutter build web --release --target=lib/main.dart --output=build/web
-
-- name: Update service worker
-  run: cat ./example/web/twilio-sw.js >> ./example/build/web/flutter_service_worker.js
-#...
-```
-
-A complete example could be found in the github workflows `.github/workflows/flutter.yml` file, see [here](https://github.com/cybex-dev/twilio_voice/blob/master/.github/workflows/flutter.yml). 
+To review service worker `notificationclick`, `notificationclose`, `message`, etc events - do this using Chrome Devtools (Sources tab, left panel below 'site code' the service workers are listed)_ 
 
 ##### Web Notifications
 
-2 types of notifications are shown:
- - Incoming call notifications with 2 buttons: `Answer` and `Reject`,
- - Missed call notifications with 1 button: `Call back`.
-
-Notifications are presented as **alerts**. These notifications may not always been shown, check:
+Notifications are presented as **alerts**. If you notifications aren't shown or visible, check:
  - if the browser supports notifications,
  - if the user has granted permissions to show notifications,
  - if the notifications display method / notifications is enabled by the system (e.g. macOS notifications are disabled, or Windows notifications are disabled, etc).
