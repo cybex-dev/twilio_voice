@@ -77,6 +77,11 @@ class Device extends Twilio {
   /// possibly use js interop here
   @JS("off")
   external void off(String event, Function callback);
+
+  /// Update device options
+  /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#deviceupdateoptionsoptions
+  @JS("updateOptions")
+  external void updateOptions(DeviceOptions options);
 }
 
 /// Device options
