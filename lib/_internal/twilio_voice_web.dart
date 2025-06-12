@@ -25,6 +25,7 @@ import 'package:twilio_voice/_internal/platform_interface/twilio_voice_platform_
 
 import '../twilio_voice.dart';
 import './js/js.dart' as twilio_js;
+import 'js/core/enums/device_sound_name.dart';
 import 'js/utils/js_object_utils.dart';
 import 'local_storage_web/local_storage_web.dart';
 import 'method_channel/twilio_call_method_channel.dart';
@@ -219,6 +220,11 @@ class Logger {
 
 /// The web implementation of [TwilioVoicePlatform].
 class TwilioVoiceWeb extends MethodChannelTwilioVoice {
+
+  static const _codecs = ["opus", "pcmu"];
+  static const _closeProtection = true;
+  final Map<String, String> _soundMap = {};
+
   TwilioVoiceWeb() {
     // TODO(cybex-dev) - load twilio.min.js via [TwilioLoader] in future
     // loadTwilio();
@@ -607,6 +613,56 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#tokenwillexpire-event
   void _onTokenWillExpire(twilio_js.Device device) {
     logLocalEventEntries(["DEVICETOKEN", device.token], prefix: "");
+  }
+
+  /// Update Twilio Device sound defined by [SoundName], this will override the default Twilio Javascript sound.
+  /// If url is null, the default will be used.
+  /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#deviceoptionssounds-properties-and-default-sounds
+  @override
+  Future<void> updateSound(SoundName soundName, String? url) async {
+    if (device == null) {
+      printDebug("Device is not initialized, cannot update sound");
+      return;
+    }
+
+    final name = soundName.jsName;
+
+    if(url == null || url.isEmpty) {
+      _soundMap.remove(name);
+    } else {
+      // Use provided url
+      _soundMap[name] = url;
+    }
+
+    // Update Twilio Device sound
+    device!.updateOptions(_deviceOptions);
+  }
+
+  /// Update Twilio Device sounds defined by [SoundName], this will override the default Twilio Javascript sounds.
+  /// If a corresponding null value is provided, the default will be used.
+  /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#deviceoptionssounds-properties-and-default-sounds
+  @override
+  Future<void> updateSounds({Map<SoundName, String>? sounds}) async {
+    if(device == null) {
+      printDebug("Device is not initialized, cannot update sounds");
+      return;
+    }
+    if (sounds == null || sounds.isEmpty) {
+      return;
+    }
+
+    _soundMap.clear();
+    _soundMap.addAll(sounds.map((k, v) => MapEntry(k.jsName, v)));
+
+    device!.updateOptions(_deviceOptions);
+  }
+
+  twilio_js.DeviceOptions get _deviceOptions {
+    return twilio_js.DeviceOptions(
+      codecPreferences: _codecs,
+      closeProtection: _closeProtection,
+      sounds: js_util.jsify(_soundMap),
+    );
   }
 }
 
