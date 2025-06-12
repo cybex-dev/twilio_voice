@@ -1,5 +1,7 @@
 ## Next Release
 
+* Feat: [Web] Update example with custom incoming ringtone field.
+* Feat: [Web] Add custom sounds for Twilio Device using `updateSound(SoundName, String?)` or `updateSounds(Map<String, String>)` methods.
 * Fix: [Android] `call.isOnCall()` returns true when call is declined
 * Fix: [Android] handle reject vs error disconnect cause with message.
 * Logging: [Android] Added error code fallback
