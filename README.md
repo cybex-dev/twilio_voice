@@ -75,13 +75,13 @@ iOS app for VOIP, etc.
 To customize the icon displayed on a CallKit call, Open XCode and add a png icon named '
 callkit_icon' to your assets.xassets folder
 
-see [[Notes]](https://github.com/diegogarciar/twilio_voice/blob/master/NOTES.md#ios--macos) for more information
+see [[Notes]](https://github.com/cybex-dev/twilio_voice/blob/master/NOTES.md#ios--macos) for more information
 
 ### macOS Setup
 
 Drop in addition.
 
-see [[Limitations]](https://github.com/diegogarciar/twilio_voice/blob/master/NOTES.md#macos) and [[Notes]](https://github.com/diegogarciar/twilio_voice/blob/master/NOTES.md#ios--macos) for more information.
+see [[Limitations]](https://github.com/cybex-dev/twilio_voice/blob/master/NOTES.md#macos) and [[Notes]](https://github.com/cybex-dev/twilio_voice/blob/master/NOTES.md#ios--macos) for more information.
 
 ### Android Setup:
 
@@ -160,7 +160,7 @@ To enable the `ConnectionService` and make/receive calls, run:
 TwilioVoice.instance.requestReadPhoneStatePermission();  // Gives Android permissions to read Phone State
 ```
 
-Highly recommended to review the notes for **Android**. See [[Notes]](https://github.com/diegogarciar/twilio_voice/blob/master/NOTES.md#android) for more information.
+Highly recommended to review the notes for **Android**. See [[Notes]](https://github.com/cybex-dev/twilio_voice/blob/master/NOTES.md#android) for more information.
 
 #### Customizing the Calling Account
 
@@ -288,7 +288,7 @@ Register iOS capabilities
 call `TwilioVoice.instance.setTokens` as soon as your app starts.
 
 - `accessToken` provided from your server, you can see an example cloud
-  function [here](https://github.com/diegogarciar/twilio_voice/blob/master/functions.js).
+  function [here](https://github.com/cybex-dev/twilio_voice/blob/master/functions.js).
 - `deviceToken` is automatically handled on iOS, for android you need to pass a FCM token.
 
 call `TwilioVoice.instance.unregister` to unregister from Twilio, if no access token is passed, it
@@ -531,7 +531,7 @@ If the `CALL_PHONE` permissions group i.e. `READ_PHONE_STATE`, `READ_PHONE_NUMBE
 
 _Note: If `MANAGE_OWN_CALLS` permission is not granted, outbound calls will not work._
 
-See [Android Setup](#android-setup) and [Android Notes](https://github.com/diegogarciar/twilio_voice/blob/master/NOTES.md#android) for more information regarding configuring the `ConnectionService` and registering a Phone Account.
+See [Android Setup](#android-setup) and [Android Notes](https://github.com/cybex-dev/twilio_voice/blob/master/NOTES.md#android) for more information regarding configuring the `ConnectionService` and registering a Phone Account.
 
 ### Localization
 
@@ -934,7 +934,7 @@ firebase deploy --only functions
 
 Calling should work naturally - just make sure to fetch the token from the endpoint and you can call
 
-See [example](https://github.com/diegogarciar/twilio_voice/blob/master/example/lib/main.dart#L51)
+See [example](https://github.com/cybex-dev/twilio_voice/blob/master/example/lib/main.dart#L51)
 code, make sure to change the `voice-accessToken` to your function name, given to you by firebase
 when deploying (as part of the deploy text)
 
