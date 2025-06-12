@@ -1,3 +1,8 @@
+## Next Release
+
+* Docs: update README, NOTES & CHANGELOG
+* Feat: [Web] Add [web_callkit](https://pub.dev/packages/web_callkit) support.
+
 ## 0.2.2
 
 * Fix: [Android] Fix cancelling call when app is in background throws [BackgroundServiceStartNotAllowedException](https://developer.android.com/reference/android/app/BackgroundServiceStartNotAllowedException). [Issue #204](https://github.com/cybex-dev/twilio_voice/issues/204)
