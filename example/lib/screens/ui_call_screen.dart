@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:twilio_voice/_internal/js/core/enums/device_sound_name.dart';
+import 'package:twilio_voice/twilio_voice.dart';
 
 import 'ui_permissions_screen.dart';
 import 'widgets/call_actions.dart';
@@ -111,6 +113,8 @@ class _UICallScreenState extends State<UICallScreen> {
           },
         ),
         const Divider(),
+        const _RingSound(),
+        const Divider(),
         Expanded(
           child: Column(
             children: [
@@ -120,6 +124,65 @@ class _UICallScreenState extends State<UICallScreen> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _RingSound extends StatefulWidget {
+  const _RingSound({super.key});
+
+  @override
+  State<_RingSound> createState() => _RingSoundState();
+}
+
+class _RingSoundState extends State<_RingSound> {
+  final _tv = TwilioVoice.instance;
+  final TextEditingController _controller = TextEditingController();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(8.0),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextFormField(
+              controller: _controller,
+              decoration: InputDecoration(
+                labelText: "Enter custom url sound (mp3)",
+                hintText: "https://sdk.twilio.com/js/client/sounds/releases/1.0.0/incoming.mp3",
+                suffix: IconButton(
+                  icon: const Icon(Icons.clear),
+                  onPressed: () {
+                    _controller.clear();
+                  },
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          ElevatedButton(
+            onPressed: () async {
+              final url = _controller.text.isEmpty ? null : _controller.text;
+              await _tv.updateSound(SoundName.Incoming, url);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text("Updated incoming sound to ${_controller.text}")),
+              );
+            },
+            child: const Text("Update"),
+          ),
+          const SizedBox(width: 4),
+          ElevatedButton(
+            onPressed: () async {
+              await _tv.updateSound(SoundName.Incoming, null);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text("Reset incoming sound")),
+              );
+            },
+            child: const Text("Reset"),
+          ),
+        ],
+      ),
     );
   }
 }
