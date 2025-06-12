@@ -716,7 +716,7 @@ class Call extends MethodChannelTwilioCall {
   Future<bool?> hangUp() async {
     if (_jsCall != null) {
       // notify SW to cancel notification
-      final callSid = await getSid();
+      final _ = await getSid();
 
       CallStatus callStatus = getCallStatus(_jsCall!);
       // reject incoming call that is both outbound ringing or inbound pending
@@ -872,9 +872,9 @@ class Call extends MethodChannelTwilioCall {
       }
     }
 
-    print("Twilio Call Status: ${status}");
+    printDebug("Twilio Call Status: $status");
     final params = getCallParams(_jsCall!);
-    final callSid = params["CallSid"] as String;
+    final _ = params["CallSid"] as String;
     switch (callStatus) {
       case CallStatus.open:
       case CallStatus.pending:

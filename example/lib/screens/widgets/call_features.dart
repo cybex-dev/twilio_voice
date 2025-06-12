@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:twilio_voice/twilio_voice.dart';
+import 'package:twilio_voice_example/utils.dart';
 
 import 'state_toggle.dart';
 
@@ -59,7 +60,7 @@ class _CallControlsState extends State<CallControls> {
   void initState() {
     super.initState();
     _subscription = _tv.callEventsListener.listen((event) {
-      print("CallFeatures TV event: $event");
+      printDebug("CallFeatures TV event: $event");
       _events.add(event);
       switch (event) {
         case CallEvent.unhold:
@@ -110,7 +111,7 @@ class _CallControlsState extends State<CallControls> {
       });
     });
     if((_tv.call.activeCall != null) != activeCall) {
-      print("Call state changed: $activeCall");
+      printDebug("Call state changed: $activeCall");
     }
   }
 

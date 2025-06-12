@@ -7,7 +7,6 @@ import 'ui_permissions_screen.dart';
 import 'widgets/call_actions.dart';
 import 'widgets/call_features.dart';
 import 'widgets/call_status.dart';
-import 'widgets/permissions_block.dart';
 import 'widgets/twilio_log.dart';
 
 typedef PerformCall = Future<void> Function(String clientIdentifier);
@@ -100,9 +99,9 @@ class _UICallScreenState extends State<UICallScreen> {
           ),
         ),
         ListTile(
-          title: Text("Permissions"),
-          subtitle: Text("Please allow all permissions to use the app"),
-          trailing: Icon(Icons.arrow_forward_ios),
+          title: const Text("Permissions"),
+          subtitle: const Text("Please allow all permissions to use the app"),
+          trailing: const Icon(Icons.arrow_forward_ios),
           onTap: () {
             Navigator.push(
               context,
@@ -129,7 +128,7 @@ class _UICallScreenState extends State<UICallScreen> {
 }
 
 class _RingSound extends StatefulWidget {
-  const _RingSound({super.key});
+  const _RingSound({Key? key}) : super(key: key);
 
   @override
   State<_RingSound> createState() => _RingSoundState();
@@ -165,6 +164,7 @@ class _RingSoundState extends State<_RingSound> {
             onPressed: () async {
               final url = _controller.text.isEmpty ? null : _controller.text;
               await _tv.updateSound(SoundName.Incoming, url);
+              // ignore: use_build_context_synchronously
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(content: Text("Updated incoming sound to ${_controller.text}")),
               );
@@ -175,8 +175,9 @@ class _RingSoundState extends State<_RingSound> {
           ElevatedButton(
             onPressed: () async {
               await _tv.updateSound(SoundName.Incoming, null);
+              // ignore: use_build_context_synchronously
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text("Reset incoming sound")),
+                const SnackBar(content: Text("Reset incoming sound")),
               );
             },
             child: const Text("Reset"),

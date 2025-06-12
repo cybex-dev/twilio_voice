@@ -1,6 +1,5 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:matcher/matcher.dart' as matcher;
 
 void main() {
   const MethodChannel channel = MethodChannel('twilio_voice');
@@ -16,6 +15,6 @@ void main() {
 
   test("Mock Test", () async {
     final result = await channel.invokeMethod("42");
-    expect(result, matcher.equals("42"));
+    expect(result, equals("42"));
   });
 }
