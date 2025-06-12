@@ -1,4 +1,4 @@
-## Next Release
+## 0.3.0
 
 * Docs: update README, NOTES & CHANGELOG
 * Feat: [Web] Add [web_callkit](https://pub.dev/packages/web_callkit) support.
