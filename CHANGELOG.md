@@ -1,5 +1,7 @@
 ## Next Release
 
+* Docs: update README, NOTES & CHANGELOG
+* Feat: [Web] Add [web_callkit](https://pub.dev/packages/web_callkit) support.
 * Feat: [Web] Update example with custom incoming ringtone field.
 * Feat: [Web] Add custom sounds for Twilio Device using `updateSound(SoundName, String?)` or `updateSounds(Map<String, String>)` methods.
 * Fix: [Android] `call.isOnCall()` returns true when call is declined
@@ -9,7 +11,6 @@
 * Fix: [macOS] Remove deprecated `.alert` presentation option. [@AndreiMisiukevich](https://github.com/AndreiMisiukevich)
 * Feat: [macOS] Add native microphone permission with `AVCaptureDevice` (this replaces `getUserMedia()` from js interop available on localhost/https only). [@AndreiMisiukevich](https://github.com/AndreiMisiukevich)
 * Fix/Update: [macOS] correct runtime entitlement for `audio-input` permission. [@AndreiMisiukevich](https://github.com/AndreiMisiukevich)
-* Update Readme
 
 ## 0.2.2
 
