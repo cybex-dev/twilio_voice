@@ -27,12 +27,12 @@ enum TwilioDeviceEvents {
 class Device extends Twilio {
   // private constructor
   // ignore: unused_element_parameter, unused_element
-  external Device._(token, [DeviceInitOptions? options]);
+  external Device._(token, [DeviceOptions? options]);
 
   // factory used by js lib
   external factory Device(
     String token, [
-    DeviceInitOptions? options,
+    DeviceOptions? options,
   ]);
 
   // /// Returns array of active calls
@@ -77,13 +77,18 @@ class Device extends Twilio {
   /// possibly use js interop here
   @JS("off")
   external void off(String event, Function callback);
+
+  /// Update device options
+  /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#deviceupdateoptionsoptions
+  @JS("updateOptions")
+  external void updateOptions(DeviceOptions options);
 }
 
 /// Device options
 /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#deviceoptions
 @anonymous
 @JS()
-class DeviceInitOptions {
+class DeviceOptions {
   /// The Voice JavaScript SDK exposes a loglevel-based logger to allow for runtime logging configuration.
   ///
   /// You can set this property to a number which corresponds to the log levels shown below.
@@ -111,7 +116,13 @@ class DeviceInitOptions {
   /// set to false by default
   external bool allowIncomingWhileBusy;
 
-  external factory DeviceInitOptions({int logLevel = 1, List<String>? codecPreferences, bool closeProtection = false, /*bool allowIncomingWhileBusy = false*/});
+  /// Whether to enable improved precision for signaling errors. Instead of catch-all 31005 type error codes, more specific error codes will be returned.
+  external bool enableImprovedSignalingErrorPrecision;
+
+  /// The sound files to use for the Device's ringtone and other sounds. This should be a map of sound names to URLs but the Map type is not supported in JS interop yet so we use dynamic with jsify.
+  external dynamic sounds;
+
+  external factory DeviceOptions({int logLevel = 1, List<String>? codecPreferences, bool closeProtection = false, dynamic sounds, bool enableImprovedSignalingErrorPrecision = true, bool allowIncomingWhileBusy = false});
 }
 
 /// Device Connect options

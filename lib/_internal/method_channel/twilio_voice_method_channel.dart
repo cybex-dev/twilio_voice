@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../../twilio_voice.dart';
+import '../js/core/enums/device_sound_name.dart';
 import '../platform_interface/twilio_call_platform_interface.dart';
 import '../platform_interface/twilio_voice_platform_interface.dart';
 import '../utils.dart';
@@ -430,6 +431,18 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
         }
         throw ArgumentError('$state is not a valid CallState.');
     }
+  }
+
+  @override
+  Future<void> updateSound(SoundName soundName, String? url) {
+    // TODO: implement updateSound
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<void> updateSounds({Map<SoundName, String>? sounds}) {
+    // TODO: implement updateSounds
+    throw UnimplementedError();
   }
 }
 
