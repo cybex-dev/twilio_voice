@@ -1,6 +1,17 @@
 
 # Notes
 
+### Web
+
+Web implementation relies on the [js_notifications](https://pub.dev/packages/js_notifications) package for browser notifications. These notifications including Call functionality is used by a middleware package [web_callkit](https://pub.dev/packages/web_callkit) which provides boilerplate for call management and browser notification integration.
+
+- `js_notifications` requires the service worker file `js_notifications-sw.js` to be copied to your web directory. This file is used for handling notifications in the background.
+- `web_callkit` provides the boilerplate for call management and browser notification integration, however this package requires both files used in `js_notifications` package.
+
+Further, and most importantly the `twilio_voice` package makes use of custom [twilio_voice.js](https://github.com/twilio/twilio-voice.js/) implementation (these changes are purely to provided Flutter status outputs allowing Flutter to monitor the status of the Twilio Device).
+
+The javascript files required by `twilio_voice` is `twilio.min.js`, which is found in the `example/web` folder. This may in future be loaded dynamically, but for now is required to be provided in the `web/` folder.
+
 ### Android
 
 **Package Information:**
