@@ -243,6 +243,19 @@ Notifications are presented as **alerts**. If you notifications aren't shown or 
  - if there are already notifications shown (https://stackoverflow.com/a/36383155/4628115)
  - if system is in 'Do Not Disturb' or 'Focus' mode.
 
+If you need manual control over some notifications, e.g. notifying twilio of a queued/missed call from FCM/service worker, you can do so by hooking into the [web_callkit](https://pub.dev/packages/web_callkit) directly. For example,
+
+```dart
+// import
+import 'package:web_callkit/web_callkit.dart';
+
+// Get call sid used as unique identifier
+void _notifyMissedCall() async {
+  final callSid = await TwilioVoice.instance.call.getSid();
+  WebCallkit.instance.reportCallDisconnected(callSid!, response: CKDisconnectResponse.missed);
+}
+```
+
 ### MacOS Setup:
 
 The plugin is essentially a [WKWebView](https://developer.apple.com/documentation/webkit/wkwebview)
