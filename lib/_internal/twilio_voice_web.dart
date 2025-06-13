@@ -859,13 +859,18 @@ class Call extends MethodChannelTwilioCall {
   /// On accept/answering (inbound) call
   /// Undocumented event: Ringing found in twilio-voice.js implementation: https://github.com/twilio/twilio-voice.js/blob/94ea6b6d8d1128ac5091f3a3bec4eae745e4d12f/lib/twilio/call.ts#L1355
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#accept-event
-  void _onCallStatusChanged(String status) {
+  void _onCallStatusChanged(String status) async {
     CallStatus callStatus = parseCallStatus(status);
 
     if (callStatus == CallStatus.pending) {
       /// jsCall should not be null here since `CallStatus.incoming` (incoming) or
       /// `CallStatus.connecting` (outgoing) via `place()` has already been fired and set
       _onCallRinging();
+    } else if (callStatus == CallStatus.ringing) {
+      final sid = await getSid();
+      final params = getCallParams(_jsCall!);
+      final to = params["To"] ?? "";
+      webCallkit.reportOutgoingCall(uuid: sid!, handle: to, metadata: params, data: params);
     } else if (callStatus == CallStatus.connected) {
       if (_jsCall != null) {
         _onCallConnected(_jsCall!);

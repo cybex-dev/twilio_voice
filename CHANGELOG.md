@@ -1,3 +1,7 @@
+## 0.3.1
+
+* Fix: [Web] add missing web_callkit outgoing call notification
+
 ## 0.3.0
 
 * Docs: update README, NOTES & CHANGELOG
