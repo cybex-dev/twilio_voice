@@ -21,6 +21,7 @@ import androidx.core.content.ContextCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.twilio.twilio_voice.constants.Constants
 import com.twilio.twilio_voice.constants.FlutterErrorCodes
+import com.twilio.twilio_voice.fcm.VoiceMessagingService
 import com.twilio.twilio_voice.receivers.TVBroadcastReceiver
 import com.twilio.twilio_voice.service.TVConnectionService
 import com.twilio.twilio_voice.storage.Storage
@@ -136,6 +137,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             flutterPluginBinding.applicationContext
         )
         hasStarted = true
+        context = flutterPluginBinding.applicationContext
     }
 
     override fun onDetachedFromEngine(binding: FlutterPluginBinding) {
@@ -853,7 +855,19 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             }
 
             TVMethodChannels.BACKGROUND_CALL_UI -> {
-                // Deprecated in favour of ConnectionService implementation
+                val args = call.arguments as? Map<String, String> ?: run {
+                    result.error(
+                        FlutterErrorCodes.MALFORMED_ARGUMENTS,
+                        "Arguments should be a Map<*, *>",
+                        null
+                    )
+                    return@onMethodCall
+                }
+
+                Log.d(TAG, "onMethodCall: BACKGROUND_CALL_UI args: $args")
+
+                context?.let { val voiceMessagingService = VoiceMessagingService(it)
+                    Voice.handleMessage(it, args, voiceMessagingService) }
                 result.success(true)
             }
 
