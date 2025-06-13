@@ -185,6 +185,7 @@ See [example](https://github.com/cybex-dev/twilio_voice/blob/master/example/andr
 - Callback action on post dialer screen may not work as expected - this is platform and manufacturer specific. PRs are welcome here.
 - Complete integration with showing missed calls. This is a work in progress.
 
+### Web Setup:
 
 Web requires 2 files to be copied over/provided for web implementation to work correctly. These files are:
 1. `twilio.min.js`
