@@ -1,3 +1,7 @@
+## 0.3.1
+
+* Fix: [Android] Migrate to declarative plugins block from Flutter's `app_plugin_loader` Gradle plugin. (see: [Deprecated imperative apply of Flutter's Gradle plugins](https://docs.flutter.dev/release/breaking-changes/flutter-gradle-plugin-apply))
+
 ## 0.3.0+1
 
 * Fix: [Web] add missing web_callkit outgoing call notification
