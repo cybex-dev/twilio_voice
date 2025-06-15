@@ -594,7 +594,36 @@ class TVConnectionService : ConnectionService() {
                 }
             }
         }
+
+
+        // Set call disconnected listener, removes connection from active connections when call is disconnected
+        val onCallInitializingDisconnectedListener: CompletionHandler<DisconnectCause> = CompletionHandler {
+            connection.twilioCall?.let {
+                if (activeConnections.containsKey(it.sid)) {
+                    activeConnections.remove(it.sid)
+                }
+                sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, it.sid ?: "", connection.extras)
+                stopForegroundService()
+                stopSelfSafe()
+            }
+        }
+
+        // NOTE(cybex-dev): This could be used as an alternative to the [onCallInitializingDisconnectedListener],
+        // however in the case of a call being initialized followed by a local disconnect - the call only has a temporary SID.
+        // The call SID is set in the [attachCallEventListeners] method when the call is in a RINGING or CONNECTED state.
+        // Thus, using [onEvent] will pass through a null call handle which may not be a good design.
+//        val onEvent: ValueBundleChanged<String> = ValueBundleChanged { event: String?, extra: Bundle? ->
+//            if(event == TVBroadcastReceiver.ACTION_CALL_ENDED) {
+//                val callSid = connection.twilioCall?.sid;
+//                sendBroadcastEvent(applicationContext, event ?: "", callSid, extra)
+//                // This is a temporary solution since `isOnCall` returns true when there is an active ConnectionService, regardless of the source app. This also applies to SIM/Telecom calls.
+//                sendBroadcastCallHandle(applicationContext, extra?.getString(TVBroadcastReceiver.EXTRA_CALL_HANDLE))
+//            }
+//        }
+
         connection.setOnCallStateListener(onCallStateListener)
+        connection.setOnCallDisconnected(onCallInitializingDisconnectedListener)
+//        connection.setOnCallEventListener(onEvent)
 
         // Setup connection UI parameters
         connection.setInitializing()

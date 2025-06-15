@@ -494,9 +494,7 @@ open class TVCallConnection(
             rejectInvite()
         } else {
             Log.d(TAG, "onDisconnected: onDisconnected")
-            twilioCall.let {
-                it?.disconnect()
-            }
+            twilioCall?.disconnect()
             onEvent?.onChange(TVNativeCallEvents.EVENT_DISCONNECTED_LOCAL, null)
             setDisconnected(DisconnectCause(DisconnectCause.LOCAL))
             onDisconnected?.withValue(DisconnectCause(DisconnectCause.LOCAL))
