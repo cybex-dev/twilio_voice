@@ -499,10 +499,10 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                 self.sendPhoneCallEvents(description: "LOG|Successfully unregistered from VoIP push notifications.", isError: false)
             }
         }
-        UserDefaults.standard.removeObject(forKey: kCachedDeviceToken)
+        //UserDefaults.standard.removeObject(forKey: kCachedDeviceToken)
         
         // Remove the cached binding as credentials are invalidated
-        UserDefaults.standard.removeObject(forKey: kCachedBindingDate)
+        //UserDefaults.standard.removeObject(forKey: kCachedBindingDate)
     }
     
     /**
