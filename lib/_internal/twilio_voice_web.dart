@@ -861,6 +861,7 @@ class Call extends MethodChannelTwilioCall {
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#accept-event
   void _onCallStatusChanged(String status) async {
     CallStatus callStatus = parseCallStatus(status);
+    printDebug("Call Status Changed: $callStatus");
 
     if (callStatus == CallStatus.pending) {
       /// jsCall should not be null here since `CallStatus.incoming` (incoming) or
