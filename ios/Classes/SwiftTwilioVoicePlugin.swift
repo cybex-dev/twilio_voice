@@ -110,9 +110,16 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         let arguments:Dictionary<String, AnyObject> = flutterCall.arguments as! Dictionary<String, AnyObject>;
         
         if flutterCall.method == "tokens" {
-            guard let token = arguments["accessToken"] as? String else {return}
-            self.accessToken = token
-            if let deviceToken = deviceToken, let token = accessToken {
+            guard let token = arguments["accessToken"] as? String else {
+                result(FlutterError(code: "INVALID_ARGUMENTS", message: "Missing accessToken", details: nil))
+                return
+            }
+            self.accessToken = token;
+            guard let deviceToken = deviceToken else {
+                self.sendPhoneCallEvents(description: "LOG|Device token is nil. Cannot register for VoIP push notifications.", isError: true)
+                return
+            }
+            if let token = accessToken {
                 self.sendPhoneCallEvents(description: "LOG|pushRegistry:attempting to register with twilio", isError: false)
                 TwilioVoiceSDK.register(accessToken: token, deviceToken: deviceToken) { (error) in
                     if let error = error {
@@ -429,8 +436,12 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             return
         }
         
-        guard registrationRequired() || deviceToken != credentials.token else { return }
+        guard registrationRequired() || deviceToken != credentials.token else {
+            self.sendPhoneCallEvents(description: "LOG|pushRegistry:didUpdatePushCredentials device token unchanged, no update needed.", isError: true)
+            return
+        }
 
+        self.sendPhoneCallEvents(description: "LOG|pushRegistry:didUpdatePushCredentials:forType: device token updated", isError: false)
         let deviceToken = credentials.token
         
         self.sendPhoneCallEvents(description: "LOG|pushRegistry:attempting to register with twilio", isError: false)
@@ -457,9 +468,10 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
       * will return true, else false.
       */
      func registrationRequired() -> Bool {
-         guard
-             let lastBindingCreated = UserDefaults.standard.object(forKey: kCachedBindingDate)
-         else { return true }
+         guard let lastBindingCreated = UserDefaults.standard.object(forKey: kCachedBindingDate) else {
+             self.sendPhoneCallEvents(description: "LOG|Registration required: true, last binding date not found", isError: false)
+             return true
+         }
 
          let date = Date()
          var components = DateComponents()
@@ -467,6 +479,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
          let expirationDate = Calendar.current.date(byAdding: components, to: lastBindingCreated as! Date)!
 
          if expirationDate.compare(date) == ComparisonResult.orderedDescending {
+             self.sendPhoneCallEvents(description: "LOG|Registration required: false, half of TTL not passed", isError: false)
              return false
          }
          return true;
@@ -485,6 +498,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     func unregister() {
         
         guard let deviceToken = deviceToken, let token = accessToken else {
+            self.sendPhoneCallEvents(description: "LOG|Missing required parameters to unregister", isError: true)
             return
         }
         
