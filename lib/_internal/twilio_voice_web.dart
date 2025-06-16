@@ -958,8 +958,10 @@ class Call extends MethodChannelTwilioCall {
 
     await webCallkit.requestPermissions();
     final params = getCallParams(call);
-    final callSid = params["CallSid"] as String;
-    webCallkit.reportCallDisconnected(callSid, response: CKDisconnectResponse.remote);
+    final callSid = params["CallSid"];
+    if(callSid != null) {
+      webCallkit.reportCallDisconnected(callSid, response: CKDisconnectResponse.remote);
+    }
   }
 
   /// On cancels active (outbound/inbound) call
