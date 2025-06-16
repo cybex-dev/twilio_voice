@@ -876,35 +876,6 @@ class Call extends MethodChannelTwilioCall {
         _onCallConnected(_jsCall!);
       }
     }
-
-    printDebug("Twilio Call Status: $status");
-    final params = getCallParams(_jsCall!);
-    final _ = params["CallSid"] as String;
-    switch (callStatus) {
-      case CallStatus.open:
-      case CallStatus.pending:
-        // webCallkit.updateCallStatus(callSid, callStatus: CallState.initiated);
-        break;
-      case CallStatus.ringing:
-        // webCallkit.updateCallStatus(callSid, callStatus: CallState.ringing);
-        break;
-      case CallStatus.connected:
-      case CallStatus.reconnected:
-        // webCallkit.updateCallStatus(callSid, callStatus: CallState.active);
-        break;
-      case CallStatus.reconnecting:
-        // webCallkit.updateCallStatus(callSid, callStatus: CallState.reconnecting);
-        break;
-      case CallStatus.answer:
-        // webCallkit.updateCallStatus(callSid, callStatus: CallState.active);
-        break;
-      case CallStatus.rejected:
-      case CallStatus.closed:
-        // webCallkit.updateCallStatus(callSid, callStatus: CallState.disconnected);
-        break;
-      default:
-        break;
-    }
   }
 
   /// On accept/answering (inbound) call
