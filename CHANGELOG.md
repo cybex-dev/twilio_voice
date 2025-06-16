@@ -1,5 +1,6 @@
 ## 0.3.1
 
+* Fix: [iOS] unregister removes device push token preventing new access token registration (i.e. user 1 logs out, user 2 and more won't receive any calls). Thanks to [@VinceDollo](https://github.com/VinceDollo) & [@Erchil66](https://github.com/Erchil66) [Issue #273](https://github.com/cybex-dev/twilio_voice/issues/273)
 * Fix: [Android] placing outgoing call then ending immediately results in no Flutter plugin not registering call ended. Thanks to [@RageshAntonyHM](https://github.com/RageshAntonyHM) & [@Erchil66](https://github.com/Erchil66) [Issue #275](https://github.com/cybex-dev/twilio_voice/issues/275)
 * Fix: [Android] Migrate to declarative plugins block from Flutter's `app_plugin_loader` Gradle plugin. (see: [Deprecated imperative apply of Flutter's Gradle plugins](https://docs.flutter.dev/release/breaking-changes/flutter-gradle-plugin-apply))
 * Docs: update CHANGELOG, TODO
