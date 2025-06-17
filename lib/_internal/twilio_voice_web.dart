@@ -891,9 +891,8 @@ class Call extends MethodChannelTwilioCall {
       ], prefix: "");
 
       await webCallkit.requestPermissions();
-      final callSid = params["CallSid"] as String;
-      webCallkit.updateCallStatus(callSid, callStatus: CKCallState.active);
     }
+    _onCallConnected(call);
   }
 
   /// On disconnect active (outbound/inbound) call
