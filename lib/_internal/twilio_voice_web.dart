@@ -834,7 +834,6 @@ class Call extends MethodChannelTwilioCall {
     // call.on("connected", js.allowInterop(_onCallConnected));
     call.on("reconnecting", js.allowInterop(_onCallReconnecting));
     call.on("reconnected", js.allowInterop(_onCallReconnected));
-    call.on("status", js.allowInterop(_onCallStatusChanged));
     call.on("log", js.allowInterop(_onLogEvent));
   }
 
@@ -853,35 +852,11 @@ class Call extends MethodChannelTwilioCall {
     // call.removeListener("connected", js.allowInterop(_onCallConnected));
     call.removeListener("reconnecting", js.allowInterop(_onCallReconnecting));
     call.removeListener("reconnected", js.allowInterop(_onCallReconnected));
-    call.removeListener("status", js.allowInterop(_onCallStatusChanged));
     call.removeListener("log", js.allowInterop(_onLogEvent));
   }
 
   void _onLogEvent(String status) {
     log("Log Event: $status");
-  }
-
-  /// On accept/answering (inbound) call
-  /// Undocumented event: Ringing found in twilio-voice.js implementation: https://github.com/twilio/twilio-voice.js/blob/94ea6b6d8d1128ac5091f3a3bec4eae745e4d12f/lib/twilio/call.ts#L1355
-  /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#accept-event
-  void _onCallStatusChanged(String status) async {
-    CallStatus callStatus = parseCallStatus(status);
-    printDebug("Call Status Changed: $callStatus");
-
-    if (callStatus == CallStatus.pending) {
-      /// jsCall should not be null here since `CallStatus.incoming` (incoming) or
-      /// `CallStatus.connecting` (outgoing) via `place()` has already been fired and set
-      _onCallRinging();
-    } else if (callStatus == CallStatus.ringing) {
-      final sid = await getSid();
-      final params = getCallParams(_jsCall!);
-      final to = params["To"] ?? "";
-      webCallkit.reportOutgoingCall(uuid: sid!, handle: to, metadata: params, data: params);
-    } else if (callStatus == CallStatus.connected) {
-      if (_jsCall != null) {
-        _onCallConnected(_jsCall!);
-      }
-    }
   }
 
   /// On accept/answering (inbound) call
