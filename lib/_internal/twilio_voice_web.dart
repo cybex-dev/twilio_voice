@@ -620,7 +620,7 @@ class Call extends MethodChannelTwilioCall {
     if (_jsCall != null) {
       _jsCall!.mute(isMuted);
     }
-    final sid = await getSid();
+    final sid = _getSid();
     await _toggleAttribute(isMuted, sid!, CKCallAttributes.mute);
     return isMuted;
   }
@@ -646,7 +646,7 @@ class Call extends MethodChannelTwilioCall {
     // Logger.logLocalEvent(holdCall ? "Unhold" : "Hold", prefix: "");
     // return Future.value(false);
     Logger.logLocalEvent("Unhold");
-    final sid = await getSid();
+    final sid = _getSid();
     await _toggleAttribute(false, sid!, CKCallAttributes.hold);
     return Future.value(false);
   }
@@ -685,7 +685,7 @@ class Call extends MethodChannelTwilioCall {
       );
 
       // notify SW to cancel notification
-      final callSid = await getSid();
+      final callSid = _getSid();
       webCallkit.updateCallStatus(callSid!, callStatus: CKCallState.active);
 
       return true;
@@ -696,6 +696,11 @@ class Call extends MethodChannelTwilioCall {
   /// Not currently implemented for web
   @override
   Future<String?> getSid() async {
+    return _getSid();
+  }
+
+  /// Get Sid from parameters, helper method for not required futures for web calls
+  String? _getSid() {
     if (_jsCall == null) {
       return null;
     }
@@ -716,7 +721,7 @@ class Call extends MethodChannelTwilioCall {
   Future<bool?> hangUp() async {
     if (_jsCall != null) {
       // notify SW to cancel notification
-      final _ = await getSid();
+      final _ = _getSid();
 
       CallStatus callStatus = getCallStatus(_jsCall!);
       // reject incoming call that is both outbound ringing or inbound pending
@@ -941,9 +946,9 @@ class Call extends MethodChannelTwilioCall {
   /// - ignoring an incoming call
   /// - calling [disconnect] on an active call before recipient has answered
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#cancel-event
-  void _onCallCancel() async {
+  void _onCallCancel() {
     // notify SW to cancel notification
-    final callSid = await getSid();
+    final callSid = _getSid();
     final callStatus = getCallStatus(_jsCall!);
     if (_jsCall != null) {
       _detachCallEventListeners(_jsCall!);
@@ -963,8 +968,8 @@ class Call extends MethodChannelTwilioCall {
 
   /// On reject (inbound) call
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#reject-event
-  void _onCallReject() async {
-    final callSid = await getSid();
+  void _onCallReject() {
+    final callSid = _getSid();
     if (_jsCall != null) {
       _detachCallEventListeners(_jsCall!);
       nativeCall = null;
