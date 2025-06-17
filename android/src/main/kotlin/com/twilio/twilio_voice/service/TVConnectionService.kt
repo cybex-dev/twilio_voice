@@ -139,6 +139,11 @@ class TVConnectionService : ConnectionService() {
         const val EXTRA_TOKEN: String = "EXTRA_TOKEN"
 
         /**
+         * Extra used with [ACTION_PLACE_OUTGOING_CALL] to place an outgoing call connection, denotes the call parameters treated as a Bundle.
+         */
+        const val EXTRA_CONNECT_RAW: String = "EXTRA_CONNECT_RAW"
+
+        /**
          * Extra used with [ACTION_PLACE_OUTGOING_CALL] to place an outgoing call connection. Denotes the recipient's identity.
          */
         const val EXTRA_TO: String = "EXTRA_TO"
@@ -334,40 +339,38 @@ class TVConnectionService : ConnectionService() {
                 }
 
                 ACTION_PLACE_OUTGOING_CALL -> {
-                    // check required EXTRA_TOKEN, EXTRA_TO, EXTRA_FROM
-                    val token = it.getStringExtra(EXTRA_TOKEN) ?: run {
-                        Log.e(TAG, "onStartCommand: ACTION_PLACE_OUTGOING_CALL is missing String EXTRA_TOKEN")
-                        return@let
-                    }
-                    val to = it.getStringExtra(EXTRA_TO) ?: run {
-                        Log.e(TAG, "onStartCommand: ACTION_PLACE_OUTGOING_CALL is missing String EXTRA_TO")
-                        return@let
-                    }
-                    val from = it.getStringExtra(EXTRA_FROM) ?: run {
-                        Log.e(TAG, "onStartCommand: ACTION_PLACE_OUTGOING_CALL is missing String EXTRA_FROM")
-                        return@let
+
+                    val rawConnect = it.getBooleanExtra(EXTRA_CONNECT_RAW, false)
+
+                    fun getRequiredString(key: String, allowNullIfRaw: Boolean = false): String? {
+                        val value = it.getStringExtra(key)
+                        if (value == null) {
+                            Log.e(TAG, "onStartCommand: ACTION_PLACE_OUTGOING_CALL is missing String $key")
+                            if (!rawConnect || !allowNullIfRaw) return null
+                        }
+                        return value
                     }
 
-                    // Get all params from bundle
-                    val params = HashMap<String, String>()
-                    val outGoingParams = it.getParcelableExtraSafe<Bundle>(EXTRA_OUTGOING_PARAMS)
-                    outGoingParams?.keySet()?.forEach { key ->
-                        outGoingParams.getString(key)?.let { value ->
-                            params[key] = value
+                    val token = getRequiredString(EXTRA_TOKEN) ?: return@let
+                    val to = getRequiredString(EXTRA_TO, allowNullIfRaw = true)
+                    val from = getRequiredString(EXTRA_FROM, allowNullIfRaw = true)
+
+                    val params = buildMap {
+                        it.getParcelableExtraSafe<Bundle>(EXTRA_OUTGOING_PARAMS)?.let { bundle ->
+                            for (key in bundle.keySet()) {
+                                bundle.getString(key)?.let { value -> put(key, value) }
+                            }
+                        }
+                        put(EXTRA_TOKEN, token)
+                        if (!rawConnect) {
+                            to?.let { v -> put(EXTRA_TO, v) }
+                            from?.let { v -> put(EXTRA_FROM, v) }
                         }
                     }
 
-                    // Add required params
-                    params[EXTRA_FROM] = from
-                    params[EXTRA_TO] = to
-                    params[EXTRA_TOKEN] = token
-
-                    // Create Twilio Param bundles
                     val myBundle = Bundle().apply {
                         putBundle(EXTRA_OUTGOING_PARAMS, Bundle().apply {
-                            params.forEach { (key, value) ->
-                                putString(key, value)
-                            }
+                            params.forEach { (key, value) -> putString(key, value) }
                         })
                     }
 

@@ -209,7 +209,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     ///   - to: recipient
     ///   - extraOptions: extra options
     ///   - completionHandler: completion handler -> (Bool?)
-    private func place(from: String, to: String, extraOptions: [String: Any]?, completionHandler: @escaping OnCompletionValueHandler<Bool>) -> Void {
+    private func place(from: String?, to: String?, extraOptions: [String: Any]?, completionHandler: @escaping OnCompletionValueHandler<Bool>) -> Void {
         assert(from.isNotEmpty(), "\(Constants.PARAM_FROM) cannot be empty")
         assert(to.isNotEmpty(), "\(Constants.PARAM_TO) cannot be empty")
 //        assert(extraOptions?.keys.contains(Constants.PARAM_FROM) ?? true, "\(Constants.PARAM_FROM) cannot be passed in extraOptions")
@@ -218,7 +218,10 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
 
         logEvent(description: "Making new call")
 
-        var params: [String: Any] = [Constants.PARAM_FROM: from, Constants.PARAM_TO: to]
+        var params: [String: Any] = [
+            if(from != nil) Constants.PARAM_FROM: from,
+            if(to != nil) Constants.PARAM_TO: to,
+        ]
         if let extraOptions = extraOptions {
             params.merge(extraOptions) { (_, new) in
                 new
@@ -583,6 +586,21 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
                 result(ferror)
                 return
             }
+
+            var params: [String: Any] = [:]
+            arguments.forEach { (key, value) in
+                if key != Constants.PARAM_TO && key != Constants.PARAM_FROM {
+                    params[key] = value
+                }
+            }
+
+            place(from: from, to: to, extraOptions: params) { success in
+                result(success ?? false)
+            }
+            break
+        case .connect:
+            guard let to = arguments[Constants.PARAM_TO] as? String?
+            guard let from = arguments[Constants.PARAM_FROM] as? String
 
             var params: [String: Any] = [:]
             arguments.forEach { (key, value) in

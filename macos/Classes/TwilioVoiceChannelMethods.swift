@@ -3,6 +3,7 @@ import Foundation
 public enum TwilioVoiceChannelMethods: String {
     case tokens = "tokens"
     case makeCall = "makeCall"
+    case connect = "connect"
     case toggleMute = "toggleMute"
     case isMuted = "isMuted"
     case toggleSpeaker = "toggleSpeaker"
