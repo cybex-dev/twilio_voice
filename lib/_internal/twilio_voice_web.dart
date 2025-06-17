@@ -825,7 +825,7 @@ class Call extends MethodChannelTwilioCall {
   void _attachCallEventListeners(twilio_js.Call call) {
     // ignore: unnecessary_null_comparison
     assert(call != null, "Call cannot be null");
-    // call.on("ringing", js.allowInterop(_onCallRinging));
+    call.on("ringing", js.allowInterop(_onCallRinging));
     call.on("accept", js.allowInterop(_onCallAccept));
     call.on("disconnect", js.allowInterop(_onCallDisconnect));
     call.on("cancel", js.allowInterop(_onCallCancel));
@@ -843,7 +843,7 @@ class Call extends MethodChannelTwilioCall {
   void _detachCallEventListeners(twilio_js.Call call) {
     // ignore: unnecessary_null_comparison
     assert(call != null, "Call cannot be null");
-    // call.removeListener("ringing", js.allowInterop(_onCallRinging));
+    call.removeListener("ringing", js.allowInterop(_onCallRinging));
     call.removeListener("accept", js.allowInterop(_onCallAccept));
     call.removeListener("disconnect", js.allowInterop(_onCallDisconnect));
     call.removeListener("cancel", js.allowInterop(_onCallCancel));
