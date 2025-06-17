@@ -1,5 +1,6 @@
 ## 0.3.1
 
+* Feat: Add raw `Connect({Map<String, dynamic>?})` for all platforms
 * Refactor: [Web] Removed unused `web_callkit` event listeners. 
 * Fix: [Web] Check if call SID is present when call is disconnected (this occurs if the call ends abruptly after starting, and `params` does not contain `CallSid`).
 * Fix: [iOS] unregister removes device push token preventing new access token registration (i.e. user 1 logs out, user 2 and more won't receive any calls). Thanks to [@VinceDollo](https://github.com/VinceDollo) & [@Erchil66](https://github.com/Erchil66) [Issue #273](https://github.com/cybex-dev/twilio_voice/issues/273)
