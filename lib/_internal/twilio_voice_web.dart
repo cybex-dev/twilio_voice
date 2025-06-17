@@ -831,7 +831,6 @@ class Call extends MethodChannelTwilioCall {
     call.on("cancel", js.allowInterop(_onCallCancel));
     call.on("reject", js.allowInterop(_onCallReject));
     call.on("error", js.allowInterop(_onCallError));
-    // call.on("connected", js.allowInterop(_onCallConnected));
     call.on("reconnecting", js.allowInterop(_onCallReconnecting));
     call.on("reconnected", js.allowInterop(_onCallReconnected));
     call.on("log", js.allowInterop(_onLogEvent));
@@ -849,7 +848,6 @@ class Call extends MethodChannelTwilioCall {
     call.removeListener("cancel", js.allowInterop(_onCallCancel));
     call.removeListener("reject", js.allowInterop(_onCallReject));
     call.removeListener("error", js.allowInterop(_onCallError));
-    // call.removeListener("connected", js.allowInterop(_onCallConnected));
     call.removeListener("reconnecting", js.allowInterop(_onCallReconnecting));
     call.removeListener("reconnected", js.allowInterop(_onCallReconnected));
     call.removeListener("log", js.allowInterop(_onLogEvent));
@@ -863,7 +861,7 @@ class Call extends MethodChannelTwilioCall {
   /// Undocumented event: Ringing found in twilio-voice.js implementation: https://github.com/twilio/twilio-voice.js/blob/94ea6b6d8d1128ac5091f3a3bec4eae745e4d12f/lib/twilio/call.ts#L1355
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#accept-event
   // ignore: unused_element_parameter
-  void _onCallRinging({bool hasEarlyMedia = false}) {
+  void _onCallRinging(bool hasEarlyMedia) {
     if (_jsCall != null) {
       final params = getCallParams(_jsCall!);
       final from = params["From"] ?? "";
