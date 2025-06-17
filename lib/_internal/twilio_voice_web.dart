@@ -871,8 +871,8 @@ class Call extends MethodChannelTwilioCall {
         ["Ringing", from, to, direction],
         prefix: "",
       );
-      final callSid = params["CallSid"] as String;
-      webCallkit.updateCallStatus(callSid, callStatus: CKCallState.ringing);
+      final sid = _getSid();
+      webCallkit.reportOutgoingCall(uuid: sid!, handle: to, metadata: params, data: params);
     }
   }
 
