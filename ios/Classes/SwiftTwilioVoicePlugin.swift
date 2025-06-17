@@ -141,6 +141,21 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             self.callTo = callTo
             self.identity = callFrom
             makeCall(to: callTo)
+        } else if flutterCall.method == "connect" {
+            guard let callTo = arguments["To"] as? String? else {
+                return
+            }
+            guard let callFrom = arguments["From"] as? String? else {
+                return
+            }
+            self.callArgs = arguments
+            self.callOutgoing = true
+            if let accessToken = arguments["accessToken"] as? String{
+                self.accessToken = accessToken
+            }
+            self.callTo = callTo ?? ""
+            self.identity = callFrom ?? ""
+            makeCall(to: self.callTo)
         }
         else if flutterCall.method == "toggleMute"
         {
