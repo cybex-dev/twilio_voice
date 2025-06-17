@@ -786,14 +786,9 @@ class Call extends MethodChannelTwilioCall {
     return true;
   }
 
-  /// Place outgoing call with raw parameters. Returns true if successful, false otherwise.
-  /// Parameters send to Twilio's REST API endpoint 'makeCall' can be passed in [extraOptions];
-  /// Parameters are reduced to this format
-  /// <code>
-  /// {
-  ///  ...extraOptions
-  /// }
-  /// </code>
+  /// Places new call using raw parameters passed directly to Twilio's REST API endpoint 'makeCall'. Returns true if successful, false otherwise.
+  ///
+  /// [extraOptions] will be added to the callPayload sent to your server
   /// See [twilio_js.Device.connect]
   @override
   Future<bool?> connect({Map<String, dynamic>? extraOptions}) async {
