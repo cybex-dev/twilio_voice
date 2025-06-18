@@ -268,7 +268,14 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             eventSink(!isOnHold ? "Hold" : "Unhold")
         }
         else if flutterCall.method == "answer" {
-            // nuthin
+            if(self.callInvite != nil) {
+                let ci = self.callInvite!
+                self.sendPhoneCallEvents(description: "LOG|answer method invoked", isError: false)
+                self.answerCall(callInvite: ci)
+            } else {
+                let ferror: FlutterError = FlutterError(code: "ANSWER_ERROR", message: "No call invite to answer", details: nil)
+                _result!(ferror)
+            }
         }
         else if flutterCall.method == "unregister" {
             guard let deviceToken = deviceToken else {
@@ -369,6 +376,18 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         }
         
         return false;
+    }
+
+    func answerCall(callInvite: CallInvite) {
+        let answerCallAction = CXAnswerCallAction(call: callInvite.uuid)
+        let transaction = CXTransaction(action: answerCallAction)
+        
+        callKitCallController.request(transaction)  { error in
+            if let error = error {
+                self.sendPhoneCallEvents(description: "LOG|AnswerCallAction transaction request failed: \(error.localizedDescription)", isError: false)
+                return
+            }
+        }
     }
     
     func makeCall(to: String)
