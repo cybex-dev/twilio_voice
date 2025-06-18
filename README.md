@@ -77,6 +77,10 @@ callkit_icon' to your assets.xassets folder
 
 see [[Notes]](https://github.com/cybex-dev/twilio_voice/blob/master/NOTES.md#ios--macos) for more information
 
+**FAQ:**
+- Why am I seeing `notification_missed_call` or `mic_permission_title` and not the actual text?
+  - Copy over the file from the example app: `example/ios/Runner/en.lproj/Localizable.strings` and modify the strings as you wish.
+
 ### macOS Setup
 
 Drop in addition.
