@@ -189,7 +189,7 @@ See [example](https://github.com/cybex-dev/twilio_voice/blob/master/example/andr
 - Callback action on post dialer screen may not work as expected - this is platform and manufacturer specific. PRs are welcome here.
 - Complete integration with showing missed calls. This is a work in progress.
 
-#### FAQ:
+#### Android FAQ:
 1. **Why are calls failing in release mode?**
 
    There are certainly a number of factors, but for starting point:
@@ -197,6 +197,11 @@ See [example](https://github.com/cybex-dev/twilio_voice/blob/master/example/andr
    2. Compare the example app's configuration files to your app. 
    3. Ensure you have the required [Proguard rules](#android-setup) to ensure the Twilio Voice SDK is not being obfuscated. If you are using a custom Proguard file, ensure the Twilio Voice SDK classes are not being obfuscated.
    4. Check Twilio's Error logs in the dashboard.
+
+2. **Why am I not receiving any calls on Android?**
+
+   1. First, review [Android Setup](README.md#android-setup) closely.
+   2. Ensure you have setup & configured Twilio with the new FCM HTTP v1 API, see [here](https://help.twilio.com/articles/20768292997147-Updating-Twilio-Push-for-FCM-HTTP-v1-API). Thanks [@Erchil66's](https://github.com/cybex-dev/twilio_voice/issues/251#issuecomment-2515050331) suggestion.
 
 ### Web Setup:
 
