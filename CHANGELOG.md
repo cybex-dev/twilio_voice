@@ -14,9 +14,9 @@
 * Docs: update CHANGELOG, README
 
 ## 0.3.0
-
+* BREAKING CHANGES:
+  * Feat: [Web] Add [web_callkit](https://pub.dev/packages/web_callkit) support. Please see updated [Web Setup](README.md#web-setup) section in the README for details.
 * Docs: update README, NOTES & CHANGELOG
-* Feat: [Web] Add [web_callkit](https://pub.dev/packages/web_callkit) support.
 * Feat: [Web] Update example with custom incoming ringtone field.
 * Feat: [Web] Add custom sounds for Twilio Device using `updateSound(SoundName, String?)` or `updateSounds(Map<String, String>)` methods.
 * Fix: [Android] `call.isOnCall()` returns true when call is declined

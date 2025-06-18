@@ -187,6 +187,9 @@ See [example](https://github.com/cybex-dev/twilio_voice/blob/master/example/andr
 
 ### Web Setup:
 
+**BREAKING CHANGES:**
+Since we are now using `web_callkit` package, the web implementation requires copying over only 2 files, please see the required files below.
+
 Web requires 2 files to be copied over/provided for web implementation to work correctly. These files are:
 1. `twilio.min.js`
 2. `js_notifications-sw.js`
