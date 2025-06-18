@@ -1,5 +1,7 @@
 ## 0.3.1
 
+* Fix: [iOS] Fix `hangUp()` not ending incoming call when call is ringing. [Issue #244](https://github.com/cybex-dev/twilio_voice/issues/244)
+* Feat: [iOS] Add missing `answer()` native implementation. [Issue #244](https://github.com/cybex-dev/twilio_voice/issues/244)
 * Feat: Add raw `Connect({Map<String, dynamic>?})` for all platforms
 * Refactor: [Web] Removed unused `web_callkit` event listeners. 
 * Fix: [Web] Check if call SID is present when call is disconnected (this occurs if the call ends abruptly after starting, and `params` does not contain `CallSid`).
