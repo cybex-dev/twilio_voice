@@ -89,7 +89,7 @@ see [[Limitations]](https://github.com/cybex-dev/twilio_voice/blob/master/NOTES.
 
 ### Android Setup:
 
-Firstly, ensure you place this in your app's proguard-rules.pro file:
+Firstly, ensure you place this in your app's `proguard-rules.pro` file:
 ```proguard
 # Twilio Programmable Voice
 -keep class com.twilio.** { *; }
@@ -188,6 +188,15 @@ See [example](https://github.com/cybex-dev/twilio_voice/blob/master/example/andr
 - Upon accepting an inbound call, at times the Telecom app/ Bluetooth service will crash and restart. This is a known bug, caused by `Class not found when unmarshalling: com.twilio.voice.CallInvite`. This is due to the Telecom service not using the same Classloader as the main Flutter app. See [here](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/telecomm/java/android/telecom/Call.java#2466) for source of error.
 - Callback action on post dialer screen may not work as expected - this is platform and manufacturer specific. PRs are welcome here.
 - Complete integration with showing missed calls. This is a work in progress.
+
+#### FAQ:
+1. **Why are calls failing in release mode?**
+
+   There are certainly a number of factors, but for starting point:
+   1. first review [Android Setup](README.md#android-setup) closely. 
+   2. Compare the example app's configuration files to your app. 
+   3. Ensure you have the required [Proguard rules](#android-setup) to ensure the Twilio Voice SDK is not being obfuscated. If you are using a custom Proguard file, ensure the Twilio Voice SDK classes are not being obfuscated.
+   4. Check Twilio's Error logs in the dashboard.
 
 ### Web Setup:
 
