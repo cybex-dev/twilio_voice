@@ -211,8 +211,6 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 Log.d(TAG, "onReconnecting")
             }
 
-
-
             override fun onReconnected(call: Call) {
                 Log.d(TAG, "onReconnected")
             }
@@ -537,8 +535,6 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 result.success(isOnCall())
                 return
 
-
-
                 // Disabled for now until a better solution for TelecomManager.isInCall() is found - this returns true for any ConnectionService including Cellular calls.
 //                context?.let { ctx ->
 //                    telecomManager?.let { tm ->
@@ -658,6 +654,57 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 accessToken?.let { token ->
                     context?.let { ctx ->
                         val success = placeCall(ctx, token, from, to, params,callerName )
+                        result.success(success)
+                    } ?: run {
+                        Log.e(TAG, "Context is null, cannot place call")
+                        result.success(false)
+                    }
+                } ?: run {
+                    result.error(
+                        FlutterErrorCodes.MALFORMED_ARGUMENTS,
+                        "No accessToken set, are you registered?",
+                        null
+                    )
+                }
+            }
+
+            TVMethodChannels.CONNECT -> {
+                val args = call.arguments as? Map<*, *> ?: run {
+                    result.error(
+                        FlutterErrorCodes.MALFORMED_ARGUMENTS,
+                        "Arguments should be a Map<*, *>",
+                        null
+                    )
+                    return@onMethodCall
+                }
+
+                Log.d(TAG, "Making new call via connect")
+                logEvent("Making new call via connect")
+                val params = HashMap<String, String>()
+                for ((key, value) in args) {
+                    when (key) {
+                        Constants.PARAM_TO, Constants.PARAM_FROM -> {}
+                        else -> {
+                            params[key.toString()] = value.toString()
+                        }
+                    }
+                }
+//                callOutgoing = true
+                val from = call.argument<String>(Constants.PARAM_FROM) ?: run {
+                    logEvent("No 'from' provided or invalid type, ignoring.")
+                    ""
+                }
+
+                val to = call.argument<String>(Constants.PARAM_TO) ?: run {
+                    logEvent("No 'to' provided or invalid type, ignoring.")
+                    ""
+                }
+                val paramsStringify = JSONObject(args).toString()
+                Log.d(TAG, "calling with parameters: from: '$from' -> to: '$to', params: $paramsStringify")
+
+                accessToken?.let { token ->
+                    context?.let { ctx ->
+                        val success = placeCall(ctx, token, from, to, params,null, connect = true)
                         result.success(success)
                     } ?: run {
                         Log.e(TAG, "Context is null, cannot place call")
@@ -1076,14 +1123,15 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     private fun placeCall(
         ctx: Context,
         accessToken: String,
-        from: String,
-        to: String,
+        from: String?,
+        to: String?,
         params: Map<String, String>,
-        callerName: String,
+        callerName: String?,
+        connect: Boolean = false
     ): Boolean {
         assert(accessToken.isNotEmpty()) { "Twilio Access Token cannot be empty" }
-        assert(to.isNotEmpty()) { "To cannot be empty" }
-        assert(from.isNotEmpty()) { "From cannot be empty" }
+        assert(!connect && (to == null || to.isNotEmpty())) { "To cannot be empty" }
+        assert(!connect && (from == null || from.isNotEmpty())) { "From cannot be empty" }
 
         telecomManager?.let { tm ->
             if (!tm.hasCallCapableAccount(ctx, TVConnectionService::class.java.name)) {
@@ -1120,6 +1168,9 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             Intent(ctx, TVConnectionService::class.java).apply {
                 action = TVConnectionService.ACTION_PLACE_OUTGOING_CALL
                 putExtra(TVConnectionService.EXTRA_TOKEN, accessToken)
+                if(connect) {
+                    putExtra(TVConnectionService.EXTRA_CONNECT_RAW, true)
+                }
                 putExtra(TVConnectionService.EXTRA_TO, to)
                 putExtra(TVConnectionService.EXTRA_FROM, from)
                 putExtra(TVConnectionService.EXTRA_CALLER_NAME, callerName)
@@ -1689,12 +1740,11 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             }
 
             TVBroadcastReceiver.ACTION_ACTIVE_CALL_CHANGED -> {
-                println("Event called Basil : TVBroadcastReceiver.ACTION_ACTIVE_CALL_CHANGED")
                 Log.d(TAG, "handleBroadcastIntent: Active call changed to $callSid")
             }
 
             TVBroadcastReceiver.ACTION_INCOMING_CALL -> {
-                 println("Event called Basil : TVBroadcastReceiver.ACTION_INCOMING_CALL")
+                // TODO
                 val callHandle =
                     intent.getStringExtra(TVBroadcastReceiver.EXTRA_CALL_HANDLE) ?: run {
                         Log.e(
@@ -1735,13 +1785,11 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                         return
                     }
 //                callSid = null
-                Log.d(TAG, "handleBroadcastIntent: Call ended $callHandle")
-                logEvent("", "Call ended")
+                Log.d(TAG, "handleBroadcastIntent: Call Ended $callHandle")
+                logEvent("", "Call Ended")
             }
 
             TVBroadcastReceiver.ACTION_CALL_STATE -> {
-                println("Event called Basil : TVBroadcastReceiver.ACTION_CALL_STATE")
-                
 //                isMuted = intent.getBooleanExtra(TVBroadcastReceiver.EXTRA_MUTE_STATE, isMuted).also {
 //                    Log.d(TAG, "handleBroadcastIntent: Call muted $it")
 //                }
@@ -1752,7 +1800,6 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             }
 
             TVBroadcastReceiver.ACTION_INCOMING_CALL_IGNORED -> {
-                println("Event called Basil : TVBroadcastReceiver.ACTION_INCOMING_CALL_IGNORED")
                 val reason = intent.getStringArrayExtra(TVBroadcastReceiver.EXTRA_INCOMING_CALL_IGNORED_REASON) ?: arrayOf<String>()
                 val handle = intent.getStringExtra(TVBroadcastReceiver.EXTRA_CALL_HANDLE) ?: "N/A"
                 Log.w(
@@ -1765,7 +1812,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             }
 
             TVNativeCallActions.ACTION_ANSWERED -> {
-                println("Event called Basil : TVNativeCallActions.ACTION_ANSWERED")
+                // TODO
                 val callHandle =
                     intent.getStringExtra(TVBroadcastReceiver.EXTRA_CALL_HANDLE) ?: run {
                         Log.e(
@@ -1791,11 +1838,10 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                     }
                 }.toString()
 //                callSid = callHandle
-                logEvents("", arrayOf("Answer", from, to, params))
+                logEvents("", arrayOf("Answer", from, to, CallDirection.INCOMING.label, params))
             }
 
             TVNativeCallActions.ACTION_DTMF -> {
-                println("Event called Basil : TVNativeCallActions.ACTION_DTMF")
                 val dtmf = intent.getStringExtra(TVNativeCallActions.EXTRA_DTMF_TONE) ?: run {
                     Log.e(
                         TAG,
@@ -1810,35 +1856,29 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             }
 
             TVNativeCallActions.ACTION_REJECTED -> {
-                println("Event called Basil : TVNativeCallActions.ACTION_REJECTED")
                 logEvent("Call Rejected")
             }
 
             TVNativeCallActions.ACTION_ABORT -> {
-                println("Event called Basil : TVNativeCallActions.ACTION_ABORT")
                 Log.d(TAG, "handleBroadcastIntent: Abort")
                 logEvent("", "Call Ended")
             }
 
             TVNativeCallActions.ACTION_HOLD -> {
-                println("Event called Basil : TVNativeCallActions.ACTION_HOLD")
                 Log.d(TAG, "handleBroadcastIntent: Hold")
                 logEvent("", "Hold")
             }
 
             TVNativeCallActions.ACTION_UNHOLD -> {
-                println("Event called Basil :TVNativeCallActions.ACTION_UNHOLD")
                 Log.d(TAG, "handleBroadcastIntent: Unhold")
                 logEvent("", "Unhold")
             }
 
             TVNativeCallEvents.EVENT_CONNECTING -> {
-                println("Event called Basil : TVNativeCallEvents.EVENT_CONNECTING")
                 Log.d(TAG, "handleBroadcastIntent: Connecting")
             }
 
             TVNativeCallEvents.EVENT_RINGING -> {
-                println("Event called Basil : TVNativeCallEvents.EVENT_RINGING")
                 val callHandle =
                     intent.getStringExtra(TVBroadcastReceiver.EXTRA_CALL_HANDLE) ?: run {
                         Log.e(TAG, "No 'EXTRA_CALL_INVITE' provided or invalid type")
@@ -1860,7 +1900,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             }
 
             TVNativeCallEvents.EVENT_CONNECTED -> {
-                println("Event called Basil : TVNativeCallEvents.EVENT_CONNECTED")
+                // TODO
                 val callHandle =
                     intent.getStringExtra(TVBroadcastReceiver.EXTRA_CALL_HANDLE) ?: run {
                         Log.e(
@@ -1890,8 +1930,11 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             }
 
             TVNativeCallEvents.EVENT_CONNECT_FAILURE -> {
-                println("Event called Basil : TVNativeCallEvents.EVENT_CONNECT_FAILURE")
-                val code = intent.getIntExtra(CallExceptionExtension.EXTRA_CODE, -1)
+                var code = intent.getIntExtra(CallExceptionExtension.EXTRA_CODE, -1)
+                if(code == -1) {
+                    // Fallback to the old code
+                    code = intent.getIntExtra("code", -1)
+                }
                 val message = intent.getStringExtra(CallExceptionExtension.EXTRA_MESSAGE) ?: run {
                     Log.e(TAG, "No 'EXTRA_MESSAGE' provided or invalid type")
                     return
@@ -1903,40 +1946,31 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             }
 
             TVNativeCallEvents.EVENT_RECONNECTING -> {
-                println("Event called Basil : TVNativeCallEvents.EVENT_RECONNECTING")
                 logEvent("", "Reconnecting");
             }
 
             TVNativeCallEvents.EVENT_RECONNECTED -> {
-                println("Event called Basil : TVNativeCallEvents.EVENT_RECONNECTED")
                 logEvent("", "Reconnected");
             }
 
             TVNativeCallEvents.EVENT_DISCONNECTED_LOCAL -> {
-                println("Event called Basil : TVNativeCallEvents.EVENT_DISCONNECTED_LOCAL")
                 logEvent("", "Call Ended")
             }
 
             TVNativeCallEvents.EVENT_DISCONNECTED_REMOTE -> {
-                println("Event called Basil : TVNativeCallEvents.EVENT_DISCONNECTED_REMOTE")
                 logEvent("", "Call Ended")
             }
 
             TVNativeCallEvents.EVENT_MISSED -> {
-                println("Event called Basil : TVNativeCallEvents.EVENT_MISSED")
                 logEvent("", "Missed Call")
                 logEvent("", "Call Ended")
             }
 
             else -> {
-                 println("Event called Basil : Received unknown action ${intent.action}")
                 Log.e(TAG, "[VoiceBroadcastReceiver] Received unknown action ${intent.action}")
             }
         }
     }
-
-
-
 
 //    override fun onConnectFailure(call: Call, callException: CallException) {
 //        Log.e(TAG, "onConnectFailure: ${callException.message}")

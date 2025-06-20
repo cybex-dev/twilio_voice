@@ -20,14 +20,14 @@ Any and all [Feature Requests](https://github.com/cybex-dev/twilio_voice/issues/
 
 ## Features
 
-- Receive and place calls from iOS devices, uses Callkit to receive calls.
-- Receive and place calls from Android devices, uses ~~custom UI~~ native call screen to receive calls (via a `ConnectionService` impl).
+- Receive and place calls from iOS devices, uses Callkit to receive calls (Twilio Voice SDK [v6.13.0](https://www.twilio.com/docs/voice/sdks/ios/changelog#6130)).
+- Receive and place calls from Android devices, uses ~~custom UI~~ native call screen to receive calls (via a `ConnectionService` impl) (Twilio Voice SDK [v6.9.0](https://www.twilio.com/docs/voice/sdks/android/3x-changelog#690)).
 - Receive and place calls from Web (FCM push notification integration not yet supported by Twilio Voice Web, see [here](https://github.com/twilio/twilio-voice.js/pull/159#issuecomment-1551553299) for discussion)
 - Receive and place calls from MacOS devices, uses custom UI to receive calls (in future & macOS
   13.0+, we'll be using CallKit).
 - Interpret TwiML parameters to populate UI, see below [Interpreting Parameters](#interpreting-parameters)
 
-## Feature addition schedule:
+### Feature addition schedule:
 
 - Audio device selection support (select input/output audio devices, on-hold)
 - Update plugin to Flutter federated packages (step 1 of 2 with Web support merge)
@@ -54,7 +54,17 @@ This limits macOS to not support remote push notifications `.voip` and `.apns` a
 not support this. Instead, it uses a web socket connection to listen for incoming calls, arguably
 more efficient vs time but forces the app to be open at all times to receive incoming calls.
 
-### Setup
+## Getting Started
+
+First, add the package to your `pubspec.yaml` file:
+
+```yaml
+dependencies:
+  ...
+  twilio_voice: ^0.2.0+1
+```
+
+Then run `flutter pub get` in your terminal.
 
 Please follow Twilio's quickstart setup for each platform, you don't need to write the native code
 but it will help you understand the basic functionality of setting up your server, registering your
@@ -65,27 +75,45 @@ iOS app for VOIP, etc.
 To customize the icon displayed on a CallKit call, Open XCode and add a png icon named '
 callkit_icon' to your assets.xassets folder
 
-see [[Notes]](https://github.com/diegogarciar/twilio_voice/blob/master/NOTES.md#ios--macos) for more information
+see [[Notes]](https://github.com/cybex-dev/twilio_voice/blob/master/NOTES.md#ios--macos) for more information
+
+**FAQ:**
+- Why am I seeing `notification_missed_call` or `mic_permission_title` and not the actual text?
+  - Copy over the file from the example app: `example/ios/Runner/en.lproj/Localizable.strings` and modify the strings as you wish.
 
 ### macOS Setup
 
 Drop in addition.
 
-see [[Limitations]](https://github.com/diegogarciar/twilio_voice/blob/master/NOTES.md#macos) and [[Notes]](https://github.com/diegogarciar/twilio_voice/blob/master/NOTES.md#ios--macos) for more information.
+see [[Limitations]](https://github.com/cybex-dev/twilio_voice/blob/master/NOTES.md#macos) and [[Notes]](https://github.com/cybex-dev/twilio_voice/blob/master/NOTES.md#ios--macos) for more information.
 
 ### Android Setup:
 
-register in your `AndroidManifest.xml` the service in charge of displaying incoming call
+Firstly, ensure you place this in your app's `proguard-rules.pro` file:
+```proguard
+# Twilio Programmable Voice
+-keep class com.twilio.** { *; }
+-keep class tvo.webrtc.** { *; }
+-dontwarn tvo.webrtc.**
+-keep class com.twilio.voice.** { *; }
+-keepattributes InnerClasses
+```
+
+next, register in your `AndroidManifest.xml` the service in charge of displaying incoming call
 notifications:
 
 ```xml
+
 <Application>
- .....
- <service
- android:name="com.twilio.twilio_voice.fcm.VoiceFirebaseMessagingService"
- android:stopWithTask="false">
-<intent-filter> <action android:name="com.google.firebase.MESSAGING_EVENT" />
-</intent-filter> </service>
+    ...
+    <service android:name="com.twilio.twilio_voice.fcm.VoiceFirebaseMessagingService"
+        android:stopWithTask="false">
+        <intent-filter>
+            <action android:name="com.google.firebase.MESSAGING_EVENT" />
+        </intent-filter>
+    </service>
+    ...
+</Application>
 ```
 
 #### Phone Account
@@ -136,7 +164,7 @@ To enable the `ConnectionService` and make/receive calls, run:
 TwilioVoice.instance.requestReadPhoneStatePermission();  // Gives Android permissions to read Phone State
 ```
 
-Highly recommended to review the notes for **Android**. See [[Notes]](https://github.com/diegogarciar/twilio_voice/blob/master/NOTES.md#android) for more information.
+Highly recommended to review the notes for **Android**. See [[Notes]](https://github.com/cybex-dev/twilio_voice/blob/master/NOTES.md#android) for more information.
 
 #### Customizing the Calling Account
 
@@ -149,7 +177,7 @@ To customize the `label` and `shortDescription` of the calling account, add the 
 
 This can be found in alternatively the Phone App's settings, `Other/Advanced Call Settings -> Calling Accounts -> (Example App)` (then toggle the switch)
 
-![enter image description here](https://i.imgur.com/6mhjFWZ.gif)
+![enter image description here](https://camo.githubusercontent.com/f483d950b603c08d07f566849b06c489ef8331919b8b50b6cb5b94f92d2a29be/68747470733a2f2f692e696d6775722e636f6d2f366d686a46575a2e676966)
 
 See [example](https://github.com/cybex-dev/twilio_voice/blob/master/example/android/app/src/main/res/values/strings.xml) for more details
 
@@ -161,22 +189,50 @@ See [example](https://github.com/cybex-dev/twilio_voice/blob/master/example/andr
 - Callback action on post dialer screen may not work as expected - this is platform and manufacturer specific. PRs are welcome here.
 - Complete integration with showing missed calls. This is a work in progress.
 
+#### Android FAQ:
+1. **Why are calls failing in release mode?**
+
+   There are certainly a number of factors, but for starting point:
+   1. first review [Android Setup](README.md#android-setup) closely. 
+   2. Compare the example app's configuration files to your app. 
+   3. Ensure you have the required [Proguard rules](#android-setup) to ensure the Twilio Voice SDK is not being obfuscated. If you are using a custom Proguard file, ensure the Twilio Voice SDK classes are not being obfuscated.
+   4. Check Twilio's Error logs in the dashboard.
+
+2. **Why am I not receiving any calls on Android?**
+
+   1. First, review [Android Setup](README.md#android-setup) closely.
+   2. Ensure you have setup & configured Twilio with the new FCM HTTP v1 API, see [here](https://help.twilio.com/articles/20768292997147-Updating-Twilio-Push-for-FCM-HTTP-v1-API). Thanks [@Erchil66's](https://github.com/cybex-dev/twilio_voice/issues/251#issuecomment-2515050331) suggestion.
+
 ### Web Setup:
 
-There are 4 important files for Twilio incoming/missed call notifications to work:
+**BREAKING CHANGES:**
+Since we are now using `web_callkit` package, the web implementation requires copying over only 2 files, please see the required files below.
 
-- `notifications.js` is the main file, it handles the notifications and the service worker.
-- `twilio-sw.js` is the service worker _content_ used to work with the default `flutter_service_worker.js` (this can be found in `build/web/flutter_service_worker.js` after calling `flutter build web`). This file's contents are to be copied into the `flutter_service_worker.js` file after you've built your application.
+Web requires 2 files to be copied over/provided for web implementation to work correctly. These files are:
+1. `twilio.min.js`
+2. `js_notifications-sw.js`
 
-Also, the twilio javascript SDK itself, `twilio.min.js` is needed.
+Both of these files need to be copied over to the `web/` directory of your project. See [[Notes]](https://github.com/cybex-dev/twilio_voice/blob/master/NOTES.md#ios--macos)
 
-### To ensure proper/as intended setup:
+_The names of these files are very important, so make sure to have the file names exactly as described above._
 
-1. Copy files `example/web/notifications.js` and `example/web/twilio.min.js` into your application's `web` folder.
-2. This step should be done AFTER you've built your application, every time the `flutter_service_worker.js` changes (this includes hot reloads on your local machine unfortunately)
-   1. Copy the contents of `example/web/twilio-sw.js` into your `build/web/flutter_service_worker.js` file, **at the end of the file**. See [service-worker](#service-worker) for more information.
+The folder structure should look like this:
 
-Note, these files can be changed to suite your needs - however the core functionality should remain the same: responding to `notificationclick`, `notificationclose`, `message` events and associated sub-functions.
+```
+your_project/
+├── ...
+├── lib/
+├── web/
+│   ├── ...
+│   ├── index.html
+│   ├── twilio.min.js
+│   ├── js_notifications-sw.js
+│   ├── ...
+├── ...
+```
+
+**Note:** This is required for the browser to handle notifications in the background. The service
+worker will handle incoming call notifications and display them even when the app is not in focus.
 
 Finally, add the following code to your `index.html` file, **at the end of body tag**:
 
@@ -197,37 +253,29 @@ Finally, add the following code to your `index.html` file, **at the end of body 
 #### Web Considerations
 
 _If you need to debug the service worker, open up Chrome Devtools, go to Application tab, and select Service Workers from the left menu. There you can see the service workers and their status.
-To review service worker `notificationclick`, `notificationclose`, `message`, etc events - do this using Chrome Devtools (Sources tab, left panel below 'site code' the service workers are listed)_
-
-##### Service Worker
-
-Unifying the service worker(s) is best done via post-compilation tools or a CI/CD pipeline (suggested).
-
-A snippet of the suggested service worker integration is as follows:
-
-```yaml
-#...
-- run: cd ./example; flutter build web --release --target=lib/main.dart --output=build/web
-
-- name: Update service worker
-  run: cat ./example/web/twilio-sw.js >> ./example/build/web/flutter_service_worker.js
-#...
-```
-
-A complete example could be found in the github workflows `.github/workflows/flutter.yml` file, see [here](https://github.com/cybex-dev/twilio_voice/blob/master/.github/workflows/flutter.yml). 
+To review service worker `notificationclick`, `notificationclose`, `message`, etc events - do this using Chrome Devtools (Sources tab, left panel below 'site code' the service workers are listed)_ 
 
 ##### Web Notifications
 
-2 types of notifications are shown:
- - Incoming call notifications with 2 buttons: `Answer` and `Reject`,
- - Missed call notifications with 1 button: `Call back`.
-
-Notifications are presented as **alerts**. These notifications may not always been shown, check:
+Notifications are presented as **alerts**. If you notifications aren't shown or visible, check:
  - if the browser supports notifications,
  - if the user has granted permissions to show notifications,
  - if the notifications display method / notifications is enabled by the system (e.g. macOS notifications are disabled, or Windows notifications are disabled, etc).
  - if there are already notifications shown (https://stackoverflow.com/a/36383155/4628115)
  - if system is in 'Do Not Disturb' or 'Focus' mode.
+
+If you need manual control over some notifications, e.g. notifying twilio of a queued/missed call from FCM/service worker, you can do so by hooking into the [web_callkit](https://pub.dev/packages/web_callkit) directly. For example,
+
+```dart
+// import
+import 'package:web_callkit/web_callkit.dart';
+
+// Get call sid used as unique identifier
+void _notifyMissedCall() async {
+  final callSid = await TwilioVoice.instance.call.getSid();
+  WebCallkit.instance.reportCallDisconnected(callSid!, response: CKDisconnectResponse.missed);
+}
+```
 
 ### MacOS Setup:
 
@@ -245,7 +293,7 @@ However, you'll need to:
 2. include Hardened Runtime entitlements (this is required for App Store distributed MacOS apps):
 
    ```xml
-   <key>com.apple.security.audio-input</key>
+   <key>com.apple.security.device.audio-input</key>
    <true/>
 
    <!--Optionally for bluetooth support/permissions-->
@@ -275,7 +323,7 @@ Register iOS capabilities
 call `TwilioVoice.instance.setTokens` as soon as your app starts.
 
 - `accessToken` provided from your server, you can see an example cloud
-  function [here](https://github.com/diegogarciar/twilio_voice/blob/master/functions.js).
+  function [here](https://github.com/cybex-dev/twilio_voice/blob/master/functions.js).
 - `deviceToken` is automatically handled on iOS, for android you need to pass a FCM token.
 
 call `TwilioVoice.instance.unregister` to unregister from Twilio, if no access token is passed, it
@@ -518,7 +566,7 @@ If the `CALL_PHONE` permissions group i.e. `READ_PHONE_STATE`, `READ_PHONE_NUMBE
 
 _Note: If `MANAGE_OWN_CALLS` permission is not granted, outbound calls will not work._
 
-See [Android Setup](#android-setup) and [Android Notes](https://github.com/diegogarciar/twilio_voice/blob/master/NOTES.md#android) for more information regarding configuring the `ConnectionService` and registering a Phone Account.
+See [Android Setup](#android-setup) and [Android Notes](https://github.com/cybex-dev/twilio_voice/blob/master/NOTES.md#android) for more information regarding configuring the `ConnectionService` and registering a Phone Account.
 
 ### Localization
 
@@ -921,7 +969,7 @@ firebase deploy --only functions
 
 Calling should work naturally - just make sure to fetch the token from the endpoint and you can call
 
-See [example](https://github.com/diegogarciar/twilio_voice/blob/master/example/lib/main.dart#L51)
+See [example](https://github.com/cybex-dev/twilio_voice/blob/master/example/lib/main.dart#L51)
 code, make sure to change the `voice-accessToken` to your function name, given to you by firebase
 when deploying (as part of the deploy text)
 

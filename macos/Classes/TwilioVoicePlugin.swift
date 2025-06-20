@@ -1,6 +1,6 @@
 import Cocoa
 import FlutterMacOS
-import WebKit
+@preconcurrency import WebKit
 import SwiftUI
 import UserNotifications
 import AVFoundation
@@ -209,7 +209,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     ///   - to: recipient
     ///   - extraOptions: extra options
     ///   - completionHandler: completion handler -> (Bool?)
-    private func place(from: String, to: String, extraOptions: [String: Any]?, completionHandler: @escaping OnCompletionValueHandler<Bool>) -> Void {
+    private func place(from: String?, to: String?, extraOptions: [String: Any]?, completionHandler: @escaping OnCompletionValueHandler<Bool>) -> Void {
         assert(from.isNotEmpty(), "\(Constants.PARAM_FROM) cannot be empty")
         assert(to.isNotEmpty(), "\(Constants.PARAM_TO) cannot be empty")
 //        assert(extraOptions?.keys.contains(Constants.PARAM_FROM) ?? true, "\(Constants.PARAM_FROM) cannot be passed in extraOptions")
@@ -218,7 +218,10 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
 
         logEvent(description: "Making new call")
 
-        var params: [String: Any] = [Constants.PARAM_FROM: from, Constants.PARAM_TO: to]
+        var params: [String: Any] = [
+            if(from != nil) Constants.PARAM_FROM: from,
+            if(to != nil) Constants.PARAM_TO: to,
+        ]
         if let extraOptions = extraOptions {
             params.merge(extraOptions) { (_, new) in
                 new
@@ -595,6 +598,21 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
                 result(success ?? false)
             }
             break
+        case .connect:
+            guard let to = arguments[Constants.PARAM_TO] as? String?
+            guard let from = arguments[Constants.PARAM_FROM] as? String
+
+            var params: [String: Any] = [:]
+            arguments.forEach { (key, value) in
+                if key != Constants.PARAM_TO && key != Constants.PARAM_FROM {
+                    params[key] = value
+                }
+            }
+
+            place(from: from, to: to, extraOptions: params) { success in
+                result(success ?? false)
+            }
+            break
         case .toggleMute:
             guard let muted = arguments["muted"] as? Bool else {
                 let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.MALFORMED_ARGUMENTS, message: "No 'muted' argument provided", details: nil)
@@ -663,7 +681,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
 
             // TODO: toggle bluetooth
             // toggleAudioRoute(toSpeaker: speakerIsOn)
-            guard let eventSink = eventSink else {
+            guard eventSink != nil else {
                 return
             }
             logEvent(description: bluetoothOn ? "Bluetooth On" : "Bluetooth Off")
@@ -1142,9 +1160,9 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
         if let category = NotificationCategory(rawValue: notification.request.content.categoryIdentifier) {
             switch category {
             case .incoming:
-                completionHandler([.alert, .banner, .sound])
+                completionHandler([.banner, .sound])
             case .missed:
-                completionHandler([.alert, .banner, .sound])
+                completionHandler([.banner, .sound])
 //            default:
 //                completionHandler([])
             }
@@ -1436,8 +1454,34 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     }
 
     @available(macOS 12.0, *)
-    public func webView(_ webView: WKWebView, decideMediaCapturePermissionsFor origin: WKSecurityOrigin, initiatedBy frame: WKFrameInfo, type: WKMediaCaptureType) async -> WKPermissionDecision {
-        WKPermissionDecision.grant
+    public func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping @MainActor (WKPermissionDecision) -> Void) {
+        switch type {
+        case .microphone:
+            // For microphone access, we'll check the current permission status
+            switch AVCaptureDevice.authorizationStatus(for: .audio) {
+            case .authorized:
+                decisionHandler(.grant)
+            case .notDetermined:
+                // Request permission and handle the result
+                AVCaptureDevice.requestAccess(for: .audio) { granted in
+                    Task { @MainActor in
+                        decisionHandler(granted ? .grant : .deny)
+                    }
+                }
+            case .denied, .restricted:
+                decisionHandler(.deny)
+            @unknown default:
+                decisionHandler(.deny)
+            }
+        case .camera:
+            // We don't need camera access for Twilio Voice
+            decisionHandler(.deny)
+        case .cameraAndMicrophone:
+            // We don't need camera and microphone access for Twilio Voice
+            decisionHandler(.deny)
+        @unknown default:
+            decisionHandler(.deny)
+        }
     }
 }
 

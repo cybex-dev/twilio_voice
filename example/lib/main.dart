@@ -26,7 +26,7 @@ extension IterableExtension<E> on Iterable<E> {
 
 enum RegistrationMethod {
   env,
-  local,
+  url,
   firebase;
 
   static RegistrationMethod? fromString(String? value) {
@@ -81,7 +81,7 @@ void main() async {
 class App extends StatefulWidget {
   final RegistrationMethod registrationMethod;
 
-  const App({super.key, this.registrationMethod = RegistrationMethod.local});
+  const App({super.key, this.registrationMethod = RegistrationMethod.url});
 
   @override
   State<App> createState() => _AppState();
@@ -104,15 +104,15 @@ class _AppState extends State<App> {
     printDebug("voip-service registration");
 
     // Use for locally provided token generator e.g. Twilio's quickstarter project: https://github.com/twilio/voice-quickstart-server-node
-    if (!kIsWeb) {
+    // if (!kIsWeb) {
       bool success = false;
       // if not web, we use the requested registration method
       switch (widget.registrationMethod) {
         case RegistrationMethod.env:
           success = await _registerFromEnvironment();
           break;
-        case RegistrationMethod.local:
-          success = await _registerLocal();
+        case RegistrationMethod.url:
+          success = await _registerUrl();
           break;
         case RegistrationMethod.firebase:
           success = await _registerFirebase();
@@ -124,17 +124,17 @@ class _AppState extends State<App> {
           twilioInit = true;
         });
       }
-    } else {
-      // for web, we always show the initialisation screen unless we specified an
-      if (widget.registrationMethod == RegistrationMethod.env) {
-        bool success = await _registerFromEnvironment();
-        if (success) {
-          setState(() {
-            twilioInit = true;
-          });
-        }
-      }
-    }
+    // } else {
+    //   // for web, we always show the initialisation screen unless we specified an
+    //   if (widget.registrationMethod == RegistrationMethod.env) {
+    //     bool success = await _registerFromEnvironment();
+    //     if (success) {
+    //       setState(() {
+    //         twilioInit = true;
+    //       });
+    //     }
+    //   }
+    // }
 
     if (firebaseEnabled) {
       FirebaseAnalytics.instance.logEvent(name: "registration", parameters: {
@@ -202,12 +202,22 @@ class _AppState extends State<App> {
 
   //#endregion
 
-  //#region #region Register with local provider
-  /// Use this method to register with a local token generator
-  /// To access this, run with `--dart-define=REGISTRATION_METHOD=local`
-  Future<bool> _registerLocal() async {
-    printDebug("voip-registering with local token generator");
-    final result = await generateLocalAccessToken();
+  //#region #region Register with url provider
+  /// Use this method to register with a url token generator
+  /// To access this, run with `--dart-define=REGISTRATION_METHOD=url`
+  Future<bool> _registerUrl() async {
+    printDebug("voip-registering with url token generator");
+    String url = const String.fromEnvironment("URL");
+    if (url.isEmpty) {
+      printDebug("No URL provided, defaulting to http://localhost:3000");
+
+      String identity = const String.fromEnvironment("ID");
+      if (identity.isEmpty) {
+        printDebug("No ID provided, defaulting to server generated identity");
+      }
+      url = "http://localhost:3000";
+    }
+    final result = await generateURLAccessToken(url);
     if (result == null) {
       printDebug("Failed to register with local token generator");
       return false;
@@ -343,6 +353,7 @@ class _AppState extends State<App> {
     return _registerFromCredentials(identity ?? "Unknown", token).then((value) {
       if (!value) {
         showDialog(
+          // ignore: use_build_context_synchronously
           context: context,
           builder: (context) => const AlertDialog(
             title: Text("Error"),

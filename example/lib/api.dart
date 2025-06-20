@@ -14,20 +14,20 @@ class Result {
 }
 
 /// Register with a local token generator using URL http://localhost:3000/token. This is a function to generate token for twilio voice.
-/// [generateLocalAccessToken] is the default method for registering
+/// [generateURLAccessToken] is the default method for registering
 ///
 /// Returned data should contained the following format:
 /// {
 ///  "identity": "user123",
 ///  "token": "ey...",
 /// }
-Future<Result?> generateLocalAccessToken() async {
+Future<Result?> generateURLAccessToken(String url) async {
   printDebug("voip-registering with token ");
-  printDebug("GET http://localhost:3000/token");
+  printDebug("GET $url");
 
-  final uri = Uri.http("localhost:3000", "/token");
+  final uri = Uri.parse(url);
   final result = await http.get(uri);
-  if (result.statusCode >= 200 && result.statusCode < 300) {
+  if (result.statusCode < 200 && result.statusCode >= 300) {
     printDebug("Error requesting token from server [${uri.toString()}]");
     printDebug(result.body);
     return null;

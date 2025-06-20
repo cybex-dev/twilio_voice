@@ -31,6 +31,8 @@ class StateToggle extends StatelessWidget {
             padding: const EdgeInsets.all(8.0),
             child: Column(
               children: [
+                // TODO(cybex-dev)
+                // ignore: deprecated_member_use
                 if (icon != null) Icon(icon, color: state ? iconColor : iconColor?.withOpacity(0.2) ?? Colors.grey),
                 if (icon != null) const SizedBox(height: 8),
                 Text(title, style: Theme.of(context).textTheme.bodySmall, textAlign: TextAlign.center),
