@@ -1,3 +1,7 @@
+## Next Release
+
+* Fix: [iOS] Notifications not showing when app is in foreground.
+
 ## 0.3.1
 
 * Fix: [iOS] Fix `hangUp()` not ending incoming call when call is ringing. [Issue #244](https://github.com/cybex-dev/twilio_voice/issues/244)
