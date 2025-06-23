@@ -9,18 +9,27 @@
     <uses-permission android:name="android.permission.CALL_PHONE" />
     <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
 
     <application>
         <service
             android:name=".service.TVConnectionService"
             android:exported="true"
-            android:foregroundServiceType="microphone"
+            android:foregroundServiceType="microphone|phoneCall"
             android:label="@string/connection_service_name"
             android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE">
             <intent-filter>
                 <action android:name="android.telecom.ConnectionService" />
             </intent-filter>
         </service>
+
+        <activity
+            android:name=".ui.IncomingCallActivity"
+            android:exported="false"
+            android:theme="@style/TransparentCallTheme"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:launchMode="singleTask" />
 
         <meta-data
             android:name="flutterEmbedding"

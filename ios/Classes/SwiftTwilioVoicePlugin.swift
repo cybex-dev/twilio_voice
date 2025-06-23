@@ -20,6 +20,10 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     let kCachedDeviceToken = "CachedDeviceToken"
     let kCachedBindingDate = "CachedBindingDate"
     let kClientList = "TwilioContactList"
+    let kCallerId = "__TWI_CALLER_ID"
+    let kCallerName = "__TWI_CALLER_NAME"
+    let kRecipientId = "__TWI_RECIPIENT_ID"
+    let kRecipientName = "__TWI_RECIPIENT_NAME"
     private var clients: [String:String]!
     
     var accessToken:String?
@@ -60,6 +64,8 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         let configuration = CXProviderConfiguration(localizedName: SwiftTwilioVoicePlugin.appName)
         configuration.maximumCallGroups = 1
         configuration.maximumCallsPerCallGroup = 1
+        configuration.supportsVideo = false
+        configuration.supportedHandleTypes = [.generic]
         let defaultIcon = UserDefaults.standard.string(forKey: defaultCallKitIcon) ?? defaultCallKitIcon
         
         clients = UserDefaults.standard.object(forKey: kClientList)  as? [String:String] ?? [:]
@@ -163,8 +169,17 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         {
             guard let muted = arguments["muted"] as? Bool else {return}
             if (self.call != nil) {
-
                 self.call!.isMuted = muted
+                
+                // Update CallKit mute state
+                let muteAction = CXSetMutedCallAction(call: self.call!.uuid!, muted: muted)
+                let transaction = CXTransaction(action: muteAction)
+                callKitCallController.request(transaction) { error in
+                    if let error = error {
+                        self.sendPhoneCallEvents(description: "LOG|Failed to update mute state: \(error.localizedDescription)", isError: false)
+                    }
+                }
+                
                 guard let eventSink = eventSink else {
                     return
                 }
@@ -254,29 +269,28 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             }
         }
         else if flutterCall.method == "isHolding" {
-            // guard call not nil
-            guard let call = self.call else {
-                return;
+            if(self.call != nil) {
+                result(self.call!.isOnHold);
+            } else {
+                result(false);
             }
-            
-            // toggle state current state
-            let isOnHold = call.isOnHold;
-            call.isOnHold = !isOnHold;
-            
-            // guard event sink not nil & post update
-            guard let eventSink = eventSink else {
-                return
-            }
-            eventSink(!isOnHold ? "Hold" : "Unhold")
         }
         else if flutterCall.method == "answer" {
-            if(self.callInvite != nil) {
-                let ci = self.callInvite!
-                self.sendPhoneCallEvents(description: "LOG|answer method invoked", isError: false)
-                self.answerCall(callInvite: ci)
-            } else {
-                let ferror: FlutterError = FlutterError(code: "ANSWER_ERROR", message: "No call invite to answer", details: nil)
-                _result!(ferror)
+            guard let callInvite = self.callInvite else {
+                self.sendPhoneCallEvents(description: "LOG|No active call invite to answer", isError: false)
+                return
+            }
+            
+            // Use CallKit to answer the call
+            let answerCallAction = CXAnswerCallAction(call: callInvite.uuid)
+            let transaction = CXTransaction(action: answerCallAction)
+            
+            callKitCallController.request(transaction) { error in
+                if let error = error {
+                    self.sendPhoneCallEvents(description: "LOG|Failed to answer call: \(error.localizedDescription)", isError: false)
+                } else {
+                    self.sendPhoneCallEvents(description: "LOG|Call answer request successful", isError: false)
+                }
             }
         }
         else if flutterCall.method == "unregister" {
@@ -290,15 +304,12 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             }
             
         }else if flutterCall.method == "hangUp"{
-            // Hang up on-going/active call
-            if (self.call != nil) {
+            if (self.callInvite != nil || self.call != nil) {
                 self.sendPhoneCallEvents(description: "LOG|hangUp method invoked", isError: false)
                 self.userInitiatedDisconnect = true
-                performEndCallAction(uuid: self.call!.uuid!)
+                performEndCallAction(uuid: self.callInvite?.uuid ?? self.call!.uuid!)
                 //self.toggleUIState(isEnabled: false, showCallControl: false)
-            } else if(self.callInvite != nil) {
-                performEndCallAction(uuid: self.callInvite!.uuid)
-            }
+            } 
         }else if flutterCall.method == "registerClient"{
             guard let clientId = arguments["id"] as? String, let clientName =  arguments["name"] as? String else {return}
             if clients[clientId] == nil || clients[clientId] != clientName{
@@ -628,11 +639,10 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
          */
         UserDefaults.standard.set(Date(), forKey: kCachedBindingDate)
         
-        var from:String = callInvite.from ?? defaultCaller
-        from = from.replacingOccurrences(of: "client:", with: "")
+        let from = (callInvite.from ?? defaultCaller).replacingOccurrences(of: "client:", with: "")
         
         self.sendPhoneCallEvents(description: "Ringing|\(from)|\(callInvite.to)|Incoming\(formatCustomParams(params: callInvite.customParameters))", isError: false)
-        reportIncomingCall(from: from, uuid: callInvite.uuid)
+        reportIncomingCall(from: from, uuid: callInvite.uuid, params: callInvite.customParameters)
         self.callInvite = callInvite
     }
     
@@ -652,7 +662,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     public func cancelledCallInviteReceived(cancelledCallInvite: CancelledCallInvite, error: Error) {
         self.sendPhoneCallEvents(description: "Missed Call", isError: false)
         self.sendPhoneCallEvents(description: "LOG|cancelledCallInviteCanceled:", isError: false)
-        self.showMissedCallNotification(from: cancelledCallInvite.from, to: cancelledCallInvite.to)
+        self.showMissedCallNotification(from: cancelledCallInvite.from, to: cancelledCallInvite.to, params: cancelledCallInvite.customParameters)
         if (self.callInvite == nil) {
             self.sendPhoneCallEvents(description: "LOG|No pending call invite", isError: false)
             return
@@ -663,12 +673,20 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         }
     }
     
-    func showMissedCallNotification(from:String?, to:String?){
+    func showMissedCallNotification(from:String?, to:String?, params: [String: Any]?){
         guard UserDefaults.standard.optionalBool(forKey: "show-notifications") ?? true else{return}
         let notificationCenter = UNUserNotificationCenter.current()
-
        
         notificationCenter.getNotificationSettings { (settings) in
+          if settings.authorizationStatus == .notDetermined {
+              notificationCenter.requestAuthorization(options: [.alert, .sound, .badge]) { (granted, error) in
+                  guard granted else {
+                    return
+                  }
+                  self.showMissedCallNotification(from: from, to: to, params: params)
+              }
+              return
+          }
           if settings.authorizationStatus == .authorized {
             let content = UNMutableNotificationContent()
             var userName:String?
@@ -681,7 +699,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                 userName = self.clients[from]
             }
             
-            let title = userName ?? self.clients["defaultCaller"] ?? self.defaultCaller
+            let title = self.resolveCallerName(fromClient: userName, params: params)
             content.title = String(format:  NSLocalizedString("notification_missed_call", comment: ""),title)
 
             let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
@@ -715,8 +733,9 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         let to = (call.to ?? self.callTo)
         self.sendPhoneCallEvents(description: "Connected|\(from)|\(to)|\(direction)", isError: false)
         
-        if let callKitCompletionCallback = callKitCompletionCallback {
-            callKitCompletionCallback(true)
+        if let completion = callKitCompletionCallback {
+            self.callKitCompletionCallback = nil
+            completion(true)
         }
         
         toggleAudioRoute(toSpeaker: false)
@@ -738,6 +757,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             self.sendPhoneCallEvents(description: "DEVICETOKEN", isError: false)
         }
         if let completion = self.callKitCompletionCallback {
+            self.callKitCompletionCallback = nil
             completion(false)
         }
         
@@ -789,7 +809,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                 case AVAudioSession.Port.builtInSpeaker:
                     return true;
                 default:
-                    return false;
+                    break;
             }
         }
         return false;
@@ -850,7 +870,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         
         self.performVoiceCall(uuid: action.callUUID, client: "") { (success) in
             if (success) {
-                self.sendPhoneCallEvents(description: "LOG|provider:performAnswerVoiceCall() successful", isError: false)
+                self.sendPhoneCallEvents(description: "LOG|provider:performVoiceCall() successful", isError: false)
                 provider.reportOutgoingCall(with: action.callUUID, connectedAt: Date())
             } else {
                 self.sendPhoneCallEvents(description: "LOG|provider:performVoiceCall() failed", isError: false)
@@ -866,12 +886,12 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         self.performAnswerVoiceCall(uuid: action.callUUID) { (success) in
             if success {
                 self.sendPhoneCallEvents(description: "LOG|provider:performAnswerVoiceCall() successful", isError: false)
+                action.fulfill()
             } else {
                 self.sendPhoneCallEvents(description: "LOG|provider:performAnswerVoiceCall() failed:", isError: false)
+                action.fail()
             }
         }
-        
-        action.fulfill()
     }
     
     public func provider(_ provider: CXProvider, perform action: CXEndCallAction) {
@@ -904,6 +924,9 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         
         if let call = self.call {
             call.isMuted = action.isMuted
+            if let eventSink = eventSink {
+                eventSink(action.isMuted ? "Mute" : "Unmute")
+            }
             action.fulfill()
         } else {
             action.fail()
@@ -912,7 +935,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     
     // MARK: Call Kit Actions
     func performStartCallAction(uuid: UUID, handle: String) {
-        let callHandle = CXHandle(type: .generic, value: handle)
+        let callHandle = CXHandle(type: .generic, value: self.callArgs[kRecipientId] as? String ?? handle)
         let startCallAction = CXStartCallAction(call: uuid, handle: callHandle)
         let transaction = CXTransaction(action: startCallAction)
         
@@ -926,7 +949,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             
             let callUpdate = CXCallUpdate()
             callUpdate.remoteHandle = callHandle
-            callUpdate.localizedCallerName = self.clients[handle] ?? self.clients["defaultCaller"] ?? self.defaultCaller
+            callUpdate.localizedCallerName = (self.callArgs[self.kRecipientName] as? String) ?? self.clients[handle] ?? self.clients["defaultCaller"] ?? self.defaultCaller
             callUpdate.supportsDTMF = false
             callUpdate.supportsHolding = true
             callUpdate.supportsGrouping = false
@@ -937,12 +960,12 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         }
     }
     
-    func reportIncomingCall(from: String, uuid: UUID) {
-        let callHandle = CXHandle(type: .generic, value: from)
+    func reportIncomingCall(from: String, uuid: UUID, params: [String: Any]?) {
+        let callHandle = CXHandle(type: .generic, value: params?[kCallerId] as? String ?? from)
         
         let callUpdate = CXCallUpdate()
         callUpdate.remoteHandle = callHandle
-        callUpdate.localizedCallerName = clients[from] ?? self.clients["defaultCaller"] ?? defaultCaller
+        callUpdate.localizedCallerName = self.resolveCallerName(fromClient: clients[from], params: params)
         callUpdate.supportsDTMF = true
         callUpdate.supportsHolding = true
         callUpdate.supportsGrouping = false
@@ -956,6 +979,13 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                 self.sendPhoneCallEvents(description: "LOG|Incoming call successfully reported.", isError: false)
             }
         }
+    }
+
+    func resolveCallerName(fromClient: String?, params: [String: Any]?) -> String {
+        if let params = params, let callerName = params[kCallerName] as? String {
+            return callerName
+        }
+        return fromClient ?? self.clients["defaultCaller"] ?? defaultCaller;
     }
     
     func performEndCallAction(uuid: UUID) {
@@ -1018,6 +1048,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             }
         } else {
             self.sendPhoneCallEvents(description: "LOG|No CallInvite matches the UUID", isError: false)
+            completionHandler(false)
         }
     }
     
@@ -1029,6 +1060,11 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             self,
             selector: #selector(CallDelegate.callDidDisconnect),
             name: NSNotification.Name(rawValue: "PhoneCallEvent"),
+            object: nil)
+
+        NotificationCenter.default.addObserver(self,
+            selector: #selector(handleAudioRouteChange),
+            name: AVAudioSession.routeChangeNotification,
             object: nil)
         
         return nil
@@ -1058,6 +1094,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         guard let eventSink = eventSink else {
             return
         }
+
         DispatchQueue.main.async {
             eventSink(event)
         }
@@ -1086,6 +1123,13 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         }
     }
     
+    @objc func handleAudioRouteChange(notification: Notification) {
+        guard let eventSink = eventSink else {
+            return
+        }
+        let isOnSpeaker: Bool = isSpeakerOn()
+        self.sendPhoneCallEvents(description: isOnSpeaker ? "Speaker On" : "Speaker Off", isError: false)
+    }
 }
 
 extension UIWindow {

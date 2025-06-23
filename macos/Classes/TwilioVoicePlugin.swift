@@ -28,6 +28,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     let kCachedDeviceToken = "CachedDeviceToken"
     let kCachedBindingDate = "CachedBindingDate"
     let kClientList = "TwilioContactList"
+    let kCallerName = "__TWI_CALLER_NAME"
     private var clients: [String: String]!
 
     var defaultCaller = "Unknown Caller"
@@ -137,7 +138,11 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
         showNotification(title: from, subtitle: "Incoming Call", action: .incoming, params: customParameters)
     }
 
-    private func resolveCallerName(_ from: String) -> String {
+    private func resolveCallerName(_ from: String, _ params: [String: Any]? = nil) -> String {
+        if let params = params, let callerName = params[kCallerName] as? String {
+            return callerName
+        }
+
         if (from).starts(with: "client:") {
             let clientName = from.replacingOccurrences(of: "client:", with: "")
             return clients[clientName] ?? clientName
@@ -967,7 +972,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
 
     // Notify missed call from [From] to [To]
     private func showMissedCallNotification(from: String?, to: String?, params: [String: Any]? = nil) -> Void {
-        let callerName = resolveCallerName(from ?? "")
+        let callerName = resolveCallerName(from ?? "", params)
         var params: [String: Any] = params ?? [:]
         params[Constants.PARAM_FROM] = from
         params[Constants.PARAM_TO] = to ?? ""
@@ -990,6 +995,17 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
         let notificationCenter = UNUserNotificationCenter.current()
 
         notificationCenter.getNotificationSettings { (settings) in
+            // If the user has not yet granted permissions, request them
+            if settings.authorizationStatus == .notDetermined {
+                self.requestBackgroundPermissions { granted, error in
+                    guard let granted = granted, granted else {
+                        return
+                    }
+                    self.showNotification(title: title, subtitle: subtitle, uuid, action: action, params: params)
+                }
+                return;
+            }
+        
             if settings.authorizationStatus == .authorized {
                 let data: [String: Any] = [Constants.PARAM_TYPE: action.rawValue].merging(params) { (_, new) in
                     new
@@ -1214,6 +1230,15 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     func onDeviceIncoming(_ call: TVCall) {
         logEvent(description: "Incoming call")
         twilioCall = call
+        
+        // Bring app to foreground and unminimize if needed
+        if let window = NSApplication.shared.windows.first {
+            if window.isMiniaturized {
+                window.deminiaturize(nil)
+            }
+        }
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        
         requestMicAccess { _, error in
             if let error = error {
                 print("Error: \(error)")
@@ -1224,7 +1249,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
                     print("Error: \(error)")
                 }
                 if let params = params {
-                    let from = self.resolveCallerName(params.from ?? "")
+                    let from = self.resolveCallerName(params.from ?? "", params.customParameters)
                     let to = params.to ?? ""
                     self.logEvents(prefix: "", descriptions: ["Incoming", from, to, "Incoming", self.formatCustomParams(params: params.customParameters)])
                     self.logEvents(prefix: "", descriptions: ["Ringing", from, to, "Incoming", self.formatCustomParams(params: params.customParameters)])

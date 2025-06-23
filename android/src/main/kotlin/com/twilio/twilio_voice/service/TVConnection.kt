@@ -6,24 +6,40 @@ package com.twilio.twilio_voice.service
 
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.telecom.CallAudioState
 import android.telecom.Connection
 import android.telecom.DisconnectCause
+import android.telecom.StatusHints
 import android.util.Log
+import android.graphics.drawable.Icon
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
+import com.twilio.twilio_voice.R
 import com.twilio.twilio_voice.call.TVParameters
 import com.twilio.twilio_voice.receivers.TVBroadcastReceiver
 import com.twilio.twilio_voice.types.CallAudioStateExtension.copyWith
 import com.twilio.twilio_voice.types.CallDirection
 import com.twilio.twilio_voice.types.CallExceptionExtension.toBundle
 import com.twilio.twilio_voice.types.CompletionHandler
+import com.twilio.twilio_voice.types.ContextExtension.hasMicrophoneAccess
 import com.twilio.twilio_voice.types.TVNativeCallActions
 import com.twilio.twilio_voice.types.TVNativeCallEvents
 import com.twilio.twilio_voice.types.ValueBundleChanged
 import com.twilio.voice.Call
 import com.twilio.voice.CallException
 import com.twilio.voice.CallInvite
+import com.twilio.twilio_voice.types.ContextExtension
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import androidx.core.app.NotificationCompat
+import android.app.PendingIntent
+import android.os.Handler
+import android.os.Looper
+import com.twilio.twilio_voice.service.TVConnectionService
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
+
 
 
 class TVCallInviteConnection(
@@ -46,12 +62,55 @@ class TVCallInviteConnection(
 
     override fun onAnswer() {
         Log.d(TAG, "onAnswer: onAnswer")
-        super.onAnswer()
-        twilioCall = callInvite.accept(context, this)
-        onAction?.onChange(TVNativeCallActions.ACTION_ANSWERED, Bundle().apply {
-            putParcelable(TVBroadcastReceiver.EXTRA_CALL_INVITE, callInvite)
-            putInt(TVBroadcastReceiver.EXTRA_CALL_DIRECTION, callDirection.id)
-        })
+        
+        var isCallAccepted = false
+        
+        fun acceptCall(receiver: BroadcastReceiver) {
+            try {
+                LocalBroadcastManager.getInstance(context).unregisterReceiver(receiver)
+            } catch (_: Exception) {}
+
+            if (isCallAccepted) {
+                return
+            }
+
+            isCallAccepted = true
+
+            super.onAnswer()
+            twilioCall = callInvite.accept(context, this)
+            onAction?.onChange(TVNativeCallActions.ACTION_ANSWERED, Bundle().apply {
+                putParcelable(TVBroadcastReceiver.EXTRA_CALL_INVITE, callInvite)
+                putInt(TVBroadcastReceiver.EXTRA_CALL_DIRECTION, callDirection.id)
+            })
+        }
+
+        val incomingCallServiceReadyReceiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(c: android.content.Context?, i: android.content.Intent?) {
+                acceptCall(this)
+            }
+        }
+
+        LocalBroadcastManager.getInstance(context).registerReceiver(
+            incomingCallServiceReadyReceiver,
+            android.content.IntentFilter(TVConnectionService.ACTION_INCOMING_CALL_SERVICE_READY)
+        )
+
+        Handler(Looper.getMainLooper()).postDelayed({
+            acceptCall(incomingCallServiceReadyReceiver)
+        }, 3000)
+
+        try {
+            val launchIntent = Intent(context, com.twilio.twilio_voice.ui.IncomingCallActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_NO_USER_ACTION)
+            }
+            context.startActivity(launchIntent)
+        } catch (e: Exception) {
+            Log.w(TAG, "Unable to launch IncomingCallActivity from onAnswer: $e")
+            acceptCall(incomingCallServiceReadyReceiver)
+        }
     }
 
     fun acceptInvite() {
@@ -159,6 +218,7 @@ open class TVCallConnection(
         onDisconnected?.withValue(disconnectCause)
         onEvent?.onChange(TVNativeCallEvents.EVENT_CONNECT_FAILURE, callException.toBundle())
         onCallStateListener?.withValue(call.state)
+        destroy()
     }
 
     /**
@@ -332,6 +392,47 @@ open class TVCallConnection(
     }
 
     override fun onAnswer(videoState: Int) {
+          if (!context.hasMicrophoneAccess()) {
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val channelId = "twilio_voice_permissions"
+            val channelName = "Twilio Voice Permissions"
+            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val channel = NotificationChannel(
+                    channelId,
+                    channelName,
+                    NotificationManager.IMPORTANCE_HIGH
+                ).apply {
+                    description = "Phone call permissions notifications"
+                }
+                notificationManager.createNotificationChannel(channel)
+            }
+            
+            // Create intent to open app settings
+            val settingsIntent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = android.net.Uri.fromParts("package", context.packageName, null)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            val pendingIntent = PendingIntent.getActivity(
+                context,
+                0,
+                settingsIntent,
+                PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val notification = NotificationCompat.Builder(context, channelId)
+                .setContentTitle("Unable to Answer Call - Microphone Access Needed")
+                .setContentText("An incoming call is waiting, but you need to enable microphone access in settings to accept calls.")
+                .setSmallIcon(context.resources.getIdentifier("ic_stat_onesignal_default", "drawable", context.packageName))
+                .setLargeIcon(android.graphics.BitmapFactory.decodeResource(context.resources, context.resources.getIdentifier("ic_onesignal_large_icon_default", "drawable", context.packageName)))
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+                .setContentIntent(pendingIntent)
+                .build()
+            notificationManager.notify(1, notification)
+            return
+        }
+
         super.onAnswer(videoState)
         Log.d(TAG, "onAnswer: onAnswer")
     }

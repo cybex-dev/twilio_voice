@@ -380,16 +380,20 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
     }
   }
 
+  final _deviceListenerWrappers = <Function, Function>{};
+
+  Function _wrapDeviceListener(Function handler) => _deviceListenerWrappers[handler] ??= js.allowInterop(handler);
+
   /// Attach event listeners to [twilio_js.Device]
   /// See [twilio_js.Device.on]
   void _attachDeviceListeners(twilio_js.Device device) {
     // ignore: unnecessary_null_comparison
     assert(device != null, "Device cannot be null");
-    device.on("registered", js.allowInterop(_onDeviceRegistered));
-    device.on("unregistered", js.allowInterop(_onDeviceUnregistered));
-    device.on("error", js.allowInterop(_onDeviceError));
-    device.on("incoming", js.allowInterop(_onDeviceIncoming));
-    device.on("tokenWillExpire", js.allowInterop(_onTokenWillExpire));
+    device.on("registered", _wrapDeviceListener(_onDeviceRegistered));
+    device.on("unregistered", _wrapDeviceListener(_onDeviceUnregistered));
+    device.on("error", _wrapDeviceListener(_onDeviceError));
+    device.on("incoming", _wrapDeviceListener(_onDeviceIncoming));
+    device.on("tokenWillExpire", _wrapDeviceListener(_onTokenWillExpire));
   }
 
   /// Detach event listeners to [twilio_js.Device]
@@ -397,11 +401,11 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   void _detachDeviceListeners(twilio_js.Device device) {
     // ignore: unnecessary_null_comparison
     assert(device != null, "Device cannot be null");
-    device.off("registered", js.allowInterop(_onDeviceRegistered));
-    device.off("unregistered", js.allowInterop(_onDeviceUnregistered));
-    device.off("error", js.allowInterop(_onDeviceError));
-    device.off("incoming", js.allowInterop(_onDeviceIncoming));
-    device.off("tokenWillExpire", js.allowInterop(_onTokenWillExpire));
+    device.removeListener("registered", _wrapDeviceListener(_onDeviceRegistered));
+    device.removeListener("unregistered", _wrapDeviceListener(_onDeviceUnregistered));
+    device.removeListener("error", _wrapDeviceListener(_onDeviceError));
+    device.removeListener("incoming", _wrapDeviceListener(_onDeviceIncoming));
+    device.removeListener("tokenWillExpire", _wrapDeviceListener(_onTokenWillExpire));
   }
 
   /// On device registered and ready to make/receive calls via [twilio_js.Device.on] and [twilio_js.TwilioDeviceEvents.registered]
@@ -459,6 +463,11 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   }
 
   String _resolveCallerName(Map<String, String> params) {
+    final callerName = params["__TWI_CALLER_NAME"];
+    if (callerName != null) {
+      return callerName;
+    }
+
     final from = params["From"] ?? "";
     if (from.startsWith("client:")) {
       final clientName = from.substring(7);
@@ -487,6 +496,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
       "uuid": callSid,
       "to": title,
       "image": imageUrl,
+      "icon": imageUrl,
     };
     await webCallkit.reportIncomingCall(
       uuid: callSid,
@@ -815,20 +825,25 @@ class Call extends MethodChannelTwilioCall {
     return true;
   }
 
+  final _callListenerWrappers = <Function, Function>{};
+
+  Function _wrapCallListener(Function handler) => _callListenerWrappers[handler] ??= js.allowInterop(handler);
+
+
   /// Attach event listeners to the active call
   /// See [twilio_js.Call.on]
   void _attachCallEventListeners(twilio_js.Call call) {
     // ignore: unnecessary_null_comparison
     assert(call != null, "Call cannot be null");
-    call.on("ringing", js.allowInterop(_onCallRinging));
-    call.on("accept", js.allowInterop(_onCallAccept));
-    call.on("disconnect", js.allowInterop(_onCallDisconnect));
-    call.on("cancel", js.allowInterop(_onCallCancel));
-    call.on("reject", js.allowInterop(_onCallReject));
-    call.on("error", js.allowInterop(_onCallError));
-    call.on("reconnecting", js.allowInterop(_onCallReconnecting));
-    call.on("reconnected", js.allowInterop(_onCallReconnected));
-    call.on("log", js.allowInterop(_onLogEvent));
+    call.on("ringing", _wrapCallListener(_onCallRinging));
+    call.on("accept", _wrapCallListener(_onCallAccept));
+    call.on("disconnect", _wrapCallListener(_onCallDisconnect));
+    call.on("cancel", _wrapCallListener(_onCallCancel));
+    call.on("reject", _wrapCallListener(_onCallReject));
+    call.on("error", _wrapCallListener(_onCallError));
+    call.on("reconnecting", _wrapCallListener(_onCallReconnecting));
+    call.on("reconnected", _wrapCallListener(_onCallReconnected));
+    call.on("log", _wrapCallListener(_onLogEvent));
   }
 
   /// Detach event listeners to the active call
@@ -837,15 +852,15 @@ class Call extends MethodChannelTwilioCall {
   void _detachCallEventListeners(twilio_js.Call call) {
     // ignore: unnecessary_null_comparison
     assert(call != null, "Call cannot be null");
-    call.removeListener("ringing", js.allowInterop(_onCallRinging));
-    call.removeListener("accept", js.allowInterop(_onCallAccept));
-    call.removeListener("disconnect", js.allowInterop(_onCallDisconnect));
-    call.removeListener("cancel", js.allowInterop(_onCallCancel));
-    call.removeListener("reject", js.allowInterop(_onCallReject));
-    call.removeListener("error", js.allowInterop(_onCallError));
-    call.removeListener("reconnecting", js.allowInterop(_onCallReconnecting));
-    call.removeListener("reconnected", js.allowInterop(_onCallReconnected));
-    call.removeListener("log", js.allowInterop(_onLogEvent));
+    call.removeListener("ringing", _wrapCallListener(_onCallRinging));
+    call.removeListener("accept", _wrapCallListener(_onCallAccept));
+    call.removeListener("disconnect", _wrapCallListener(_onCallDisconnect));
+    call.removeListener("cancel", _wrapCallListener(_onCallCancel));
+    call.removeListener("reject", _wrapCallListener(_onCallReject));
+    call.removeListener("error", _wrapCallListener(_onCallError));
+    call.removeListener("reconnecting", _wrapCallListener(_onCallReconnecting));
+    call.removeListener("reconnected", _wrapCallListener(_onCallReconnected));
+    call.removeListener("log", _wrapCallListener(_onLogEvent));
   }
 
   void _onLogEvent(String status) {
