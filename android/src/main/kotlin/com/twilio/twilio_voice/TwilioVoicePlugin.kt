@@ -195,6 +195,9 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                     error.message
                 )
                 logEvent(message)
+                logEvent("", "Call Ended")
+                TVConnectionService.clearActiveConnections()
+
             }
 
             override fun onConnected(call: Call) {
@@ -471,6 +474,24 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 }
             }
 
+            TVMethodChannels.GetActiveCallOnResumeFromTerminatedState -> {
+             //is on call
+             val hasActiveCalls = isOnCall()
+                if(hasActiveCalls){
+                    val activeCalls = TVConnectionService.Companion.activeConnections
+                    val currentCall = activeCalls.values.firstOrNull()
+                    val isAnsweredCall = currentCall?.twilioCall?.state == Call.State.CONNECTED
+                    if(isAnsweredCall){
+                        val from = extractUserNumber(currentCall?.twilioCall?.from ?: "")
+                        val to = currentCall?.twilioCall?.to ?: ""
+                        val callDirection = currentCall?.callDirection ?: CallDirection.INCOMING
+                        logEvents("", arrayOf("Connected", from, to, callDirection.label ))
+                    }
+                    }
+                    result.success(true)
+
+            }
+
             TVMethodChannels.IS_BLUETOOTH_ON -> {
                 Log.d(TAG, "isBluetoothOn invoked")
                 result.success(isBluetoothOn)
@@ -617,11 +638,22 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                     )
                     return@onMethodCall
                 }
+
+                val callerName = call.argument<String>(Constants.CALLER_NAME) ?: run {
+                    result.error(
+                            FlutterErrorCodes.MALFORMED_ARGUMENTS,
+                            "No '${Constants.CALLER_NAME}' provided or invalid type",
+                            null
+                    )
+                    return@onMethodCall
+                }
+
+
                 Log.d(TAG, "calling $from -> $to")
 
                 accessToken?.let { token ->
                     context?.let { ctx ->
-                        val success = placeCall(ctx, token, from, to, params)
+                        val success = placeCall(ctx, token, from, to, params,callerName )
                         result.success(success)
                     } ?: run {
                         Log.e(TAG, "Context is null, cannot place call")
@@ -672,7 +704,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
 
                 accessToken?.let { token ->
                     context?.let { ctx ->
-                        val success = placeCall(ctx, token, from, to, params, connect = true)
+                        val success = placeCall(ctx, token, from, to, params,null, connect = true)
                         result.success(success)
                     } ?: run {
                         Log.e(TAG, "Context is null, cannot place call")
@@ -1094,6 +1126,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         from: String?,
         to: String?,
         params: Map<String, String>,
+        callerName: String?,
         connect: Boolean = false
     ): Boolean {
         assert(accessToken.isNotEmpty()) { "Twilio Access Token cannot be empty" }
@@ -1140,6 +1173,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 }
                 putExtra(TVConnectionService.EXTRA_TO, to)
                 putExtra(TVConnectionService.EXTRA_FROM, from)
+                putExtra(TVConnectionService.EXTRA_CALLER_NAME, callerName)
                 putExtra(TVConnectionService.EXTRA_OUTGOING_PARAMS, Bundle().apply {
                     for ((key, value) in params) {
                         putString(key, value)
@@ -1585,6 +1619,18 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         }
     }
 
+
+    fun extractUserNumber(input: String): String {
+        // Define the regular expression pattern to match the user_number part
+        val pattern = Regex("""user_number:([^\s:]+)""")
+
+        // Search for the first match in the input string
+        val match = pattern.find(input)
+
+        // Extract the matched part (user_number:+11230123)
+        return match?.groups?.get(1)?.value ?: input
+    }
+
     private fun requestPermissionForPhoneState(onPermissionResult: (Boolean) -> Unit) {
         return requestPermissionOrShowRationale(
             "Read Phone State",
@@ -1661,6 +1707,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     fun handleBroadcastIntent(intent: Intent) {
         when (intent.action) {
             TVBroadcastReceiver.ACTION_AUDIO_STATE -> {
+                println("Event called Basil : TVBroadcastReceiver.ACTION_AUDIO_STATE")
                 val callAudioState: CallAudioState =
                     intent.getParcelableExtraSafe(TVBroadcastReceiver.EXTRA_AUDIO_STATE) ?: run {
                         Log.e(
@@ -1715,7 +1762,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                             )
                             return
                         }
-                val from = callInvite.from ?: ""
+                val from = extractUserNumber(callInvite.from ?: "")
                 val to = callInvite.to
                 val params = JSONObject().apply {
                     callInvite.customParameters.forEach { (key, value) ->
@@ -1728,6 +1775,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             }
 
             TVBroadcastReceiver.ACTION_CALL_ENDED -> {
+                println("Event called Basil : TVBroadcastReceiver.ACTION_CALL_ENDED")
                 val callHandle =
                     intent.getStringExtra(TVBroadcastReceiver.EXTRA_CALL_HANDLE) ?: run {
                         Log.e(
@@ -1782,7 +1830,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                             )
                             return
                         }
-                val from = ci.from ?: ""
+                val from = extractUserNumber(ci.from ?: "")
                 val to = ci.to
                 val params = JSONObject().apply {
                     ci.customParameters.forEach { (key, value) ->
@@ -1892,6 +1940,9 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                     return
                 }
                 logEvent("Call Error: ${code}, $message");
+                logEvent("", "Call Ended")
+                TVConnectionService.clearActiveConnections()
+
             }
 
             TVNativeCallEvents.EVENT_RECONNECTING -> {

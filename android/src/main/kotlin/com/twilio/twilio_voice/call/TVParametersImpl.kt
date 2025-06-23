@@ -22,17 +22,18 @@ class TVCallInviteParametersImpl(storage: Storage, callInvite: CallInvite) : TVP
                 ?: customParameters[PARAM_CALLER_ID]?.let { resolveHumanReadableName(it) }
                 ?: run {
                     val mFrom = mCallInvite.from ?: ""
-                    if (mFrom.isEmpty()) {
-                        return mStorage.defaultCaller
-                    }
-
-                    if (!mFrom.startsWith("client:")) {
-                        // we have a number, return as is
-                        return mFrom
-                    }
-
-                    val mToName = mFrom.replace("client:", "")
-                    return resolveHumanReadableName(mToName)
+//                    if (mFrom.isEmpty()) {
+//                        return mStorage.defaultCaller
+//                    }
+//
+//                    if (!mFrom.startsWith("client:")) {
+//                        // we have a number, return as is
+//                        return mFrom
+//                    }
+//
+//                    val mToName = mFrom.replace("client:", "")
+//                    return resolveHumanReadableName(mToName)
+                    return extractClient(mFrom)
                 }
         }
 
@@ -55,7 +56,7 @@ class TVCallInviteParametersImpl(storage: Storage, callInvite: CallInvite) : TVP
 
     override val fromRaw: String
         get() {
-            return mCallInvite.from ?: ""
+            return extractClient( mCallInvite.from ?: "")
         }
 
     override val toRaw: String
@@ -91,17 +92,18 @@ class TVCallParametersImpl(storage: Storage, call: Call, callTo: String, callFro
             return customParameters[PARAM_CALLER_NAME]
                 ?: customParameters[PARAM_CALLER_ID]?.let { resolveHumanReadableName(it) }
                 ?: run {
-                    if (mFrom.isEmpty()) {
-                        return mStorage.defaultCaller
-                    }
-
-                    if (!mFrom.startsWith("client:")) {
-                        // we have a number, return as is
-                        return mFrom
-                    }
-
-                    val mFromName = mFrom.replace("client:", "")
-                    return resolveHumanReadableName(mFromName)
+//                    if (mFrom.isEmpty()) {
+//                        return mStorage.defaultCaller
+//                    }
+//
+//                    if (!mFrom.startsWith("client:")) {
+//                        // we have a number, return as is
+//                        return mFrom
+//                    }
+//
+//                    val mFromName = mFrom.replace("client:", "")
+//                    return resolveHumanReadableName(mFromName)
+                    return  extractClient(mFrom)
                 }
         }
 
@@ -126,7 +128,7 @@ class TVCallParametersImpl(storage: Storage, call: Call, callTo: String, callFro
 
     override val fromRaw: String
         get() {
-            return mFrom
+            return extractClient(mFrom)
         }
 
     override val toRaw: String
@@ -196,5 +198,28 @@ open class TVParametersImpl(storage: Storage, override val callSid: String = "",
 
     override fun toString(): String {
         return "TVParametersImpl(callSid='$callSid', from='$from', fromRaw='$fromRaw' to='$to', toRaw='$toRaw', customParameters=$customParameters)"
+    }
+
+    fun extractUserNumber(input: String): String {
+        // Define the regular expression pattern to match the user_number part
+        val pattern = Regex("""user_number:([^\s:]+)""")
+
+        // Search for the first match in the input string
+        val match = pattern.find(input)
+
+        // Extract the matched part (user_number:+11230123)
+        return match?.groups?.get(1)?.value ?: input
+    }
+
+    fun extractClient(input: String): String {
+        // // Define the regular expression pattern to match the client part
+        // val pattern = Regex("""client:([^\s:]+)""")
+
+        // // Search for the first match in the input string
+        // val match = pattern.find(input)
+
+        // // Extract the matched part (client:+11230(123))
+        // return match?.groups?.get(1)?.value ?: input
+        return input
     }
 }

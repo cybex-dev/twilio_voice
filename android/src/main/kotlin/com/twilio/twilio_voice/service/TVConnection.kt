@@ -44,15 +44,23 @@ class TVCallInviteConnection(
         setCallParameters(callParams)
     }
 
-    override fun onAnswer() {
-        Log.d(TAG, "onAnswer: onAnswer")
-        super.onAnswer()
-        twilioCall = callInvite.accept(context, this)
-        onAction?.onChange(TVNativeCallActions.ACTION_ANSWERED, Bundle().apply {
-            putParcelable(TVBroadcastReceiver.EXTRA_CALL_INVITE, callInvite)
-            putInt(TVBroadcastReceiver.EXTRA_CALL_DIRECTION, callDirection.id)
-        })
-    }
+ override fun onAnswer() {
+    Log.d(TAG, "onAnswer: onAnswer")
+    super.onAnswer()
+
+    // Accept the call and assign it to twilioCall
+    twilioCall = callInvite.accept(context, this)
+
+    // Extract the user number from callInvite.from using your custom extractUserNumber method
+    val extractedFrom = extractUserNumber(callInvite.from ?: "")
+
+    // Broadcast the call answered action with the extracted number
+    onAction?.onChange(TVNativeCallActions.ACTION_ANSWERED, Bundle().apply {
+        putParcelable(TVBroadcastReceiver.EXTRA_CALL_INVITE, callInvite)
+        putString(TVBroadcastReceiver.EXTRA_CALL_FROM, extractedFrom)  // Use extracted number here
+        putInt(TVBroadcastReceiver.EXTRA_CALL_DIRECTION, callDirection.id)
+    })
+}
 
     fun acceptInvite() {
         Log.d(TAG, "acceptInvite: acceptInvite")
@@ -183,10 +191,22 @@ open class TVCallConnection(
         onCallStateListener?.withValue(call.state)
         onEvent?.onChange(TVNativeCallEvents.EVENT_RINGING, Bundle().apply {
             putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callParams?.callSid)
-            putString(TVBroadcastReceiver.EXTRA_CALL_FROM, callParams?.fromRaw)
+            putString(TVBroadcastReceiver.EXTRA_CALL_FROM,extractUserNumber( callParams?.fromRaw ?: ""))
             putString(TVBroadcastReceiver.EXTRA_CALL_TO, callParams?.toRaw)
             putInt(TVBroadcastReceiver.EXTRA_CALL_DIRECTION, callDirection.id)
         })
+    }
+
+
+    fun extractUserNumber(input: String): String {
+        // Define the regular expression pattern to match the user_number part
+        val pattern = Regex("""user_number:([^\s:]+)""")
+
+        // Search for the first match in the input string
+        val match = pattern.find(input)
+
+        // Extract the matched part (user_number:+11230123)
+        return match?.groups?.get(1)?.value ?: input
     }
 
     override fun onConnected(call: Call) {
@@ -196,7 +216,7 @@ open class TVCallConnection(
         onCallStateListener?.withValue(call.state)
         onEvent?.onChange(TVNativeCallEvents.EVENT_CONNECTED, Bundle().apply {
             putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callParams?.callSid)
-            putString(TVBroadcastReceiver.EXTRA_CALL_FROM, callParams?.fromRaw)
+            putString(TVBroadcastReceiver.EXTRA_CALL_FROM,extractUserNumber(callParams?.fromRaw ?: "" ))
             putString(TVBroadcastReceiver.EXTRA_CALL_TO, callParams?.toRaw)
             putInt(TVBroadcastReceiver.EXTRA_CALL_DIRECTION, callDirection.id)
         })
@@ -513,3 +533,5 @@ open class TVCallConnection(
         }
     }
 }
+
+

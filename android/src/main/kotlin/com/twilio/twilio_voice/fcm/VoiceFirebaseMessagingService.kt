@@ -152,7 +152,7 @@ class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageListene
         // send broadcast to TVBroadcastReceiver, we notify Flutter about incoming call
         Intent(applicationContext, TVBroadcastReceiver::class.java).apply {
             action = TVBroadcastReceiver.ACTION_INCOMING_CALL
-            putExtra(TVBroadcastReceiver.EXTRA_CALL_INVITE, callInvite)
+            putExtra(TVBroadcastReceiver.EXTRA_CALL_INVITE , callInvite)
             putExtra(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callInvite.callSid)
             LocalBroadcastManager.getInstance(applicationContext).sendBroadcast(this)
         }

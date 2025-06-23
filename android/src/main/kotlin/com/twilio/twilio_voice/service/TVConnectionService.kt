@@ -148,6 +148,8 @@ class TVConnectionService : ConnectionService() {
          */
         const val EXTRA_TO: String = "EXTRA_TO"
 
+        const val EXTRA_CALLER_NAME: String = "EXTRA_CALLER_NAME"
+
         /**
          * Extra used with [ACTION_PLACE_OUTGOING_CALL] to place an outgoing call connection. Denotes the caller's identity.
          */
@@ -182,6 +184,14 @@ class TVConnectionService : ConnectionService() {
         fun hasActiveCalls(): Boolean {
             return activeConnections.isNotEmpty()
         }
+
+        //clear active connections
+        fun clearActiveConnections() {
+            activeConnections.clear()
+        }
+
+
+        
 
         /**
          * Active call definition is extended to include calls in which one can actively communicate, or call is on hold, or call is ringing or dialing. This applies only to this and calling functions.
@@ -304,7 +314,7 @@ class TVConnectionService : ConnectionService() {
                             putString(TelecomManager.EXTRA_CALL_SUBJECT, callInvite.customParameters["_TWI_SUBJECT"])
                         }
                     }
-
+                    android.util.Log.d(TAG, "onCallRecived basil: $extras")
                     // Add new incoming call to the telecom manager
                     telecomManager.addNewIncomingCall(phoneAccountHandle, extras)
                 }
@@ -330,6 +340,7 @@ class TVConnectionService : ConnectionService() {
                 ACTION_HANGUP -> {
                     val callHandle = it.getStringExtra(EXTRA_CALL_HANDLE) ?: getActiveCallHandle() ?: run {
                         Log.e(TAG, "onStartCommand: ACTION_HANGUP is missing String EXTRA_CALL_HANDLE")
+                        activeConnections.clear()
                         return@let
                     }
 
@@ -354,7 +365,7 @@ class TVConnectionService : ConnectionService() {
                     val token = getRequiredString(EXTRA_TOKEN) ?: return@let
                     val to = getRequiredString(EXTRA_TO, allowNullIfRaw = true)
                     val from = getRequiredString(EXTRA_FROM, allowNullIfRaw = true)
-
+                    val outgoingName = getRequiredString(EXTRA_CALLER_NAME, allowNullIfRaw = true)
                     val params = buildMap {
                         it.getParcelableExtraSafe<Bundle>(EXTRA_OUTGOING_PARAMS)?.let { bundle ->
                             for (key in bundle.keySet()) {
@@ -362,6 +373,7 @@ class TVConnectionService : ConnectionService() {
                             }
                         }
                         put(EXTRA_TOKEN, token)
+                        put(EXTRA_CALLER_NAME, outgoingName)
                         if (!rawConnect) {
                             to?.let { v -> put(EXTRA_TO, v) }
                             from?.let { v -> put(EXTRA_FROM, v) }
@@ -516,7 +528,7 @@ class TVConnectionService : ConnectionService() {
 
         // Setup connection event listeners and UI parameters
         attachCallEventListeners(connection, ci.callSid)
-        applyParameters(connection, callParams)
+        applyParameters(connection, callParams,null)
         connection.setRinging()
 
         startForegroundService()
@@ -548,6 +560,11 @@ class TVConnectionService : ConnectionService() {
         val from = myBundle.getString(EXTRA_FROM) ?: run {
             Log.e(TAG, "onCreateOutgoingConnection: ACTION_PLACE_OUTGOING_CALL is missing String EXTRA_FROM")
             throw Exception("onCreateOutgoingConnection: ACTION_PLACE_OUTGOING_CALL is missing String EXTRA_FROM");
+        }
+
+        val outGoingCallerName = myBundle.getString(EXTRA_CALLER_NAME) ?: run {
+            Log.e(TAG, "onCreateOutgoingConnection: ACTION_PLACE_OUTGOING_CALL is missing String EXTRA_FROM")
+            throw Exception("onCreateOutgoingConnection: ACTION_PLACE_OUTGOING_CALL is missing String EXTRA_CALLER_NAME");
         }
 
         // Get all params from bundle
@@ -591,7 +608,7 @@ class TVConnectionService : ConnectionService() {
 
                 // If call is not attached, attach it
                 if (!activeConnections.containsKey(callSid)) {
-                    applyParameters(connection, callParams)
+                    applyParameters(connection, callParams,outGoingCallerName )
                     attachCallEventListeners(connection, callSid)
                     callParams.callSid = callSid
                 }
@@ -687,14 +704,37 @@ class TVConnectionService : ConnectionService() {
      * @param connection The connection to apply the parameters to.
      * @param params The parameters to apply to the connection.
      */
-    private fun <T: TVCallConnection> applyParameters(connection: T, params: TVParameters) {
+    private fun <T: TVCallConnection> applyParameters(connection: T, params: TVParameters, outgoingCallerName: String?) {
         params.getExtra(TVParameters.PARAM_SUBJECT, null)?.let {
             connection.extras.putString(TelecomManager.EXTRA_CALL_SUBJECT, it)
         }
         val name = if(connection.callDirection == CallDirection.OUTGOING) params.to else params.from
-        connection.setAddress(Uri.fromParts(PhoneAccount.SCHEME_TEL, name, null), TelecomManager.PRESENTATION_ALLOWED)
-        connection.setCallerDisplayName(name, TelecomManager.PRESENTATION_ALLOWED)
+
+        val userName =  params.customParameters["client_name"]
+        val userNumber = extractUserNumber(name)
+
+        if(connection.callDirection == CallDirection.OUTGOING){
+
+            connection.setAddress(Uri.fromParts(PhoneAccount.SCHEME_TEL, name, null), TelecomManager.PRESENTATION_ALLOWED)
+            connection.setCallerDisplayName(outgoingCallerName, TelecomManager.PRESENTATION_ALLOWED)
+        } else {
+            connection.setAddress(Uri.fromParts(PhoneAccount.SCHEME_TEL, userNumber, null), TelecomManager.PRESENTATION_ALLOWED)
+            connection.setCallerDisplayName(userName, TelecomManager.PRESENTATION_ALLOWED)
+        }
+
     }
+
+    fun extractUserNumber(input: String): String {
+        // Define the regular expression pattern to match the user_number part
+        val pattern = Regex("""user_number:([^\s:]+)""")
+
+        // Search for the first match in the input string
+        val match = pattern.find(input)
+
+        // Extract the matched part (user_number:+11230123)
+        return match?.groups?.get(1)?.value ?: input
+    }
+
 
     private fun sendBroadcastEvent(ctx: Context, event: String, callSid: String?, extras: Bundle? = null) {
         Intent(ctx, TVBroadcastReceiver::class.java).apply {
@@ -717,6 +757,9 @@ class TVConnectionService : ConnectionService() {
     override fun onCreateOutgoingConnectionFailed(connectionManagerPhoneAccount: PhoneAccountHandle?, request: ConnectionRequest?) {
         super.onCreateOutgoingConnectionFailed(connectionManagerPhoneAccount, request)
         Log.d(TAG, "onCreateOutgoingConnectionFailed")
+        println("Call error happened  basil")
+        //clear the active connections
+        activeConnections.clear()
         stopForegroundService()
     }
 
