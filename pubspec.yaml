@@ -56,6 +56,9 @@ flutter:
         fileName: _internal/twilio_voice_web.dart
       macos:
         pluginClass: TwilioVoicePlugin
+      windows:
+        pluginClass: TwilioVoicePluginCApi
+
 
   # To add assets to your plugin package, add an assets section, like this:
   # assets:
