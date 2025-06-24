@@ -1050,6 +1050,11 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             return
         }
         
+        // Send Connecting event before initiating the call
+        let from = self.identity
+        let to = self.callTo
+        self.sendPhoneCallEvents(description: "Connecting|\(from)|\(to)|Outgoing", isError: false)
+        
         let connectOptions: ConnectOptions = ConnectOptions(accessToken: token) { (builder) in
             for (key, value) in self.callArgs {
                 if (key != "From") {
