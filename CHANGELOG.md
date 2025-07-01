@@ -1,4 +1,4 @@
-## Next Release
+## 0.3.2
 
 * Fix: [iOS] Add missing `deviceToken` when reporting 'DEVICETOKEN' `CallEvent`. [Issue #241](https://github.com/cybex-dev/twilio_voice/issues/241)
 * Fix: [iOS] Notifications not showing when app is in foreground.
