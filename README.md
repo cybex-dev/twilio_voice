@@ -790,22 +790,11 @@ the `.runtimeconfig.json` above
 
 ##### Android
 
-To generate Android push credentials, get the Cloud Messaging server key from Firebase FCM, and add
-it to the following:
+Please see this short guide for FCM's HTTP v1 migration. It is well documented and simple to follow. 
 
-```
-twilio api:chat:v2:credentials:create \
---type=fcm \
---friendly-name="voice-push-credential-fcm" \
---secret=SERVER_KEY_VALUE
-```
-and then place into the field: `android_push_credential` above
+https://help.twilio.com/articles/20768292997147-Updating-Twilio-Push-for-FCM-HTTP-v1-API
 
-This generated a push credential SID in the format `CRxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx` which must
-be used to generate access tokens for android devices.
-
-see for more
-info: https://github.com/twilio/voice-quickstart-android#7-create-a-push-credential-using-your-fcm-server-key
+You'll end up with a string `CRxxxxxxxxxxxxxxxxx` code which you'll use with the iOS credentials code in the next step.
 
 ##### iOS
 
