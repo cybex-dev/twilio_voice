@@ -408,6 +408,14 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
 
     func makeCall(to: String)
     {
+        // Check if there's a pending call invite
+        if self.callInvite != nil {
+            self.sendPhoneCallEvents(description: "LOG|Cannot make call - there's a pending incoming call", isError: false)
+            let ferror: FlutterError = FlutterError(code: "CALL_IN_PROGRESS", message: "Cannot make call while there's a pending incoming call", details: nil)
+            _result?(ferror)
+            return
+        }
+        
         // Cancel the previous call before making another one.
         if (self.call != nil) {
             self.userInitiatedDisconnect = true
@@ -580,6 +588,12 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     public func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload, for type: PKPushType) {
         self.sendPhoneCallEvents(description: "LOG|pushRegistry:didReceiveIncomingPushWithPayload:forType:", isError: false)
         
+        // Check if user is already on a call or has a pending call invite
+        if self.call != nil || self.callInvite != nil {
+            self.sendPhoneCallEvents(description: "LOG|Ignoring incoming push - user is already on a call or has pending call invite", isError: false)
+            return
+        }
+        
         if (type == PKPushType.voIP) {
             TwilioVoiceSDK.handleNotification(payload.dictionaryPayload, delegate: self, delegateQueue: nil)
         }
@@ -591,6 +605,14 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
      */
     public func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload, for type: PKPushType, completion: @escaping () -> Void) {
         self.sendPhoneCallEvents(description: "LOG|pushRegistry:didReceiveIncomingPushWithPayload:forType:completion:", isError: false)
+        
+        // Check if user is already on a call or has a pending call invite
+        if self.call != nil || self.callInvite != nil {
+            self.sendPhoneCallEvents(description: "LOG|Ignoring incoming push - user is already on a call or has pending call invite", isError: false)
+            completion()
+            return
+        }
+        
         // Save for later when the notification is properly handled.
 //        self.incomingPushCompletionCallback = completion
         
@@ -636,6 +658,19 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     // MARK: TVONotificaitonDelegate
     public func callInviteReceived(callInvite: CallInvite) {
         self.sendPhoneCallEvents(description: "LOG|callInviteReceived:", isError: false)
+        
+        // Check if user is already on a call or has a pending call invite
+        if self.call != nil {
+            self.sendPhoneCallEvents(description: "LOG|Rejecting incoming call - user is already on an active call", isError: false)
+            callInvite.reject()
+            return
+        }
+        
+        if self.callInvite != nil {
+            self.sendPhoneCallEvents(description: "LOG|Rejecting incoming call - user already has a pending call invite", isError: false)
+            callInvite.reject()
+            return
+        }
         
         /**
          * The TTL of a registration is 1 year. The TTL for registration for this device/identity
