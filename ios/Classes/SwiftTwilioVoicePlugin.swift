@@ -47,6 +47,9 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     var outgoingCallerName = ""
 
     private var activeCalls: [UUID: CXCall] = [:]
+    
+    // Speaker state management
+    private var desiredSpeakerState: Bool = false
 
     static var appName: String {
         get {
@@ -190,7 +193,9 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             guard let eventSink = eventSink else {
                 return
             }
-            eventSink(speakerIsOn ? "Speaker On" : "Speaker Off")
+            // Return the actual state after attempting to set it
+            let actualState = isSpeakerOn()
+            eventSink(actualState ? "Speaker On" : "Speaker Off")
         }
         else if flutterCall.method == "isOnSpeaker"
         {
@@ -780,6 +785,11 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         let to = (call.to ?? self.callTo)
         self.sendPhoneCallEvents(description: "Ringing|\(String(describing: from))|\(to)|\(direction)", isError: false)
         
+        // Try to apply speaker setting early if audio session is ready
+        if audioDevice.isEnabled && desiredSpeakerState {
+            applySpeakerSetting(toSpeaker: desiredSpeakerState)
+        }
+        
         //self.placeCallButton.setTitle("Ringing", for: .normal)
     }
     
@@ -793,7 +803,8 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             callKitCompletionCallback(true)
         }
         
-        toggleAudioRoute(toSpeaker: false)
+        // Apply the desired speaker state now that call is connected
+        applySpeakerSetting(toSpeaker: desiredSpeakerState)
     }
     
     public func call(call: Call, isReconnectingWithError error: Error) {
@@ -853,9 +864,16 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         self.callOutgoing = false
         self.userInitiatedDisconnect = false
         
+        // Reset speaker state when call ends
+        desiredSpeakerState = false
     }
     
     func isSpeakerOn() -> Bool {
+        // If no active call, return the desired state
+        guard self.call != nil else {
+            return desiredSpeakerState
+        }
+        
         // Source: https://stackoverflow.com/a/51759708/4628115
         let currentRoute = AVAudioSession.sharedInstance().currentRoute
         for output in currentRoute.outputs {
@@ -863,7 +881,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                 case AVAudioSession.Port.builtInSpeaker:
                     return true;
                 default:
-                    return false;
+                    continue; // Check other outputs
             }
         }
         return false;
@@ -876,17 +894,33 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
 
     // MARK: AVAudioSession
     func toggleAudioRoute(toSpeaker: Bool) {
+        // Store the desired speaker state
+        desiredSpeakerState = toSpeaker
+        
+        // If no active call, just store the preference
+        guard self.call != nil else {
+            self.sendPhoneCallEvents(description: "LOG|Storing speaker preference: \(toSpeaker) - no active call", isError: false)
+            return
+        }
+        
+        // Apply the speaker setting immediately
+        applySpeakerSetting(toSpeaker: toSpeaker)
+    }
+    
+    private func applySpeakerSetting(toSpeaker: Bool) {
         // The mode set by the Voice SDK is "VoiceChat" so the default audio route is the built-in receiver. Use port override to switch the route.
         audioDevice.block = {
             DefaultAudioDevice.DefaultAVAudioSessionConfigurationBlock()
             do {
                 if (toSpeaker) {
                     try AVAudioSession.sharedInstance().overrideOutputAudioPort(.speaker)
+                    self.sendPhoneCallEvents(description: "LOG|Successfully set audio to speaker", isError: false)
                 } else {
                     try AVAudioSession.sharedInstance().overrideOutputAudioPort(.none)
+                    self.sendPhoneCallEvents(description: "LOG|Successfully set audio to earpiece", isError: false)
                 }
             } catch {
-                self.sendPhoneCallEvents(description: "LOG|\(error.localizedDescription)", isError: false)
+                self.sendPhoneCallEvents(description: "LOG|Failed to set audio route: \(error.localizedDescription)", isError: false)
             }
         }
         audioDevice.block()
@@ -905,6 +939,11 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     public func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
         self.sendPhoneCallEvents(description: "LOG|provider:didActivateAudioSession:", isError: false)
         audioDevice.isEnabled = true
+        
+        // Apply the desired speaker state when audio session is activated
+        if self.call != nil {
+            applySpeakerSetting(toSpeaker: desiredSpeakerState)
+        }
     }
     
     public func provider(_ provider: CXProvider, didDeactivate audioSession: AVAudioSession) {
