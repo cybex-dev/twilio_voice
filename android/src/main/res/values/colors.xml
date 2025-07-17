@@ -13,4 +13,7 @@
     <color name="grayHeaderItem">#F1F2F3</color>
     <color name="colorGrayBlur">#8c939393</color>
 
+    <color name="dialog_background">#FFFFFF</color>
+    <color name="dialog_text_primary">#000000</color>
+    <color name="dialog_text_secondary">#757575</color>
 </resources>

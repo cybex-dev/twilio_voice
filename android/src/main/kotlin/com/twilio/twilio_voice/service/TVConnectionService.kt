@@ -112,6 +112,18 @@ class TVConnectionService : ConnectionService() {
         const val ACTION_ACTIVE_HANDLE: String = "ACTION_ACTIVE_HANDLE"
         //endregion
 
+        /**
+         * Broadcast sent from IncomingCallActivity.onResume() when UI is fully visible.
+         * This is used to notify the service that call is ready to be answered.
+         */
+        const val ACTION_INCOMING_CALL_UI_READY: String = "ACTION_INCOMING_CALL_UI_READY"
+
+        /**
+         * Broadcast sent from TVConnectionService->ACTION_INCOMING_CALL_UI_READY handler
+         * This is used to notify the connection that call is ready to be answered.
+         */
+        const val ACTION_INCOMING_CALL_SERVICE_READY: String = "ACTION_INCOMING_CALL_SERVICE_READY"
+
         //region EXTRA_* Constants
         /**
          * Extra used with [ACTION_SEND_DIGITS] to send digits to the [TVConnection] active call.
@@ -202,16 +214,6 @@ class TVConnectionService : ConnectionService() {
 
         fun getConnection(callSid: String): TVCallConnection? {
             return activeConnections[callSid]
-        }
-    }
-
-
-    private fun stopSelfSafe(): Boolean {
-        if (!hasActiveCalls()) {
-            stopSelf()
-            return true
-        } else {
-            return false
         }
     }
 
@@ -469,6 +471,13 @@ class TVConnectionService : ConnectionService() {
                     sendBroadcastCallHandle(applicationContext, activeCallHandle)
                 }
 
+                ACTION_INCOMING_CALL_UI_READY -> {
+                    startForegroundService()
+                    LocalBroadcastManager.getInstance(this).sendBroadcast(
+                        Intent(TVConnectionService.ACTION_INCOMING_CALL_SERVICE_READY)
+                    )
+                }
+
                 else -> {
                     Log.e(TAG, "onStartCommand: unknown action: ${it.action}")
                 }
@@ -519,7 +528,6 @@ class TVConnectionService : ConnectionService() {
         applyParameters(connection, callParams)
         connection.setRinging()
 
-        startForegroundService()
         return connection
     }
 
@@ -656,19 +664,11 @@ class TVConnectionService : ConnectionService() {
             sendBroadcastCallHandle(applicationContext, extra?.getString(TVBroadcastReceiver.EXTRA_CALL_HANDLE))
         }
         val onDisconnect: CompletionHandler<DisconnectCause> = CompletionHandler {
-            if (activeConnections.containsKey(callSid)) {
-                activeConnections.remove(callSid)
-            }
-            stopForegroundService()
-            stopSelfSafe()
+            stopForegroundService(callSid)
         }
         val onCallState: CompletionHandler<Call.State> = CompletionHandler { state ->
             if (state == Call.State.DISCONNECTED) {
-                if (activeConnections.containsKey(callSid)) {
-                    activeConnections.remove(callSid)
-                }
-                stopForegroundService()
-                stopSelfSafe()
+                stopForegroundService(callSid)
             }
         }
 
@@ -706,7 +706,7 @@ class TVConnectionService : ConnectionService() {
     }
 
     private fun sendBroadcastCallHandle(ctx: Context, callSid: String?) {
-        Log.d(TAG, "sendBroadcastCallHandle: ${if (callSid != null) "On call" else "Not on call"}}")
+        Log.d(TAG, "sendBroadcastCallHandle: ${if (callSid != null) "On call" else "Not on call"}")
         Intent(ctx, TVBroadcastReceiver::class.java).apply {
             action = TVBroadcastReceiver.ACTION_ACTIVE_CALL_CHANGED
             putExtra(EXTRA_CALL_HANDLE, callSid)
@@ -717,13 +717,13 @@ class TVConnectionService : ConnectionService() {
     override fun onCreateOutgoingConnectionFailed(connectionManagerPhoneAccount: PhoneAccountHandle?, request: ConnectionRequest?) {
         super.onCreateOutgoingConnectionFailed(connectionManagerPhoneAccount, request)
         Log.d(TAG, "onCreateOutgoingConnectionFailed")
-        stopForegroundService()
+        stopForegroundService("")
     }
 
     override fun onCreateIncomingConnectionFailed(connectionManagerPhoneAccount: PhoneAccountHandle?, request: ConnectionRequest?) {
         super.onCreateIncomingConnectionFailed(connectionManagerPhoneAccount, request)
         Log.d(TAG, "onCreateIncomingConnectionFailed")
-        stopForegroundService()
+        stopForegroundService("")
     }
 
     private fun getOrCreateChannel(): NotificationChannel {
@@ -751,15 +751,10 @@ class TVConnectionService : ConnectionService() {
         return Notification.Builder(this, channel.id).apply {
             setOngoing(true)
             setContentTitle("Voice Calls")
-            setCategory(Notification.CATEGORY_SERVICE)
+            setCategory(Notification.CATEGORY_CALL)
             setContentIntent(pendingIntent)
             setSmallIcon(R.drawable.ic_microphone)
         }.build()
-    }
-
-    private fun cancelNotification() {
-        val notificationManager: NotificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.cancel(SERVICE_TYPE_MICROPHONE)
     }
 
     /// Source: https://github.com/react-native-webrtc/react-native-callkeep/blob/master/android/src/main/java/io/wazo/callkeep/VoiceConnectionService.java#L295
@@ -767,9 +762,9 @@ class TVConnectionService : ConnectionService() {
         val notification = createNotification()
         Log.d(TAG, "[VoiceConnectionService] Starting foreground service")
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                // Optional for Android +11, required for Android +14
-                startForeground(SERVICE_TYPE_MICROPHONE, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val fgsTypes = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL
+                startForeground(SERVICE_TYPE_MICROPHONE, notification, fgsTypes)
             } else {
                 startForeground(SERVICE_TYPE_MICROPHONE, notification)
             }
@@ -779,13 +774,23 @@ class TVConnectionService : ConnectionService() {
     }
 
     /// Source: https://github.com/react-native-webrtc/react-native-callkeep/blob/master/android/src/main/java/io/wazo/callkeep/VoiceConnectionService.java#L352C5-L377C6
-    private fun stopForegroundService() {
+    private fun stopForegroundService(callSid: String) {
         Log.d(TAG, "[VoiceConnectionService] stopForegroundService")
+
+        sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, callSid)
+        activeConnections.remove(callSid)
+
         try {
             stopForeground(SERVICE_TYPE_MICROPHONE)
-            cancelNotification()
-        } catch (e: java.lang.Exception) {
-            Log.w(TAG, "[VoiceConnectionService] can't stop foreground service :$e")
+        } catch (e: Exception) {
+            Log.w(TAG, "[VoiceConnectionService] can't stop foreground service: $e")
+        }
+
+        val notificationManager: NotificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.cancel(SERVICE_TYPE_MICROPHONE)
+
+        if (!hasActiveCalls()) {
+            stopSelf()
         }
     }
 }
