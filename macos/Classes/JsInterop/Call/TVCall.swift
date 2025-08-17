@@ -216,7 +216,23 @@ public class TVCall: JSObject, TVCallDelegate, JSMessageHandlerDelegate {
         parameters { dictionary, error in
             if let dictionary = dictionary {
                 dictionary.forEach({ (key, value) in
-                    params[key] = value
+
+                    // Custom parameters are coming in as a string of URL-encoded parameters here
+                    guard key == "Params", let paramsString = value as? String else {
+                        params[key] = value
+                        return
+                    }
+                    
+                    // Parse URL-encoded parameters
+                    let pairs = paramsString.components(separatedBy: "&")
+                    for pair in pairs {
+                        let keyValue = pair.components(separatedBy: "=")
+                        guard keyValue.count == 2 else { continue }
+                        
+                        let key = keyValue[0].removingPercentEncoding ?? keyValue[0]
+                        let value = keyValue[1].replacingOccurrences(of: "+", with: " ").removingPercentEncoding ?? keyValue[1]
+                        params[key] = value
+                    }
                 })
             }
 
