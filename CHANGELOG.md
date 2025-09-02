@@ -1,6 +1,7 @@
 ## Next release
 
 * Fix: [iOS] Missed call notifications now show caller name (or full number) on title, and "Missed call" text in body. [Issue #299](https://github.com/cybex-dev/twilio_voice/issues/299)
+* Feat: [iOS] show caller number or interpretted client name for reportingIncomingCall and missed call notification
 * Docs: update CHANGELOG
 
 ## 0.3.2
