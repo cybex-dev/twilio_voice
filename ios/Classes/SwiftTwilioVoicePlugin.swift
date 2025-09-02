@@ -683,6 +683,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             
             let title = userName ?? self.clients["defaultCaller"] ?? self.defaultCaller
             content.title = title
+            content.body = NSLocalizedString("notification_missed_call_body", comment: "")
 
             let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
             let request = UNNotificationRequest(identifier: UUID().uuidString,
