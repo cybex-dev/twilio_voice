@@ -1,4 +1,4 @@
-## Next release
+## 0.3.2+2
 
 * Fix: [iOS] show caller number or interpretted client name for performStartCallAction
 * Docs: update CHANGELOG
