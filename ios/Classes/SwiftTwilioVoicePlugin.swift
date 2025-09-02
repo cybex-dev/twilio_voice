@@ -930,10 +930,18 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             }
 
             self.sendPhoneCallEvents(description: "LOG|StartCallAction transaction request successful", isError: false)
+            
+            var callerName: String?
+            if(handle.contains("client:")) {
+                let clientName = handle.replacingOccurrences(of: "client:", with: "")
+                callerName = self.clients[clientName]
+            } else {
+                callerName = handle;
+            }
 
             let callUpdate = CXCallUpdate()
             callUpdate.remoteHandle = callHandle
-            callUpdate.localizedCallerName = self.clients[handle] ?? self.clients["defaultCaller"] ?? self.defaultCaller
+            callUpdate.localizedCallerName = callerName ?? self.clients["defaultCaller"] ?? self.defaultCaller
             callUpdate.supportsDTMF = false
             callUpdate.supportsHolding = true
             callUpdate.supportsGrouping = false
