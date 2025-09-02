@@ -1,3 +1,8 @@
+## Next release
+
+* Fix: [iOS] Missed call notifications now show caller name (or full number) on title, and "Missed call" text in body. [Issue #299](https://github.com/cybex-dev/twilio_voice/issues/299)
+* Docs: update CHANGELOG
+
 ## 0.3.2
 
 * Fix: [iOS] Add missing `deviceToken` when reporting 'DEVICETOKEN' `CallEvent`. [Issue #241](https://github.com/cybex-dev/twilio_voice/issues/241)
