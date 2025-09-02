@@ -673,14 +673,18 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             let content = UNMutableNotificationContent()
             var userName:String?
             if var from = from{
-                from = from.replacingOccurrences(of: "client:", with: "")
+                if(from.contains("client:")) {
+                    from = from.replacingOccurrences(of: "client:", with: "")
+                    userName = self.clients[from];
+                } else {
+                    userName = from
+                }
                 content.userInfo = ["type":"twilio-missed-call", "From":from]
                 if let to = to{
                     content.userInfo["To"] = to
                 }
-                userName = self.clients[from]
             }
-            
+
             let title = userName ?? self.clients["defaultCaller"] ?? self.defaultCaller
             content.title = title
             content.body = NSLocalizedString("notification_missed_call_body", comment: "")
