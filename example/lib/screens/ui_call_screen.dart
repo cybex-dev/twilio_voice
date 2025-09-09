@@ -135,7 +135,7 @@ class _RingSound extends StatefulWidget {
 }
 
 class _RingSoundState extends State<_RingSound> {
-  final _tv = TwilioVoice.instance;
+  final _tv = TwilioVoicePlatform.instance;
   final TextEditingController _controller = TextEditingController();
 
   @override

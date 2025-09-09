@@ -78,13 +78,13 @@ class _CallStatusState extends State<CallStatus> {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<CallEvent>(
-      stream: TwilioVoice.instance.callEventsListener,
+      stream: TwilioVoicePlatform.instance.callEventsListener,
       builder: (context, snapshot) {
         _addEvent(snapshot.data);
         return FutureBuilder<bool>(
-          future: TwilioVoice.instance.call.isOnCall(),
+          future: TwilioVoicePlatform.instance.call.isOnCall(),
           builder: (context, snapshot) {
-            final activeCall = TwilioVoice.instance.call.activeCall;
+            final activeCall = TwilioVoicePlatform.instance.call.activeCall;
             return Column(
               children: [
                 _buildOnCallStatus(onCall: snapshot.data == true),
@@ -106,7 +106,7 @@ class _CallSID extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<String?>(
-      future: TwilioVoice.instance.call.getSid(),
+      future: TwilioVoicePlatform.instance.call.getSid(),
       builder: (context, snapshot) {
         final sid = snapshot.data ?? "N/A";
         return Text(sid);
