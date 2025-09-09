@@ -319,7 +319,8 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
       return true;
     }
     try {
-      device?.unregister();
+      final promise = device!.unregister();
+      await js_util.promiseToFuture(promise);
       _detachDeviceListeners(device!);
       _clearCalls();
       return true;
@@ -382,10 +383,11 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
       /// create new Twilio device
       device = twilio_js.Device(accessToken, options);
       _call.device = device;
-      _attachDeviceListeners(device!);
+        _attachDeviceListeners(device!);
 
-      // Register device to accept notifications
-      device!.register();
+        // Register device to accept notifications
+        final promise = device!.register();
+        await js_util.promiseToFuture(promise);
       }
 
       return true;
