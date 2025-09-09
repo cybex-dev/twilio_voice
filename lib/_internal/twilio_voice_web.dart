@@ -311,7 +311,12 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   @override
   Future<bool?> unregister({String? accessToken}) async {
     if (device == null) {
-      return false;
+      return true;
+    }
+    final state = getDeviceState(device!);
+    if(state != DeviceState.registered) {
+      printDebug("Device is not registered, cannot unregister");
+      return true;
     }
     try {
       device?.unregister();
