@@ -392,37 +392,37 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   }
 
   /// Attach event listeners to [twilio_js.Device]
-  /// See [twilio_js.Device.on]
+  /// See [twilio_js.Device.addListener](https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#deviceaddlistenereventname-listener)
   void _attachDeviceListeners(twilio_js.Device device) {
     // ignore: unnecessary_null_comparison
     assert(device != null, "Device cannot be null");
-    device.on("registered", js.allowInterop(_onDeviceRegistered));
-    device.on("unregistered", js.allowInterop(_onDeviceUnregistered));
-    device.on("error", js.allowInterop(_onDeviceError));
-    device.on("incoming", js.allowInterop(_onDeviceIncoming));
-    device.on("tokenWillExpire", js.allowInterop(_onTokenWillExpire));
+    device.addListener("registered", js.allowInterop(_onDeviceRegistered));
+    device.addListener("unregistered", js.allowInterop(_onDeviceUnregistered));
+    device.addListener("error", js.allowInterop(_onDeviceError));
+    device.addListener("incoming", js.allowInterop(_onDeviceIncoming));
+    device.addListener("tokenWillExpire", js.allowInterop(_onTokenWillExpire));
   }
 
   /// Detach event listeners to [twilio_js.Device]
-  /// See [twilio_js.Device.off]
+  /// See [twilio_js.Device.removeListener](https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#deviceremovelistenereventname-listener)
   void _detachDeviceListeners(twilio_js.Device device) {
     // ignore: unnecessary_null_comparison
     assert(device != null, "Device cannot be null");
-    device.off("registered", js.allowInterop(_onDeviceRegistered));
-    device.off("unregistered", js.allowInterop(_onDeviceUnregistered));
-    device.off("error", js.allowInterop(_onDeviceError));
-    device.off("incoming", js.allowInterop(_onDeviceIncoming));
-    device.off("tokenWillExpire", js.allowInterop(_onTokenWillExpire));
+    device.removeListener("registered", js.allowInterop(_onDeviceRegistered));
+    device.removeListener("unregistered", js.allowInterop(_onDeviceUnregistered));
+    device.removeListener("error", js.allowInterop(_onDeviceError));
+    device.removeListener("incoming", js.allowInterop(_onDeviceIncoming));
+    device.removeListener("tokenWillExpire", js.allowInterop(_onTokenWillExpire));
   }
 
-  /// On device registered and ready to make/receive calls via [twilio_js.Device.on] and [twilio_js.TwilioDeviceEvents.registered]
+  /// On device registered and ready to make/receive calls via [twilio_js.Device.addListener] and [twilio_js.TwilioDeviceEvents.registered]
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#registered-event
   void _onDeviceRegistered() {
     printDebug("_onDeviceRegistered");
     printDebug("Device registered for callInvites");
   }
 
-  // /// On device registered and ready to make/receive calls via [twilioJs.Device.on] and [twilioJs.TwilioDeviceEvents.registered]
+  // /// On device registered and ready to make/receive calls via [twilioJs.Device.addListener] and [twilioJs.TwilioDeviceEvents.registered]
   // /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#registered-event
   // Function _onDeviceRegistered() {
   //   // final _f = (twilioJs.Device device) {
@@ -434,7 +434,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   //   });
   // }
 
-  /// On device unregistered, access token disabled and won't receive any more call invites [twilio_js.Device.off] and [twilio_js.TwilioDeviceEvents.unregistered]
+  /// On device unregistered, access token disabled and won't receive any more call invites [twilio_js.Device.removeListener] and [twilio_js.TwilioDeviceEvents.unregistered]
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#unregistered-event
   void _onDeviceUnregistered() {
     printDebug("_onDeviceUnregistered");
@@ -442,13 +442,13 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   }
 
   /// On device error
-  /// See [twilio_js.Device.on] and [twilio_js.TwilioDeviceEvents.error]
+  /// See [twilio_js.Device.addListener] and [twilio_js.TwilioDeviceEvents.error]
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#error-event
   void _onDeviceError(twilio_js.TwilioError twilioError, twilio_js.Call? call) {
     logLocalEvent(twilioError.message);
   }
 
-  /// On incoming call received via [twilio_js.Device.on] and [twilio_js.TwilioDeviceEvents.incoming]
+  /// On incoming call received via [twilio_js.Device.addListener] and [twilio_js.TwilioDeviceEvents.incoming]
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#incoming-event
   void _onDeviceIncoming(twilio_js.Call call) {
     requestMicAccess();
@@ -507,7 +507,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
     );
   }
 
-  /// On device token about to expire (default is 10s prior to expiry), via [twilio_js.Device.on] and [twilio_js.TwilioDeviceEvents.tokenWillExpire]
+  /// On device token about to expire (default is 10s prior to expiry), via [twilio_js.Device.addListener] and [twilio_js.TwilioDeviceEvents.tokenWillExpire]
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#tokenwillexpire-event
   void _onTokenWillExpire(twilio_js.Device device) {
     logLocalEventEntries(["DEVICETOKEN", device.token], prefix: "");
@@ -831,23 +831,23 @@ class Call extends MethodChannelTwilioCall {
   }
 
   /// Attach event listeners to the active call
-  /// See [twilio_js.Call.on]
+  /// See [twilio_js.Call.addListener]
   void _attachCallEventListeners(twilio_js.Call call) {
     // ignore: unnecessary_null_comparison
     assert(call != null, "Call cannot be null");
-    call.on("ringing", js.allowInterop(_onCallRinging));
-    call.on("accept", js.allowInterop(_onCallAccept));
-    call.on("disconnect", js.allowInterop(_onCallDisconnect));
-    call.on("cancel", js.allowInterop(_onCallCancel));
-    call.on("reject", js.allowInterop(_onCallReject));
-    call.on("error", js.allowInterop(_onCallError));
-    call.on("reconnecting", js.allowInterop(_onCallReconnecting));
-    call.on("reconnected", js.allowInterop(_onCallReconnected));
-    call.on("log", js.allowInterop(_onLogEvent));
+    call.addListener("ringing", js.allowInterop(_onCallRinging));
+    call.addListener("accept", js.allowInterop(_onCallAccept));
+    call.addListener("disconnect", js.allowInterop(_onCallDisconnect));
+    call.addListener("cancel", js.allowInterop(_onCallCancel));
+    call.addListener("reject", js.allowInterop(_onCallReject));
+    call.addListener("error", js.allowInterop(_onCallError));
+    call.addListener("reconnecting", js.allowInterop(_onCallReconnecting));
+    call.addListener("reconnected", js.allowInterop(_onCallReconnected));
+    call.addListener("log", js.allowInterop(_onLogEvent));
   }
 
   /// Detach event listeners to the active call
-  /// See [twilio_js.Call.off]
+  /// See [twilio_js.Call.removeListener]
   /// 'off' event listener isn't implemented in twilio-voice.js
   void _detachCallEventListeners(twilio_js.Call call) {
     // ignore: unnecessary_null_comparison

@@ -90,18 +90,6 @@ class Call extends Twilio {
   @JS("isMuted")
   external bool isMuted();
 
-  /// Attach event listener for Twilio Call object. See [TwilioCallEvents]
-  /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#events
-  /// possibly use js interop here
-  @JS("on")
-  external void on(String event, Function callback);
-
-  /// Deattach event listener for Twilio Call object. See [TwilioCallEvents]
-  /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#events
-  /// possibly use js interop here
-  @JS("off")
-  external void off(String event, Function callback);
-
   /// Send digits to active Twilio Call
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#callsenddigitsdigits
   @JS("sendDigits")

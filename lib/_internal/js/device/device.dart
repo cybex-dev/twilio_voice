@@ -69,14 +69,14 @@ class Device extends Twilio {
   /// Attach event listener for Twilio Device object. See [TwilioDeviceEvents]
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#events
   /// possibly use js interop here
-  @JS("on")
-  external void on(String event, Function callback);
+  @JS("addListener")
+  external void addListener(String event, Function callback);
 
   /// Detach event listener for Twilio Device object. See [TwilioDeviceEvents]
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#events
   /// possibly use js interop here
-  @JS("off")
-  external void off(String event, Function callback);
+  @JS("removeListener")
+  external void removeListener(String event, Function callback);
 
   /// Update device options
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#deviceupdateoptionsoptions
