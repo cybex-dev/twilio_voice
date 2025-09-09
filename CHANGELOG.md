@@ -6,6 +6,7 @@
 * Feat: [Web] Check unnecessary updating device with the same token. 
 * Feat: [Web] Update internal [CallStatus] mapping method.
 * Fix: [Web] Await Twilio Device `register()` and `unregister()` method calls.
+* Fix: [Web] Prevent duplicate `TwilioVoiceWeb` instances.
 * Feat: update example.
 * Docs: update CHANGELOG
 

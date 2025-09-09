@@ -84,7 +84,7 @@ class Logger {
 
 /// The web implementation of [TwilioVoicePlatform].
 class TwilioVoiceWeb extends MethodChannelTwilioVoice {
-
+  
   static const _codecs = ["opus", "pcmu"];
   static const _closeProtection = true;
   final Map<String, String> _soundMap = {};
@@ -171,8 +171,10 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   @override
   Call get call => _call;
 
+  static final TwilioVoicePlatform _instance = TwilioVoiceWeb();
+
   static void registerWith(Registrar registrar) {
-    TwilioVoicePlatform.instance = TwilioVoiceWeb();
+    TwilioVoicePlatform.instance = _instance;
   }
 
   Stream<CallEvent>? _callEventsListener;
@@ -373,16 +375,16 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
         device!.updateToken(accessToken);
       } else {
         /// opus set as primary code
-      /// https://www.twilio.com/blog/client-javascript-sdk-1-7-ga
-      List<String> codecs = ["opus", "pcmu"];
-      twilio_js.DeviceOptions options = twilio_js.DeviceOptions(
-        codecPreferences: codecs,
-        closeProtection: true,
-      );
+        /// https://www.twilio.com/blog/client-javascript-sdk-1-7-ga
+        List<String> codecs = ["opus", "pcmu"];
+        twilio_js.DeviceOptions options = twilio_js.DeviceOptions(
+          codecPreferences: codecs,
+          closeProtection: true,
+        );
 
-      /// create new Twilio device
-      device = twilio_js.Device(accessToken, options);
-      _call.device = device;
+        /// create new Twilio device
+        device = twilio_js.Device(accessToken, options);
+        _call.device = device;
         _attachDeviceListeners(device!);
 
         // Register device to accept notifications
