@@ -38,7 +38,9 @@ jobs:
         run: flutter config --enable-web
 
       - name: Create web build with release mode
-        run: cd ./example; flutter build web --release --target=lib/main.dart --output=build/web
+        run: |
+          cd ./example
+          flutter build web --release --target=lib/main.dart --output=build/web          
 
       - name: Archive Production Artifact
         uses: actions/upload-artifact@v4
@@ -56,6 +58,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: web-build
+          path: ./example/build/web
 
       - name: Firebase Deploy
         uses: FirebaseExtended/action-hosting-deploy@v0
