@@ -1,6 +1,8 @@
 ## Next Release
 
 * Feat: [Web] Add Twilio Device [DeviceState] accessor protecting un/registration.
+* Feat: [Web] Add Twilio Device `updateToken(String)` function to allow updating of active device tokens.
+* Feat: update example.
 * Docs: update CHANGELOG
 
 ## 0.3.2+2
