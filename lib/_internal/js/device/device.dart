@@ -85,8 +85,8 @@ class Device extends Twilio {
 
   /// Get current call status, see [DeviceState]
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#devicestate
-  @JS("status")
-  external String state();
+  @JS("state")
+  external String get state;
 
   /// Update the device's access token.
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#deviceupdatetokentoken

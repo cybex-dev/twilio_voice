@@ -564,8 +564,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   }
 
   DeviceState getDeviceState(twilio_js.Device device) {
-    final status = device.state();
-    return parseDeviceState(status);
+    return parseDeviceState(device.state);
   }
 }
 
