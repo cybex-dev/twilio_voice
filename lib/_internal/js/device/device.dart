@@ -82,6 +82,11 @@ class Device extends Twilio {
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#deviceupdateoptionsoptions
   @JS("updateOptions")
   external void updateOptions(DeviceOptions options);
+
+  /// Get current call status, see [DeviceState]
+  /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#devicestate
+  @JS("status")
+  external String state();
 }
 
 /// Device options
