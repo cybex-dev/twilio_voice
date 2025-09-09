@@ -153,7 +153,7 @@ class _AppState extends State<App> {
       androidToken = await FirebaseMessaging.instance.getToken();
       printDebug("androidToken is ${androidToken!}");
     }
-    final result = await TwilioVoice.instance.setTokens(accessToken: accessToken, deviceToken: androidToken);
+    final result = await TwilioVoicePlatform.instance.setTokens(accessToken: accessToken, deviceToken: androidToken);
     return result ?? false;
   }
 
@@ -263,7 +263,7 @@ class _AppState extends State<App> {
   void initState() {
     super.initState();
 
-    TwilioVoice.instance.setOnDeviceTokenChanged((token) {
+    TwilioVoicePlatform.instance.setOnDeviceTokenChanged((token) {
       printDebug("voip-device token changed");
       if (!kIsWeb) {
         register();
@@ -274,29 +274,29 @@ class _AppState extends State<App> {
     register();
 
     const partnerId = "alicesId";
-    TwilioVoice.instance.registerClient(partnerId, "Alice");
-    // TwilioVoice.instance.requestReadPhoneStatePermission();
-    // TwilioVoice.instance.requestMicAccess();
-    // TwilioVoice.instance.requestCallPhonePermission();
+    TwilioVoicePlatform.instance.registerClient(partnerId, "Alice");
+    // TwilioVoicePlatform.instance.requestReadPhoneStatePermission();
+    // TwilioVoicePlatform.instance.requestMicAccess();
+    // TwilioVoicePlatform.instance.requestCallPhonePermission();
   }
 
   /// Listen for call events
   void listenForEvents() {
-    TwilioVoice.instance.callEventsListener.listen((event) {
+    TwilioVoicePlatform.instance.callEventsListener.listen((event) {
       printDebug("voip-onCallStateChanged $event");
 
       switch (event) {
         case CallEvent.incoming:
         // applies to web only
           if (kIsWeb || Platform.isAndroid) {
-            final activeCall = TwilioVoice.instance.call.activeCall;
+            final activeCall = TwilioVoicePlatform.instance.call.activeCall;
             if (activeCall != null && activeCall.callDirection == CallDirection.incoming) {
               _showWebIncomingCallDialog();
             }
           }
           break;
         case CallEvent.ringing:
-          final activeCall = TwilioVoice.instance.call.activeCall;
+          final activeCall = TwilioVoicePlatform.instance.call.activeCall;
           if (activeCall != null) {
             final customData = activeCall.customParams;
             if (customData != null) {
@@ -324,13 +324,13 @@ class _AppState extends State<App> {
 
   /// Place a call to [clientIdentifier]
   Future<void> _onPerformCall(String clientIdentifier) async {
-    if (!await (TwilioVoice.instance.hasMicAccess())) {
+    if (!await (TwilioVoicePlatform.instance.hasMicAccess())) {
       printDebug("request mic access");
-      TwilioVoice.instance.requestMicAccess();
+      TwilioVoicePlatform.instance.requestMicAccess();
       return;
     }
     printDebug("starting call to $clientIdentifier");
-    TwilioVoice.instance.call.place(to: clientIdentifier, from: userId, extraOptions: {"_TWI_SUBJECT": "Company Name"});
+    TwilioVoicePlatform.instance.call.place(to: clientIdentifier, from: userId, extraOptions: {"_TWI_SUBJECT": "Company Name"});
   }
 
   Future<void> _onRegisterWithToken(String token, [String? identity]) async {
@@ -402,14 +402,14 @@ class _AppState extends State<App> {
   /// Show incoming call dialog for web and Android
   void _showWebIncomingCallDialog() async {
     showingIncomingCallDialog = true;
-    final activeCall = TwilioVoice.instance.call.activeCall!;
+    final activeCall = TwilioVoicePlatform.instance.call.activeCall!;
     final action = await showIncomingCallScreen(context, activeCall);
     if (action == true) {
       printDebug("accepting call");
-      TwilioVoice.instance.call.answer();
+      TwilioVoicePlatform.instance.call.answer();
     } else if (action == false) {
       printDebug("rejecting call");
-      TwilioVoice.instance.call.hangUp();
+      TwilioVoicePlatform.instance.call.hangUp();
     } else {
       printDebug("no action");
     }
@@ -458,7 +458,7 @@ class _LogoutAction extends StatelessWidget {
   Widget build(BuildContext context) {
     return TextButton.icon(
         onPressed: () async {
-          final result = await TwilioVoice.instance.unregister();
+          final result = await TwilioVoicePlatform.instance.unregister();
           if (result == true) {
             onSuccess?.call();
           } else {
@@ -471,7 +471,7 @@ class _LogoutAction extends StatelessWidget {
 }
 
 class _UpdateTokenAction extends StatelessWidget {
-  const _UpdateTokenAction({super.key});
+  const _UpdateTokenAction({Key? key}): super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -485,8 +485,9 @@ class _UpdateTokenAction extends StatelessWidget {
         if (token?.isEmpty ?? true) {
           return;
         }
-        final result = await TwilioVoice.instance.setTokens(accessToken: token!);
+        final result = await TwilioVoicePlatform.instance.setTokens(accessToken: token!);
         final message = (result ?? false) ? "Successfully updated token" : "Failed to update token";
+        // ignore: use_build_context_synchronously
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(message)),
         );

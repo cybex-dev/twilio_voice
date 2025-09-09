@@ -23,7 +23,6 @@ import 'package:twilio_voice/_internal/js/call/call_status.dart';
 // TODO(cybex-dev) implement js_interop for js_util package
 // ignore: unused_import,deprecated_member_use
 import 'package:js/js_util.dart';
-import 'package:twilio_voice/_internal/platform_interface/twilio_voice_platform_interface.dart';
 import 'package:web_callkit/web_callkit_web.dart';
 
 import '../twilio_voice.dart';

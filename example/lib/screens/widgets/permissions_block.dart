@@ -19,7 +19,7 @@ class PermissionsBlock extends StatefulWidget {
 class _PermissionsBlockState extends State<PermissionsBlock> with WidgetsBindingObserver {
   AppLifecycleState? _lastLifecycleState;
 
-  final _tv = TwilioVoice.instance;
+  final _tv = TwilioVoicePlatform.instance;
   bool activeCall = false;
 
   //#region #region Permissions

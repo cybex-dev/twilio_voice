@@ -53,7 +53,7 @@ class _CallControlsState extends State<CallControls> {
 
   //#endregion
 
-  final _tv = TwilioVoice.instance;
+  final _tv = TwilioVoicePlatform.instance;
   bool activeCall = false;
 
   @override
