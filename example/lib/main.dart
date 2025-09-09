@@ -471,7 +471,7 @@ class _LogoutAction extends StatelessWidget {
 }
 
 class _UpdateTokenAction extends StatelessWidget {
-  const _UpdateTokenAction({super.key});
+  const _UpdateTokenAction({Key? key}): super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -487,6 +487,7 @@ class _UpdateTokenAction extends StatelessWidget {
         }
         final result = await TwilioVoicePlatform.instance.setTokens(accessToken: token!);
         final message = (result ?? false) ? "Successfully updated token" : "Failed to update token";
+        // ignore: use_build_context_synchronously
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(message)),
         );
