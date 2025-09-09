@@ -1,7 +1,6 @@
 # twilio_voice
 
-Provides an interface to Twilio's Programmable Voice SDK to allow voice-over-IP (VoIP) calling into
-your Flutter applications.
+Provides an interface to Twilio's Programmable Voice SDK to allow voice-over-IP (VoIP) calling into your Flutter applications.
 ~~This plugin was taken from the original `flutter_twilio_voice` as it seems that plugin is no longer maintained, this one is.~~  Project ownership & maintenance handed over by [diegogarcia](https://github.com/diegogarciar). For the foreseeable future, I'll be actively maintaining this project.
 
 #### 🐞Bug? Issue? Something odd?
@@ -121,13 +120,13 @@ notifications:
 To register a Phone Account, request access to `READ_PHONE_NUMBERS` permission first:
 
 ```dart
-TwilioVoice.instance.requestReadPhoneNumbersPermission();  // Gives Android permissions to read Phone Accounts
+TwilioVoicePlatform.instance.requestReadPhoneNumbersPermission();  // Gives Android permissions to read Phone Accounts
 ```
 
 then, register the `PhoneAccount` with:
 
 ```dart
-TwilioVoice.instance.registerPhoneAccount();
+TwilioVoicePlatform.instance.registerPhoneAccount();
 ```
 
 #### Enable calling account
@@ -135,13 +134,13 @@ TwilioVoice.instance.registerPhoneAccount();
 To open the `Call Account` settings, use the following code:
 
 ```dart
-TwilioVoice.instance.openPhoneAccountSettings();
+TwilioVoicePlatform.instance.openPhoneAccountSettings();
 ```
 
 Check if it's enabled with:
 
 ```dart
-TwilioVoice.instance.isPhoneAccountEnabled();
+TwilioVoicePlatform.instance.isPhoneAccountEnabled();
 ```
 
 #### Calling with ConnectionService
@@ -151,7 +150,7 @@ Placing a call with Telecom app via Connection Service requires a `PhoneAccount`
 Finally, to grant access to place calls, run:
 
 ```dart
-TwilioVoice.instance.requestCallPhonePermission();  // Gives Android permissions to place calls
+TwilioVoicePlatform.instance.requestCallPhonePermission();  // Gives Android permissions to place calls
 ```
 
 See [Customizing the Calling Account](#customizing-the-calling-account) for more information.
@@ -161,7 +160,7 @@ See [Customizing the Calling Account](#customizing-the-calling-account) for more
 To enable the `ConnectionService` and make/receive calls, run:
 
 ```dart
-TwilioVoice.instance.requestReadPhoneStatePermission();  // Gives Android permissions to read Phone State
+TwilioVoicePlatform.instance.requestReadPhoneStatePermission();  // Gives Android permissions to read Phone State
 ```
 
 Highly recommended to review the notes for **Android**. See [[Notes]](https://github.com/cybex-dev/twilio_voice/blob/master/NOTES.md#android) for more information.
@@ -272,7 +271,7 @@ import 'package:web_callkit/web_callkit.dart';
 
 // Get call sid used as unique identifier
 void _notifyMissedCall() async {
-  final callSid = await TwilioVoice.instance.call.getSid();
+  final callSid = await TwilioVoicePlatform.instance.call.getSid();
   WebCallkit.instance.reportCallDisconnected(callSid!, response: CKDisconnectResponse.missed);
 }
 ```
@@ -308,25 +307,25 @@ for more information on preparing for publishing your macOS app
 
 ### Usage
 
-The plugin was separated into two classes, the `TwilioVoice.instance`
-and `TwilioVoice.instance.call`, the first one is in charge of general configuration and the second
+The plugin was separated into two classes, the `TwilioVoicePlatform.instance`
+and `TwilioVoicePlatform.instance.call`, the first one is in charge of general configuration and the second
 one is in charge of managing calls.
 
 Register iOS capabilities
 
 - Add Audio and Voice over IP in background modes
 
-### TwilioVoice.instance
+### TwilioVoicePlatform.instance
 
 #### Setting the tokens
 
-call `TwilioVoice.instance.setTokens` as soon as your app starts.
+call `TwilioVoicePlatform.instance.setTokens` as soon as your app starts.
 
 - `accessToken` provided from your server, you can see an example cloud
   function [here](https://github.com/cybex-dev/twilio_voice/blob/master/functions.js).
 - `deviceToken` is automatically handled on iOS, for android you need to pass a FCM token.
 
-call `TwilioVoice.instance.unregister` to unregister from Twilio, if no access token is passed, it
+call `TwilioVoicePlatform.instance.unregister` to unregister from Twilio, if no access token is passed, it
 will use the token provided in `setTokens` at the same session.
 
 ### Call Identifier
@@ -339,13 +338,13 @@ register them so when they call, the call UI can display their names and not the
 #### Registering a client
 
 ```
-TwilioVoice.instance.registerClient(String clientId, String clientName)
+TwilioVoicePlatform.instance.registerClient(String clientId, String clientName)
 ```
 
 #### Unregistering a client
 
 ```
-TwilioVoice.instance.unregisterClient(String clientId)
+TwilioVoicePlatform.instance.unregisterClient(String clientId)
 ```
 
 #### Default caller
@@ -354,12 +353,12 @@ You can also set a default caller, such as "unknown number" or "chat friend" in 
 from an unregistered client.
 
 ```
-TwilioVoice.instance.setDefaultCallerName(String callerName)
+TwilioVoicePlatform.instance.setDefaultCallerName(String callerName)
 ```
 
 ### Call Events
 
-use stream `TwilioVoice.instance.callEventsListener` to receive events from the TwilioSDK such as
+use stream `TwilioVoicePlatform.instance.callEventsListener` to receive events from the TwilioSDK such as
 call events and logs, it is a broadcast so you can listen to it on different parts of your app. Some
 events might be missed when the app has not launched, please check out the example project to find
 the workarounds.
@@ -449,7 +448,7 @@ to `false`.
 use `extraOptions` to pass additional variables to your server callback function.
 
 ```
- await TwilioVoice.instance.call.place(from:myId, to: clientId, extraOptions);
+ await TwilioVoicePlatform.instance.call.place(from:myId, to: clientId, extraOptions);
 
 ```
 
@@ -484,28 +483,28 @@ Receives calls via [ConnectionService](https://developer.android.com/reference/a
 #### Mute a Call
 
 ```
- TwilioVoice.instance.call.toggleMute(isMuted: true);
+ TwilioVoicePlatform.instance.call.toggleMute(isMuted: true);
 
 ```
 
 #### Toggle Speaker
 
 ```
- TwilioVoice.instance.call.toggleSpeaker(speakerIsOn: true);
+ TwilioVoicePlatform.instance.call.toggleSpeaker(speakerIsOn: true);
 
 ```
 
 #### Hang Up
 
 ```
- TwilioVoice.instance.call.hangUp();
+ TwilioVoicePlatform.instance.call.hangUp();
 
 ```
 
 #### Send Digits
 
 ```
- TwilioVoice.instance.call.sendDigits(String digits);
+ TwilioVoicePlatform.instance.call.sendDigits(String digits);
 
 ```
 
@@ -516,16 +515,16 @@ Receives calls via [ConnectionService](https://developer.android.com/reference/a
 To receive and place calls you need Microphone permissions, register the microphone permission in
 your info.plist for iOS.
 
-You can use `TwilioVoice.instance.hasMicAccess` and `TwilioVoice.instance.requestMicAccess` to check
+You can use `TwilioVoicePlatform.instance.hasMicAccess` and `TwilioVoicePlatform.instance.requestMicAccess` to check
 and request the permission. Permissions is also automatically requested when receiving a call.
 
 #### Background calls (Android only on some devices)
 
 ~~Xiaomi devices, and maybe others, need a special permission to receive background calls.
-use `TwilioVoice.instance.requiresBackgroundPermissions` to check if your device requires a special
+use `TwilioVoicePlatform.instance.requiresBackgroundPermissions` to check if your device requires a special
 permission, if it does, show a rationale explaining the user why you need the permission. Finally
 call
-`TwilioVoice.instance.requestBackgroundPermissions` which will take the user to the App Settings
+`TwilioVoicePlatform.instance.requestBackgroundPermissions` which will take the user to the App Settings
 page to enable the permission.~~
 
 Deprecated in 0.10.0, as it is no longer needed. Custom UI has been replaced with native UI.
@@ -535,20 +534,20 @@ Deprecated in 0.10.0, as it is no longer needed. Custom UI has been replaced wit
 Similar to CallKit on iOS, Android implements their own via a [ConnectionService](https://developer.android.com/reference/android/telecom/ConnectionService) integration. To make use of this, you'll need to request `CALL_PHONE` permissions via:
 
 ```dart
-TwilioVoice.instance.requestCallPhonePermission();  // Gives Android permissions to place outgoing calls
-TwilioVoice.instance.requestReadPhoneStatePermission();  // Gives Android permissions to read Phone State including receiving calls
-TwilioVoice.instance.requestReadPhoneNumbersPermission();  // Gives Android permissions to read Phone Accounts
-TwilioVoice.instance.requestManageOwnCallsPermission();  // Gives Android permissions to manage calls, this isn't necessary to request as the permission is simply required in the Manifest, but added nontheless.
+TwilioVoicePlatform.instance.requestCallPhonePermission();  // Gives Android permissions to place outgoing calls
+TwilioVoicePlatform.instance.requestReadPhoneStatePermission();  // Gives Android permissions to read Phone State including receiving calls
+TwilioVoicePlatform.instance.requestReadPhoneNumbersPermission();  // Gives Android permissions to read Phone Accounts
+TwilioVoicePlatform.instance.requestManageOwnCallsPermission();  // Gives Android permissions to manage calls, this isn't necessary to request as the permission is simply required in the Manifest, but added nontheless.
 ```
 
 Following this, to register a Phone Account (required by all applications implementing a system-managed `ConnectionService`, run:
 
 ```dart
-TwilioVoice.instance.registerPhoneAccount();  // Registers the Phone Account
-TwilioVoice.instance.openPhoneAccountSettings();  // Opens the Phone Account settings
+TwilioVoicePlatform.instance.registerPhoneAccount();  // Registers the Phone Account
+TwilioVoicePlatform.instance.openPhoneAccountSettings();  // Opens the Phone Account settings
 
 // After the account is enabled, you can check if it's enabled with:
-TwilioVoice.instance.isPhoneAccountEnabled();  // Checks if the Phone Account is enabled
+TwilioVoicePlatform.instance.isPhoneAccountEnabled();  // Checks if the Phone Account is enabled
 ```
 
 This last step can be considered the 'final check' to make/receive calls on Android.
@@ -558,8 +557,8 @@ This last step can be considered the 'final check' to make/receive calls on Andr
 Finally, a consideration for not all (`CALL_PHONE`) permissions granted on an Android device. The following feature is available on Android only:
 
 ```dart
-TwilioVoice.instance.rejectCallOnNoPermissions({Bool = false}); // Rejects incoming calls if permissions are not granted
-TwilioVoice.instance.isRejectingCallOnNoPermissions(); // Checks if the plugin is rejecting calls if permissions are not granted
+TwilioVoicePlatform.instance.rejectCallOnNoPermissions({Bool = false}); // Rejects incoming calls if permissions are not granted
+TwilioVoicePlatform.instance.isRejectingCallOnNoPermissions(); // Checks if the plugin is rejecting calls if permissions are not granted
 ```
 
 If the `CALL_PHONE` permissions group i.e. `READ_PHONE_STATE`, `READ_PHONE_NUMBERS`, `CALL_PHONE` aren't granted nor a Phone Account is registered and enabled, the plugin will either reject the incoming call (true) or not show the incoming call UI (false).
