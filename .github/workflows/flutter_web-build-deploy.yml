@@ -15,14 +15,14 @@ env:
   FLUTTER_VERSION: 3.27.4
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    needs: build
 
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Setup Flutter build environment
+      - name: Install Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
@@ -30,15 +30,32 @@ jobs:
           cache: true
 
       - run: flutter --version
-      - run: flutter pub get
-      - run: flutter config --enable-web
-      - run: cd ./example; flutter build web --release --target=lib/main.dart --output=build/web
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Enable web support
+        run: flutter config --enable-web
+
+      - name: Create web build with release mode
+        run: cd ./example; flutter build web --release --target=lib/main.dart
 
       - name: Archive Production Artifact
-        uses: actions/upload-artifact@master
+        uses: actions/upload-artifact@v4
         with:
           name: web-build
           path: example/build/web
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+#      - uses: actions/checkout@v4
+
+      - name: Download Production Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-build
 
       - name: Firebase Deploy
         uses: FirebaseExtended/action-hosting-deploy@v0
