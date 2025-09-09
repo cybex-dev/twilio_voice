@@ -31,28 +31,9 @@ enum CallStatus {
 }
 
 CallStatus parseCallStatus(String status) {
-  switch (status) {
-    case "closed":
-      return CallStatus.closed;
-    case "connecting":
-      return CallStatus.connecting;
-    case "open":
-      return CallStatus.open;
-    case "connected":
-      return CallStatus.connected;
-    case "reconnecting":
-      return CallStatus.reconnecting;
-    case "reconnected":
-      return CallStatus.reconnected;
-    case "ringing":
-      return CallStatus.ringing;
-    case "pending":
-      return CallStatus.pending;
-    case "rejected":
-      return CallStatus.rejected;
-    case "answer":
-      return CallStatus.answer;
-    default:
-      return CallStatus.closed;
-  }
+  final lower = status.toLowerCase();
+  return CallStatus.values.firstWhere(
+    (e) => e.name.toLowerCase() == lower,
+    orElse: () => CallStatus.closed,
+  );
 }
