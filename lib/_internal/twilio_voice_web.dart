@@ -365,9 +365,13 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
     try {
       final shouldUpdate = device != null && getDeviceState(device!) == DeviceState.registered;
       if (shouldUpdate) {
+        if(device?.token == accessToken) {
+          printDebug("Device token is the same, no need to update");
+          return true;
+        }
         device!.updateToken(accessToken);
       } else {
-      /// opus set as primary code
+        /// opus set as primary code
       /// https://www.twilio.com/blog/client-javascript-sdk-1-7-ga
       List<String> codecs = ["opus", "pcmu"];
       twilio_js.DeviceOptions options = twilio_js.DeviceOptions(

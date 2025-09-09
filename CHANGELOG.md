@@ -3,6 +3,7 @@
 * Feat: [Web] Add Twilio Device [DeviceState] accessor protecting un/registration.
 * Feat: [Web] Add Twilio Device `updateToken(String)` function to allow updating of active device tokens.
 * Fix: [Web] Twilio Device does not unregister on `unregister()` method call due to 'device.off' not visible in js object causing device event listeners to remain attached on unregistered device.
+* Feat: [Web] Check unnecessary updating device with the same token. 
 * Feat: update example.
 * Docs: update CHANGELOG
 
