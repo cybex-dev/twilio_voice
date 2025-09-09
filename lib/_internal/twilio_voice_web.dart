@@ -29,6 +29,7 @@ import 'package:web_callkit/web_callkit_web.dart';
 import '../twilio_voice.dart';
 import './js/js.dart' as twilio_js;
 import 'js/core/enums/device_sound_name.dart';
+import 'js/device/device_status.dart';
 import 'js/utils/js_object_utils.dart';
 import 'local_storage_web/local_storage_web.dart';
 import 'method_channel/twilio_call_method_channel.dart';
@@ -550,6 +551,11 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
       closeProtection: _closeProtection,
       sounds: js_util.jsify(_soundMap),
     );
+  }
+
+  DeviceState getDeviceState(twilio_js.Device device) {
+    final status = device.state();
+    return parseDeviceState(status);
   }
 }
 
