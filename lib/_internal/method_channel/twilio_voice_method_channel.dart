@@ -12,8 +12,6 @@ import 'twilio_call_method_channel.dart';
 
 /// Implementation of [TwilioVoicePlatform] that uses method channels.
 class MethodChannelTwilioVoice extends TwilioVoicePlatform {
-  static TwilioVoicePlatform get instance => TwilioVoicePlatform.instance;
-
   late final TwilioCallPlatform _call = MethodChannelTwilioCall();
 
   @override
