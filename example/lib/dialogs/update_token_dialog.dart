@@ -7,7 +7,7 @@ class UpdateTokenDialogContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final textController = TextEditingController();
     return AlertDialog(
-      title: Text('Paste your new token'),
+      title: const Text('Paste your new token'),
       content: SingleChildScrollView(
         child: ListBody(
           children: <Widget>[
