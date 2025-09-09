@@ -363,6 +363,10 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
     //   }
     // }
     try {
+      final shouldUpdate = device != null && getDeviceState(device!) == DeviceState.registered;
+      if (shouldUpdate) {
+        device!.updateToken(accessToken);
+      } else {
       /// opus set as primary code
       /// https://www.twilio.com/blog/client-javascript-sdk-1-7-ga
       List<String> codecs = ["opus", "pcmu"];
@@ -378,6 +382,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
 
       // Register device to accept notifications
       device!.register();
+      }
 
       return true;
     } catch (e) {
