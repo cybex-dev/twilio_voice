@@ -8,6 +8,7 @@ import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:twilio_voice/twilio_voice.dart';
+import 'package:twilio_voice_example/dialogs/update_token_dialog.dart';
 import 'package:twilio_voice_example/screens/ui_call_screen.dart';
 import 'package:twilio_voice_example/screens/ui_registration_screen.dart';
 
@@ -103,25 +104,25 @@ class _AppState extends State<App> {
 
     // Use for locally provided token generator e.g. Twilio's quickstarter project: https://github.com/twilio/voice-quickstart-server-node
     // if (!kIsWeb) {
-      bool success = false;
-      // if not web, we use the requested registration method
-      switch (widget.registrationMethod) {
-        case RegistrationMethod.env:
-          success = await _registerFromEnvironment();
-          break;
-        case RegistrationMethod.url:
-          success = await _registerUrl();
-          break;
-        case RegistrationMethod.firebase:
-          success = await _registerFirebase();
-          break;
-      }
+    bool success = false;
+    // if not web, we use the requested registration method
+    switch (widget.registrationMethod) {
+      case RegistrationMethod.env:
+        success = await _registerFromEnvironment();
+        break;
+      case RegistrationMethod.url:
+        success = await _registerUrl();
+        break;
+      case RegistrationMethod.firebase:
+        success = await _registerFirebase();
+        break;
+    }
 
-      if (success) {
-        setState(() {
-          twilioInit = true;
-        });
-      }
+    if (success) {
+      setState(() {
+        twilioInit = true;
+      });
+    }
     // } else {
     //   // for web, we always show the initialisation screen unless we specified an
     //   if (widget.registrationMethod == RegistrationMethod.env) {
@@ -286,7 +287,7 @@ class _AppState extends State<App> {
 
       switch (event) {
         case CallEvent.incoming:
-          // applies to web only
+        // applies to web only
           if (kIsWeb || Platform.isAndroid) {
             final activeCall = TwilioVoice.instance.call.activeCall;
             if (activeCall != null && activeCall.callDirection == CallDirection.incoming) {
@@ -338,7 +339,8 @@ class _AppState extends State<App> {
         showDialog(
           // ignore: use_build_context_synchronously
           context: context,
-          builder: (context) => const AlertDialog(
+          builder: (context) =>
+          const AlertDialog(
             title: Text("Error"),
             content: Text("Failed to register for calls"),
           ),
@@ -357,6 +359,10 @@ class _AppState extends State<App> {
       appBar: AppBar(
         title: const Text("Plugin example app"),
         actions: [
+          if(twilioInit) ...[
+            const SizedBox(width: 8),
+            const _UpdateTokenAction(),
+          ],
           _LogoutAction(
             onSuccess: () {
               setState(() {
@@ -381,12 +387,12 @@ class _AppState extends State<App> {
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: twilioInit
                 ? UICallScreen(
-                    userId: userId,
-                    onPerformCall: _onPerformCall,
-                  )
+              userId: userId,
+              onPerformCall: _onPerformCall,
+            )
                 : UIRegistrationScreen(
-                    onRegister: _onRegisterWithToken,
-                  ),
+              onRegister: _onRegisterWithToken,
+            ),
           ),
         ),
       ),
@@ -461,5 +467,32 @@ class _LogoutAction extends StatelessWidget {
         },
         label: const Text("Logout", style: TextStyle(color: Colors.white)),
         icon: const Icon(Icons.logout, color: Colors.white));
+  }
+}
+
+class _UpdateTokenAction extends StatelessWidget {
+  const _UpdateTokenAction({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton.icon(
+      onPressed: () async {
+        // show dialog to enter new token
+        final token = await showDialog<String?>(
+          context: context,
+          builder: (context) => const UpdateTokenDialogContent(),
+        );
+        if (token?.isEmpty ?? true) {
+          return;
+        }
+        final result = await TwilioVoice.instance.setTokens(accessToken: token!);
+        final message = (result ?? false) ? "Successfully updated token" : "Failed to update token";
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message)),
+        );
+      },
+      label: const Text("Update Token", style: TextStyle(color: Colors.white)),
+      icon: const Icon(Icons.refresh, color: Colors.white),
+    );
   }
 }
