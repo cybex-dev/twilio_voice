@@ -442,6 +442,14 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
     // TODO: implement updateSounds
     throw UnimplementedError();
   }
+
+  @override
+  Future<void> enableCallLogging({bool enable = true}) {
+    if (defaultTargetPlatform != TargetPlatform.iOS) {
+      return Future.value();
+    }
+    return _channel.invokeMethod('enableCallLogging', <String, dynamic>{"enable": enable});
+  }
 }
 
 ActiveCall createCallFromState(String state, {CallDirection? callDirection, bool initiated = false}) {
