@@ -10,6 +10,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     let callObserver = CXCallObserver()
     
     final let defaultCallKitIcon = "callkit_icon"
+    final let callLoggingEnabledKey = "TV_CALL_LOGGING_ENABLED"
     var callKitIcon: String?
 
     var _result: FlutterResult?
@@ -61,6 +62,8 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         configuration.maximumCallGroups = 1
         configuration.maximumCallsPerCallGroup = 1
         let defaultIcon = UserDefaults.standard.string(forKey: defaultCallKitIcon) ?? defaultCallKitIcon
+        let callLoggingEnabled = UserDefaults.standard.optionalBool(forKey: callLoggingEnabledKey) ?? true
+        configuration.includesCallsInRecents = callLoggingEnabled
         
         clients = UserDefaults.standard.object(forKey: kClientList)  as? [String:String] ?? [:]
         callKitProvider = CXProvider(configuration: configuration)
@@ -356,8 +359,25 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             // update icon & persist
             result(updateCallKitIcon(icon: newIcon))
             return
+        } else if flutterCall.method == "enableCallLogging" {
+            let value = arguments["enabled"] as? Bool ?? true
+            
+            result(updateEnableCallLogging(value))
+            return
         }
         result(true)
+    }
+    
+    /// Set and persist call logging in app preferences
+    /// - Parameter value: value, true if it should be enabled
+    func updateEnableCallLogging(_ value: Bool) -> Bool {
+        // Updating callkit configuration
+        let configuration = callKitProvider.configuration
+        configuration.includesCallsInRecents = value
+        
+        // Save and persist setting
+        UserDefaults.standard.set(value, forKey: callLoggingEnabledKey)
+        return true;
     }
     
     /// Updates the CallkitProvider configuration with a new icon, and saves this change to future use.
