@@ -197,4 +197,9 @@ abstract class TwilioVoicePlatform extends SharedPlatformInterface {
 
   /// Sends call events
   CallEvent parseCallEvent(String state);
+
+  /// Enable or disable call logging in call manager, or phone app recents.
+  ///
+  /// Defaults to true.
+  Future<void> enableCallLogging({bool enable = true});
 }

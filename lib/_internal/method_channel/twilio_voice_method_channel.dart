@@ -442,6 +442,12 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
     // TODO: implement updateSounds
     throw UnimplementedError();
   }
+
+  @override
+  Future<void> enableCallLogging({bool enable = true}) {
+    // TODO: implement enableCallLogging
+    throw UnimplementedError();
+  }
 }
 
 ActiveCall createCallFromState(String state, {CallDirection? callDirection, bool initiated = false}) {
