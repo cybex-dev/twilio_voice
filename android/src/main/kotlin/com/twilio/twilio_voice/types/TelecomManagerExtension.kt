@@ -25,16 +25,6 @@ import com.twilio.twilio_voice.call.TVParameters
 
 object TelecomManagerExtension {
 
-    private val LEGACY_TELECOM_MANUFACTURERS = setOf(
-        "samsung",
-        "oneplus",
-        "realme",
-        "oppo",
-        "nothing",
-        "vivo",
-        "motorola"
-    )
-
     /**
      *  Register a phone account with the system telecom manager
      *  @param ctx application context
@@ -74,8 +64,6 @@ object TelecomManagerExtension {
     }
 
     fun TelecomManager.openPhoneAccountSettings(activity: Activity) {
-        ensurePhoneAccountRegistered(activity)
-
         if (launchTelecomEnablePreference(activity)) {
             return
         }
@@ -108,38 +96,15 @@ object TelecomManagerExtension {
             }
         }
 
-        if (isLegacyTelecomManufacturer()) {
-            if (tryLegacyTelecomIntent(activity)) {
-                return
-            }
-        }
-
         Log.e("TelecomManager", "openPhoneAccountSettings: Unable to find compatible settings activity.")
-    }
-
-    private fun TelecomManager.ensurePhoneAccountRegistered(activity: Activity) {
-        val appContext = activity.applicationContext
-        val phoneAccountHandle = getPhoneAccountHandle(appContext)
-
-        try {
-            registerPhoneAccount(appContext, phoneAccountHandle)
-        } catch (securityException: SecurityException) {
-            Log.w(
-                "TelecomManager",
-                "ensurePhoneAccountRegistered: registerPhoneAccount threw SecurityException: ${securityException.message}"
-            )
-        } catch (illegalArgumentException: IllegalArgumentException) {
-            Log.w(
-                "TelecomManager",
-                "ensurePhoneAccountRegistered: registerPhoneAccount threw IllegalArgumentException: ${illegalArgumentException.message}"
-            )
-        }
     }
 
     private fun TelecomManager.launchTelecomEnablePreference(activity: Activity): Boolean {
         val manufacturer = Build.MANUFACTURER?.lowercase(Locale.US).orEmpty()
         val brand = Build.BRAND?.lowercase(Locale.US).orEmpty()
-        if (!isLegacyTelecomManufacturer(manufacturer, brand)) {
+        val targets = setOf("samsung", "oneplus", "realme", "oppo")
+
+        if (manufacturer !in targets && brand !in targets) {
             return false
         }
 
@@ -178,13 +143,6 @@ object TelecomManagerExtension {
             )
             false
         }
-    }
-
-    private fun isLegacyTelecomManufacturer(
-        manufacturer: String = Build.MANUFACTURER?.lowercase(Locale.US).orEmpty(),
-        brand: String = Build.BRAND?.lowercase(Locale.US).orEmpty()
-    ): Boolean {
-        return manufacturer in LEGACY_TELECOM_MANUFACTURERS || brand in LEGACY_TELECOM_MANUFACTURERS
     }
 
     private fun manufacturerSpecificIntents(activity: Activity): List<Intent> {
