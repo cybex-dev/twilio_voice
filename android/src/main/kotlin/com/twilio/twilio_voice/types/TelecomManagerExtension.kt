@@ -4,8 +4,12 @@ import android.app.Activity
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import android.graphics.drawable.Icon
 import android.os.Build
+import android.provider.Settings
+import java.util.Locale
 import android.telecom.PhoneAccount
 import android.telecom.PhoneAccountHandle
 import android.telecom.TelecomManager
@@ -20,6 +24,16 @@ import com.twilio.twilio_voice.R
 import com.twilio.twilio_voice.call.TVParameters
 
 object TelecomManagerExtension {
+
+    private val LEGACY_TELECOM_MANUFACTURERS = setOf(
+        "samsung",
+        "oneplus",
+        "realme",
+        "oppo",
+        "nothing",
+        "vivo",
+        "motorola"
+    )
 
     /**
      *  Register a phone account with the system telecom manager
@@ -60,27 +74,158 @@ object TelecomManagerExtension {
     }
 
     fun TelecomManager.openPhoneAccountSettings(activity: Activity) {
-        if (Build.MANUFACTURER.equals("Samsung", ignoreCase = true)|| Build.MANUFACTURER.equals("OnePlus", ignoreCase = true)) {
-            try {
-                val intent = Intent(TelecomManager.ACTION_CHANGE_PHONE_ACCOUNTS)
-                intent.component = ComponentName(
-                    "com.android.server.telecom",
-                    "com.android.server.telecom.settings.EnableAccountPreferenceActivity"
-                )
-                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                activity.startActivity(intent, null)
-            } catch (e: Exception) {
-                Log.e("TelecomManager", "openPhoneAccountSettings: ${e.message}")
+        ensurePhoneAccountRegistered(activity)
 
-                // use fallback method
-                val intent = Intent(TelecomManager.ACTION_CHANGE_PHONE_ACCOUNTS)
-                activity.startActivity(intent, null)
+        if (launchTelecomEnablePreference(activity)) {
+            return
+        }
+
+        val packageManager = activity.packageManager
+        val candidateIntents = buildList {
+            addAll(manufacturerSpecificIntents(activity))
+            add(Intent(TelecomManager.ACTION_CHANGE_PHONE_ACCOUNTS))
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                add(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
+            }
+            add(Intent(Settings.ACTION_SETTINGS))
+        }
+
+        candidateIntents.forEach { baseIntent ->
+            val intent = Intent(baseIntent).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                if (component == null) {
+                    resolveSystemComponent(packageManager, baseIntent)?.let { component = it }
+                }
             }
 
-        } else {
-            val intent = Intent(TelecomManager.ACTION_CHANGE_PHONE_ACCOUNTS)
-            activity.startActivity(intent, null)
+            if (canHandleIntent(packageManager, intent)) {
+                try {
+                    activity.startActivity(intent)
+                    return
+                } catch (error: Exception) {
+                    Log.w("TelecomManager", "openPhoneAccountSettings: failed to launch ${intent.action}: ${error.message}")
+                }
+            }
         }
+
+        if (isLegacyTelecomManufacturer()) {
+            if (tryLegacyTelecomIntent(activity)) {
+                return
+            }
+        }
+
+        Log.e("TelecomManager", "openPhoneAccountSettings: Unable to find compatible settings activity.")
+    }
+
+    private fun TelecomManager.ensurePhoneAccountRegistered(activity: Activity) {
+        val appContext = activity.applicationContext
+        val phoneAccountHandle = getPhoneAccountHandle(appContext)
+
+        try {
+            registerPhoneAccount(appContext, phoneAccountHandle)
+        } catch (securityException: SecurityException) {
+            Log.w(
+                "TelecomManager",
+                "ensurePhoneAccountRegistered: registerPhoneAccount threw SecurityException: ${securityException.message}"
+            )
+        } catch (illegalArgumentException: IllegalArgumentException) {
+            Log.w(
+                "TelecomManager",
+                "ensurePhoneAccountRegistered: registerPhoneAccount threw IllegalArgumentException: ${illegalArgumentException.message}"
+            )
+        }
+    }
+
+    private fun TelecomManager.launchTelecomEnablePreference(activity: Activity): Boolean {
+        val manufacturer = Build.MANUFACTURER?.lowercase(Locale.US).orEmpty()
+        val brand = Build.BRAND?.lowercase(Locale.US).orEmpty()
+        if (!isLegacyTelecomManufacturer(manufacturer, brand)) {
+            return false
+        }
+
+        val baseIntent = Intent(TelecomManager.ACTION_CHANGE_PHONE_ACCOUNTS).apply {
+            component = ComponentName(
+                "com.android.server.telecom",
+                "com.android.server.telecom.settings.EnableAccountPreferenceActivity"
+            )
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+
+        return try {
+            activity.startActivity(baseIntent)
+            true
+        } catch (error: Exception) {
+            Log.w(
+                "TelecomManager",
+                "launchTelecomEnablePreference: primary component failed: ${error.message}"
+            )
+
+            tryLegacyTelecomIntent(activity)
+        }
+    }
+
+    private fun tryLegacyTelecomIntent(activity: Activity): Boolean {
+        return try {
+            val fallbackIntent = Intent(TelecomManager.ACTION_CHANGE_PHONE_ACCOUNTS).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            activity.startActivity(fallbackIntent)
+            true
+        } catch (fallbackError: Exception) {
+            Log.w(
+                "TelecomManager",
+                "tryLegacyTelecomIntent: fallback intent failed: ${fallbackError.message}"
+            )
+            false
+        }
+    }
+
+    private fun isLegacyTelecomManufacturer(
+        manufacturer: String = Build.MANUFACTURER?.lowercase(Locale.US).orEmpty(),
+        brand: String = Build.BRAND?.lowercase(Locale.US).orEmpty()
+    ): Boolean {
+        return manufacturer in LEGACY_TELECOM_MANUFACTURERS || brand in LEGACY_TELECOM_MANUFACTURERS
+    }
+
+    private fun manufacturerSpecificIntents(activity: Activity): List<Intent> {
+        val manufacturer = Build.MANUFACTURER?.lowercase(Locale.US).orEmpty()
+        val brand = Build.BRAND?.lowercase(Locale.US).orEmpty()
+
+        if (manufacturer !in setOf("oppo", "realme") && brand !in setOf("oppo", "realme")) {
+            return emptyList()
+        }
+
+        val components = listOf(
+            ComponentName("com.android.settings", "com.android.settings.Settings\$DefaultAppSettingsActivity"),
+            ComponentName("com.coloros.phonemanager", "com.coloros.phonemanager.defaultapp.DefaultAppManagerActivity"),
+            ComponentName("com.coloros.phonemanager", "com.coloros.phonemanager.defaultapp.DefaultAppListActivity"),
+            ComponentName("com.coloros.phonemanager", "com.coloros.phonemanager.defaultapp.DefaultAppEntryActivity")
+        )
+
+        val explicitIntents = components.map { componentName ->
+            Intent(Intent.ACTION_VIEW).apply { component = componentName }
+        }
+
+        val packagedDefaultAppsIntent = Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS).apply {
+            `package` = "com.android.settings"
+        }
+
+        return explicitIntents + packagedDefaultAppsIntent
+    }
+
+    private fun resolveSystemComponent(packageManager: PackageManager, intent: Intent): ComponentName? {
+        val matches = packageManager.queryIntentActivities(intent, 0)
+        val preferred = matches.firstOrNull { resolveInfo ->
+            resolveInfo.activityInfo?.applicationInfo?.flags?.and(ApplicationInfo.FLAG_SYSTEM) != 0
+        } ?: matches.firstOrNull()
+
+        return preferred?.activityInfo?.let { activityInfo ->
+            ComponentName(activityInfo.packageName, activityInfo.name)
+        }
+    }
+
+    private fun canHandleIntent(packageManager: PackageManager, intent: Intent): Boolean {
+        return intent.resolveActivity(packageManager) != null
     }
 
 
