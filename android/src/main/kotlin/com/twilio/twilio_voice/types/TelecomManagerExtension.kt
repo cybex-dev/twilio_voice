@@ -4,8 +4,12 @@ import android.app.Activity
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import android.graphics.drawable.Icon
 import android.os.Build
+import android.provider.Settings
+import java.util.Locale
 import android.telecom.PhoneAccount
 import android.telecom.PhoneAccountHandle
 import android.telecom.TelecomManager
@@ -60,27 +64,126 @@ object TelecomManagerExtension {
     }
 
     fun TelecomManager.openPhoneAccountSettings(activity: Activity) {
-        if (Build.MANUFACTURER.equals("Samsung", ignoreCase = true)) {
-            try {
-                val intent = Intent(TelecomManager.ACTION_CHANGE_PHONE_ACCOUNTS)
-                intent.component = ComponentName(
-                    "com.android.server.telecom",
-                    "com.android.server.telecom.settings.EnableAccountPreferenceActivity"
-                )
-                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                activity.startActivity(intent, null)
-            } catch (e: Exception) {
-                Log.e("TelecomManager", "openPhoneAccountSettings: ${e.message}")
+        if (launchTelecomEnablePreference(activity)) {
+            return
+        }
 
-                // use fallback method
-                val intent = Intent(TelecomManager.ACTION_CHANGE_PHONE_ACCOUNTS)
-                activity.startActivity(intent, null)
+        val packageManager = activity.packageManager
+        val candidateIntents = buildList {
+            addAll(manufacturerSpecificIntents(activity))
+            add(Intent(TelecomManager.ACTION_CHANGE_PHONE_ACCOUNTS))
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                add(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
+            }
+            add(Intent(Settings.ACTION_SETTINGS))
+        }
+
+        candidateIntents.forEach { baseIntent ->
+            val intent = Intent(baseIntent).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                if (component == null) {
+                    resolveSystemComponent(packageManager, baseIntent)?.let { component = it }
+                }
             }
 
-        } else {
-            val intent = Intent(TelecomManager.ACTION_CHANGE_PHONE_ACCOUNTS)
-            activity.startActivity(intent, null)
+            if (canHandleIntent(packageManager, intent)) {
+                try {
+                    activity.startActivity(intent)
+                    return
+                } catch (error: Exception) {
+                    Log.w("TelecomManager", "openPhoneAccountSettings: failed to launch ${intent.action}: ${error.message}")
+                }
+            }
         }
+
+        Log.e("TelecomManager", "openPhoneAccountSettings: Unable to find compatible settings activity.")
+    }
+
+    private fun TelecomManager.launchTelecomEnablePreference(activity: Activity): Boolean {
+        val manufacturer = Build.MANUFACTURER?.lowercase(Locale.US).orEmpty()
+        val brand = Build.BRAND?.lowercase(Locale.US).orEmpty()
+        val targets = setOf("samsung", "oneplus", "realme", "oppo")
+
+        if (manufacturer !in targets && brand !in targets) {
+            return false
+        }
+
+        val baseIntent = Intent(TelecomManager.ACTION_CHANGE_PHONE_ACCOUNTS).apply {
+            component = ComponentName(
+                "com.android.server.telecom",
+                "com.android.server.telecom.settings.EnableAccountPreferenceActivity"
+            )
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+
+        return try {
+            activity.startActivity(baseIntent)
+            true
+        } catch (error: Exception) {
+            Log.w(
+                "TelecomManager",
+                "launchTelecomEnablePreference: primary component failed: ${error.message}"
+            )
+
+            tryLegacyTelecomIntent(activity)
+        }
+    }
+
+    private fun tryLegacyTelecomIntent(activity: Activity): Boolean {
+        return try {
+            val fallbackIntent = Intent(TelecomManager.ACTION_CHANGE_PHONE_ACCOUNTS).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            activity.startActivity(fallbackIntent)
+            true
+        } catch (fallbackError: Exception) {
+            Log.w(
+                "TelecomManager",
+                "tryLegacyTelecomIntent: fallback intent failed: ${fallbackError.message}"
+            )
+            false
+        }
+    }
+
+    private fun manufacturerSpecificIntents(activity: Activity): List<Intent> {
+        val manufacturer = Build.MANUFACTURER?.lowercase(Locale.US).orEmpty()
+        val brand = Build.BRAND?.lowercase(Locale.US).orEmpty()
+
+        if (manufacturer !in setOf("oppo", "realme") && brand !in setOf("oppo", "realme")) {
+            return emptyList()
+        }
+
+        val components = listOf(
+            ComponentName("com.android.settings", "com.android.settings.Settings\$DefaultAppSettingsActivity"),
+            ComponentName("com.coloros.phonemanager", "com.coloros.phonemanager.defaultapp.DefaultAppManagerActivity"),
+            ComponentName("com.coloros.phonemanager", "com.coloros.phonemanager.defaultapp.DefaultAppListActivity"),
+            ComponentName("com.coloros.phonemanager", "com.coloros.phonemanager.defaultapp.DefaultAppEntryActivity")
+        )
+
+        val explicitIntents = components.map { componentName ->
+            Intent(Intent.ACTION_VIEW).apply { component = componentName }
+        }
+
+        val packagedDefaultAppsIntent = Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS).apply {
+            `package` = "com.android.settings"
+        }
+
+        return explicitIntents + packagedDefaultAppsIntent
+    }
+
+    private fun resolveSystemComponent(packageManager: PackageManager, intent: Intent): ComponentName? {
+        val matches = packageManager.queryIntentActivities(intent, 0)
+        val preferred = matches.firstOrNull { resolveInfo ->
+            resolveInfo.activityInfo?.applicationInfo?.flags?.and(ApplicationInfo.FLAG_SYSTEM) != 0
+        } ?: matches.firstOrNull()
+
+        return preferred?.activityInfo?.let { activityInfo ->
+            ComponentName(activityInfo.packageName, activityInfo.name)
+        }
+    }
+
+    private fun canHandleIntent(packageManager: PackageManager, intent: Intent): Boolean {
+        return intent.resolveActivity(packageManager) != null
     }
 
 
