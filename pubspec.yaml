@@ -1,11 +1,19 @@
 name: twilio_voice
 description: Provides an interface to Twilio's Programmable Voice SDK to allow adding voice-over-IP (VoIP) calling into your Flutter applications.
-version: 0.1.3
-homepage: https://github.com/cybex-dev/twilio_voice
+version: 0.3.2+2
+homepage: https://twilio-voice-web.web.app/
+repository: https://github.com/cybex-dev/twilio_voice
+issue_tracker: https://github.com/cybex-dev/twilio_voice/issues
+topics:
+  - twilio
+  - voice
+  - voip
+  - call
+  - phone
 
 environment:
-  sdk: ">=2.17.0 <4.0.0"
-  flutter: ">=1.20.0"
+  sdk: ">=2.18.0 <4.0.0"
+  flutter: ">=1.10.0"
 
 dependencies:
   flutter:
@@ -13,12 +21,16 @@ dependencies:
   flutter_web_plugins:
     sdk: flutter
   plugin_platform_interface: ^2.1.4
-  js: ^0.6.5
+  # temporarily - upgrade to js: 0.7.2 then finally js_interop:
+  js: ^0.7.1
+  web: ^1.1.0
+  web_callkit: ^0.0.4+1
 
 dev_dependencies:
   flutter_lints: ^2.0.2
   flutter_test:
     sdk: flutter
+#  matcher: ^0.12.17
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

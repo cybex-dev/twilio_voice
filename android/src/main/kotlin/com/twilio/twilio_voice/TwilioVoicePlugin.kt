@@ -636,6 +636,57 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 }
             }
 
+            TVMethodChannels.CONNECT -> {
+                val args = call.arguments as? Map<*, *> ?: run {
+                    result.error(
+                        FlutterErrorCodes.MALFORMED_ARGUMENTS,
+                        "Arguments should be a Map<*, *>",
+                        null
+                    )
+                    return@onMethodCall
+                }
+
+                Log.d(TAG, "Making new call via connect")
+                logEvent("Making new call via connect")
+                val params = HashMap<String, String>()
+                for ((key, value) in args) {
+                    when (key) {
+                        Constants.PARAM_TO, Constants.PARAM_FROM -> {}
+                        else -> {
+                            params[key.toString()] = value.toString()
+                        }
+                    }
+                }
+//                callOutgoing = true
+                val from = call.argument<String>(Constants.PARAM_FROM) ?: run {
+                    logEvent("No 'from' provided or invalid type, ignoring.")
+                    ""
+                }
+
+                val to = call.argument<String>(Constants.PARAM_TO) ?: run {
+                    logEvent("No 'to' provided or invalid type, ignoring.")
+                    ""
+                }
+                val paramsStringify = JSONObject(args).toString()
+                Log.d(TAG, "calling with parameters: from: '$from' -> to: '$to', params: $paramsStringify")
+
+                accessToken?.let { token ->
+                    context?.let { ctx ->
+                        val success = placeCall(ctx, token, from, to, params, connect = true)
+                        result.success(success)
+                    } ?: run {
+                        Log.e(TAG, "Context is null, cannot place call")
+                        result.success(false)
+                    }
+                } ?: run {
+                    result.error(
+                        FlutterErrorCodes.MALFORMED_ARGUMENTS,
+                        "No accessToken set, are you registered?",
+                        null
+                    )
+                }
+            }
+
             TVMethodChannels.REGISTER_CLIENT -> {
 
                 val clientId = call.argument<String>("id") ?: run {
@@ -944,7 +995,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             Intent(ctx, TVConnectionService::class.java).apply {
                 action = TVConnectionService.ACTION_SEND_DIGITS
                 putExtra(TVConnectionService.EXTRA_CALL_HANDLE, callSid)
-                putExtra(TVConnectionService.ACTION_SEND_DIGITS, digits)
+                putExtra(TVConnectionService.EXTRA_DIGITS, digits)
                 ctx.startService(this)
             }
             return true
@@ -1040,13 +1091,14 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     private fun placeCall(
         ctx: Context,
         accessToken: String,
-        from: String,
-        to: String,
-        params: Map<String, String>
+        from: String?,
+        to: String?,
+        params: Map<String, String>,
+        connect: Boolean = false
     ): Boolean {
         assert(accessToken.isNotEmpty()) { "Twilio Access Token cannot be empty" }
-        assert(to.isNotEmpty()) { "To cannot be empty" }
-        assert(from.isNotEmpty()) { "From cannot be empty" }
+        assert(!connect && (to == null || to.isNotEmpty())) { "To cannot be empty" }
+        assert(!connect && (from == null || from.isNotEmpty())) { "From cannot be empty" }
 
         telecomManager?.let { tm ->
             if (!tm.hasCallCapableAccount(ctx, TVConnectionService::class.java.name)) {
@@ -1083,6 +1135,9 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             Intent(ctx, TVConnectionService::class.java).apply {
                 action = TVConnectionService.ACTION_PLACE_OUTGOING_CALL
                 putExtra(TVConnectionService.EXTRA_TOKEN, accessToken)
+                if(connect) {
+                    putExtra(TVConnectionService.EXTRA_CONNECT_RAW, true)
+                }
                 putExtra(TVConnectionService.EXTRA_TO, to)
                 putExtra(TVConnectionService.EXTRA_FROM, from)
                 putExtra(TVConnectionService.EXTRA_OUTGOING_PARAMS, Bundle().apply {
@@ -1682,8 +1737,8 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                         return
                     }
 //                callSid = null
-                Log.d(TAG, "handleBroadcastIntent: Call ended $callHandle")
-                logEvent("", "Call ended")
+                Log.d(TAG, "handleBroadcastIntent: Call Ended $callHandle")
+                logEvent("", "Call Ended")
             }
 
             TVBroadcastReceiver.ACTION_CALL_STATE -> {
@@ -1735,7 +1790,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                     }
                 }.toString()
 //                callSid = callHandle
-                logEvents("", arrayOf("Answer", from, to, params))
+                logEvents("", arrayOf("Answer", from, to, CallDirection.INCOMING.label, params))
             }
 
             TVNativeCallActions.ACTION_DTMF -> {
@@ -1827,7 +1882,11 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             }
 
             TVNativeCallEvents.EVENT_CONNECT_FAILURE -> {
-                val code = intent.getIntExtra(CallExceptionExtension.EXTRA_CODE, -1)
+                var code = intent.getIntExtra(CallExceptionExtension.EXTRA_CODE, -1)
+                if(code == -1) {
+                    // Fallback to the old code
+                    code = intent.getIntExtra("code", -1)
+                }
                 val message = intent.getStringExtra(CallExceptionExtension.EXTRA_MESSAGE) ?: run {
                     Log.e(TAG, "No 'EXTRA_MESSAGE' provided or invalid type")
                     return

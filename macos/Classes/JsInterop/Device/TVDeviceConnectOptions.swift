@@ -6,9 +6,9 @@ public class TVDeviceConnectOptions: JSONArgumentSerializer {
     // TODO(cybex-dev) - add region, edge information, etc.
     var params: [String: String] = [:]
 
-    init(to: String, from: String, customParameters: [String:Any]) {
-        params[Constants.PARAM_TO] = to
-        params[Constants.PARAM_FROM] = from
+    init(to: String?, from: String?, customParameters: [String:Any]) {
+        if(to != nil) params[Constants.PARAM_TO] = to
+        if(from != nil) params[Constants.PARAM_FROM] = from
         let stringMap = customParameters.map({ (key, value) -> (String, String) in
             (key, String(describing: value))
         });

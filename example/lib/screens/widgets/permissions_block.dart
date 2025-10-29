@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:io';
 
 import 'package:firebase_core/firebase_core.dart';
@@ -18,11 +17,9 @@ class PermissionsBlock extends StatefulWidget {
 }
 
 class _PermissionsBlockState extends State<PermissionsBlock> with WidgetsBindingObserver {
-  late final StreamSubscription<CallEvent> _subscription;
-
   AppLifecycleState? _lastLifecycleState;
 
-  final _tv = TwilioVoice.instance;
+  final _tv = TwilioVoicePlatform.instance;
   bool activeCall = false;
 
   //#region #region Permissions
@@ -236,7 +233,6 @@ class _PermissionsBlockState extends State<PermissionsBlock> with WidgetsBinding
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _subscription.cancel();
     super.dispose();
   }
 }

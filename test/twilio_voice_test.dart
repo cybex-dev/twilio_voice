@@ -14,6 +14,7 @@ void main() {
   });
 
   test("Mock Test", () async {
-    expect(await channel.invokeMethod("42"), equals("42"));
+    final result = await channel.invokeMethod("42");
+    expect(result, equals("42"));
   });
 }

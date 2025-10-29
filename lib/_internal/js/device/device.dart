@@ -1,3 +1,6 @@
+// import 'dart:js_interop';
+// TODO(cybex-dev) implement js_interop for js package
+// ignore: deprecated_member_use
 import 'package:js/js.dart';
 import 'package:twilio_voice/_internal/js/call/call.dart';
 import 'package:twilio_voice/_internal/js/core/core.dart';
@@ -23,13 +26,13 @@ enum TwilioDeviceEvents {
 @JS("Twilio.Device")
 class Device extends Twilio {
   // private constructor
-  // ignore: unused_element
-  external Device._(token, [DeviceInitOptions? options]);
+  // ignore: unused_element_parameter, unused_element
+  external Device._(token, [DeviceOptions? options]);
 
   // factory used by js lib
   external factory Device(
     String token, [
-    DeviceInitOptions? options,
+    DeviceOptions? options,
   ]);
 
   // /// Returns array of active calls
@@ -66,21 +69,36 @@ class Device extends Twilio {
   /// Attach event listener for Twilio Device object. See [TwilioDeviceEvents]
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#events
   /// possibly use js interop here
-  @JS("on")
-  external void on(String event, Function callback);
+  @JS("addListener")
+  external void addListener(String event, Function callback);
 
   /// Detach event listener for Twilio Device object. See [TwilioDeviceEvents]
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#events
   /// possibly use js interop here
-  @JS("off")
-  external void off(String event, Function callback);
+  @JS("removeListener")
+  external void removeListener(String event, Function callback);
+
+  /// Update device options
+  /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#deviceupdateoptionsoptions
+  @JS("updateOptions")
+  external void updateOptions(DeviceOptions options);
+
+  /// Get current call status, see [DeviceState]
+  /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#devicestate
+  @JS("state")
+  external String get state;
+
+  /// Update the device's access token.
+  /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#deviceupdatetokentoken
+  @JS("updateToken")
+  external void updateToken(String token);
 }
 
 /// Device options
 /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#deviceoptions
 @anonymous
 @JS()
-class DeviceInitOptions {
+class DeviceOptions {
   /// The Voice JavaScript SDK exposes a loglevel-based logger to allow for runtime logging configuration.
   ///
   /// You can set this property to a number which corresponds to the log levels shown below.
@@ -108,7 +126,16 @@ class DeviceInitOptions {
   /// set to false by default
   external bool allowIncomingWhileBusy;
 
-  external factory DeviceInitOptions({int logLevel = 1, List<String>? codecPreferences, bool closeProtection = false, /*bool allowIncomingWhileBusy = false*/});
+  /// Whether to enable improved precision for signaling errors. Instead of catch-all 31005 type error codes, more specific error codes will be returned.
+  external bool enableImprovedSignalingErrorPrecision;
+
+  /// The sound files to use for the Device's ringtone and other sounds. This should be a map of sound names to URLs but the Map type is not supported in JS interop yet so we use dynamic with jsify.
+  external dynamic sounds;
+
+  /// The time in milliseconds after which the Device will attempt to refresh its access token.
+  external int? tokenRefreshMs;
+
+  external factory DeviceOptions({int logLevel = 1, List<String>? codecPreferences, bool closeProtection = false, dynamic sounds, bool enableImprovedSignalingErrorPrecision = true, bool allowIncomingWhileBusy = false, int? tokenRefreshMs});
 }
 
 /// Device Connect options

@@ -146,7 +146,17 @@ open class TVCallConnection(
     override fun onConnectFailure(call: Call, callException: CallException) {
         Log.d(TAG, "onConnectFailure: onConnectFailure")
         twilioCall = null
-        this@TVCallConnection.setDisconnected(DisconnectCause(DisconnectCause.ERROR, callException.message))
+        val rejectedErrorCodeList = listOf(
+            31600, // Call invite rejected
+        )
+        val disconnectCauseCode = if (rejectedErrorCodeList.contains(callException.errorCode)) {
+            DisconnectCause.REJECTED
+        } else {
+            DisconnectCause.ERROR
+        }
+        val disconnectCause = DisconnectCause(disconnectCauseCode, callException.message);
+        this@TVCallConnection.setDisconnected(disconnectCause)
+        onDisconnected?.withValue(disconnectCause)
         onEvent?.onChange(TVNativeCallEvents.EVENT_CONNECT_FAILURE, callException.toBundle())
         onCallStateListener?.withValue(call.state)
     }
@@ -484,9 +494,7 @@ open class TVCallConnection(
             rejectInvite()
         } else {
             Log.d(TAG, "onDisconnected: onDisconnected")
-            twilioCall.let {
-                it?.disconnect()
-            }
+            twilioCall?.disconnect()
             onEvent?.onChange(TVNativeCallEvents.EVENT_DISCONNECTED_LOCAL, null)
             setDisconnected(DisconnectCause(DisconnectCause.LOCAL))
             onDisconnected?.withValue(DisconnectCause(DisconnectCause.LOCAL))

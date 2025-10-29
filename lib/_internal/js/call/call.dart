@@ -1,3 +1,6 @@
+// import 'dart:js_interop';
+// TODO(cybex-dev) implement js_interop for js package
+// ignore: deprecated_member_use
 import 'package:js/js.dart';
 
 import '../twilio.dart';
@@ -86,18 +89,6 @@ class Call extends Twilio {
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#callismuted
   @JS("isMuted")
   external bool isMuted();
-
-  /// Attach event listener for Twilio Call object. See [TwilioCallEvents]
-  /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#events
-  /// possibly use js interop here
-  @JS("on")
-  external void on(String event, Function callback);
-
-  /// Deattach event listener for Twilio Call object. See [TwilioCallEvents]
-  /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#events
-  /// possibly use js interop here
-  @JS("off")
-  external void off(String event, Function callback);
 
   /// Send digits to active Twilio Call
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#callsenddigitsdigits

@@ -4,6 +4,7 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.telecom.*
 import android.util.Log
 import androidx.annotation.RequiresPermission
@@ -162,7 +163,12 @@ class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageListene
         Intent(applicationContext, TVConnectionService::class.java).apply {
             action = TVConnectionService.ACTION_CANCEL_CALL_INVITE
             putExtra(TVConnectionService.EXTRA_CANCEL_CALL_INVITE, cancelledCallInvite)
-            applicationContext.startService(this)
+//            applicationContext.startService(this)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                applicationContext.startForegroundService(this) // Ensure it's started as a foreground service
+            } else {
+                applicationContext.startService(this)
+            }
         }
     }
     //endregion

@@ -8,6 +8,7 @@ import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:twilio_voice/twilio_voice.dart';
+import 'package:twilio_voice_example/dialogs/update_token_dialog.dart';
 import 'package:twilio_voice_example/screens/ui_call_screen.dart';
 import 'package:twilio_voice_example/screens/ui_registration_screen.dart';
 
@@ -26,7 +27,7 @@ extension IterableExtension<E> on Iterable<E> {
 
 enum RegistrationMethod {
   env,
-  local,
+  url,
   firebase;
 
   static RegistrationMethod? fromString(String? value) {
@@ -79,7 +80,7 @@ void main() async {
 class App extends StatefulWidget {
   final RegistrationMethod registrationMethod;
 
-  const App({super.key, this.registrationMethod = RegistrationMethod.local});
+  const App({super.key, this.registrationMethod = RegistrationMethod.url});
 
   @override
   State<App> createState() => _AppState();
@@ -102,37 +103,37 @@ class _AppState extends State<App> {
     printDebug("voip-service registration");
 
     // Use for locally provided token generator e.g. Twilio's quickstarter project: https://github.com/twilio/voice-quickstart-server-node
-    if (!kIsWeb) {
-      bool success = false;
-      // if not web, we use the requested registration method
-      switch (widget.registrationMethod) {
-        case RegistrationMethod.env:
-          success = await _registerFromEnvironment();
-          break;
-        case RegistrationMethod.local:
-          success = await _registerLocal();
-          break;
-        case RegistrationMethod.firebase:
-          success = await _registerFirebase();
-          break;
-      }
-
-      if (success) {
-        setState(() {
-          twilioInit = true;
-        });
-      }
-    } else {
-      // for web, we always show the initialisation screen unless we specified an
-      if (widget.registrationMethod == RegistrationMethod.env) {
-        bool success = await _registerFromEnvironment();
-        if (success) {
-          setState(() {
-            twilioInit = true;
-          });
-        }
-      }
+    // if (!kIsWeb) {
+    bool success = false;
+    // if not web, we use the requested registration method
+    switch (widget.registrationMethod) {
+      case RegistrationMethod.env:
+        success = await _registerFromEnvironment();
+        break;
+      case RegistrationMethod.url:
+        success = await _registerUrl();
+        break;
+      case RegistrationMethod.firebase:
+        success = await _registerFirebase();
+        break;
     }
+
+    if (success) {
+      setState(() {
+        twilioInit = true;
+      });
+    }
+    // } else {
+    //   // for web, we always show the initialisation screen unless we specified an
+    //   if (widget.registrationMethod == RegistrationMethod.env) {
+    //     bool success = await _registerFromEnvironment();
+    //     if (success) {
+    //       setState(() {
+    //         twilioInit = true;
+    //       });
+    //     }
+    //   }
+    // }
 
     if(firebaseEnabled) {
       FirebaseAnalytics.instance.logEvent(name: "registration", parameters: {
@@ -152,7 +153,7 @@ class _AppState extends State<App> {
       androidToken = await FirebaseMessaging.instance.getToken();
       printDebug("androidToken is ${androidToken!}");
     }
-    final result = await TwilioVoice.instance.setTokens(accessToken: accessToken, deviceToken: androidToken);
+    final result = await TwilioVoicePlatform.instance.setTokens(accessToken: accessToken, deviceToken: androidToken);
     return result ?? false;
   }
 
@@ -190,12 +191,22 @@ class _AppState extends State<App> {
 
   //#endregion
 
-  //#region #region Register with local provider
-  /// Use this method to register with a local token generator
-  /// To access this, run with `--dart-define=REGISTRATION_METHOD=local`
-  Future<bool> _registerLocal() async {
-    printDebug("voip-registering with local token generator");
-    final result = await generateLocalAccessToken();
+  //#region #region Register with url provider
+  /// Use this method to register with a url token generator
+  /// To access this, run with `--dart-define=REGISTRATION_METHOD=url`
+  Future<bool> _registerUrl() async {
+    printDebug("voip-registering with url token generator");
+    String url = const String.fromEnvironment("URL");
+    if (url.isEmpty) {
+      printDebug("No URL provided, defaulting to http://localhost:3000");
+
+      String identity = const String.fromEnvironment("ID");
+      if (identity.isEmpty) {
+        printDebug("No ID provided, defaulting to server generated identity");
+      }
+      url = "http://localhost:3000";
+    }
+    final result = await generateURLAccessToken(url);
     if (result == null) {
       printDebug("Failed to register with local token generator");
       return false;
@@ -252,7 +263,7 @@ class _AppState extends State<App> {
   void initState() {
     super.initState();
 
-    TwilioVoice.instance.setOnDeviceTokenChanged((token) {
+    TwilioVoicePlatform.instance.setOnDeviceTokenChanged((token) {
       printDebug("voip-device token changed");
       if (!kIsWeb) {
         register();
@@ -263,29 +274,29 @@ class _AppState extends State<App> {
     register();
 
     const partnerId = "alicesId";
-    TwilioVoice.instance.registerClient(partnerId, "Alice");
-    // TwilioVoice.instance.requestReadPhoneStatePermission();
-    // TwilioVoice.instance.requestMicAccess();
-    // TwilioVoice.instance.requestCallPhonePermission();
+    TwilioVoicePlatform.instance.registerClient(partnerId, "Alice");
+    // TwilioVoicePlatform.instance.requestReadPhoneStatePermission();
+    // TwilioVoicePlatform.instance.requestMicAccess();
+    // TwilioVoicePlatform.instance.requestCallPhonePermission();
   }
 
   /// Listen for call events
   void listenForEvents() {
-    TwilioVoice.instance.callEventsListener.listen((event) {
+    TwilioVoicePlatform.instance.callEventsListener.listen((event) {
       printDebug("voip-onCallStateChanged $event");
 
       switch (event) {
         case CallEvent.incoming:
-          // applies to web only
+        // applies to web only
           if (kIsWeb || Platform.isAndroid) {
-            final activeCall = TwilioVoice.instance.call.activeCall;
+            final activeCall = TwilioVoicePlatform.instance.call.activeCall;
             if (activeCall != null && activeCall.callDirection == CallDirection.incoming) {
               _showWebIncomingCallDialog();
             }
           }
           break;
         case CallEvent.ringing:
-          final activeCall = TwilioVoice.instance.call.activeCall;
+          final activeCall = TwilioVoicePlatform.instance.call.activeCall;
           if (activeCall != null) {
             final customData = activeCall.customParams;
             if (customData != null) {
@@ -313,21 +324,23 @@ class _AppState extends State<App> {
 
   /// Place a call to [clientIdentifier]
   Future<void> _onPerformCall(String clientIdentifier) async {
-    if (!await (TwilioVoice.instance.hasMicAccess())) {
+    if (!await (TwilioVoicePlatform.instance.hasMicAccess())) {
       printDebug("request mic access");
-      TwilioVoice.instance.requestMicAccess();
+      TwilioVoicePlatform.instance.requestMicAccess();
       return;
     }
     printDebug("starting call to $clientIdentifier");
-    TwilioVoice.instance.call.place(to: clientIdentifier, from: userId, extraOptions: {"_TWI_SUBJECT": "Company Name"});
+    TwilioVoicePlatform.instance.call.place(to: clientIdentifier, from: userId, extraOptions: {"_TWI_SUBJECT": "Company Name"});
   }
 
   Future<void> _onRegisterWithToken(String token, [String? identity]) async {
     return _registerFromCredentials(identity ?? "Unknown", token).then((value) {
       if (!value) {
         showDialog(
+          // ignore: use_build_context_synchronously
           context: context,
-          builder: (context) => const AlertDialog(
+          builder: (context) =>
+          const AlertDialog(
             title: Text("Error"),
             content: Text("Failed to register for calls"),
           ),
@@ -346,6 +359,10 @@ class _AppState extends State<App> {
       appBar: AppBar(
         title: const Text("Plugin example app"),
         actions: [
+          if(twilioInit) ...[
+            const SizedBox(width: 8),
+            const _UpdateTokenAction(),
+          ],
           _LogoutAction(
             onSuccess: () {
               setState(() {
@@ -370,12 +387,12 @@ class _AppState extends State<App> {
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: twilioInit
                 ? UICallScreen(
-                    userId: userId,
-                    onPerformCall: _onPerformCall,
-                  )
+              userId: userId,
+              onPerformCall: _onPerformCall,
+            )
                 : UIRegistrationScreen(
-                    onRegister: _onRegisterWithToken,
-                  ),
+              onRegister: _onRegisterWithToken,
+            ),
           ),
         ),
       ),
@@ -385,14 +402,14 @@ class _AppState extends State<App> {
   /// Show incoming call dialog for web and Android
   void _showWebIncomingCallDialog() async {
     showingIncomingCallDialog = true;
-    final activeCall = TwilioVoice.instance.call.activeCall!;
+    final activeCall = TwilioVoicePlatform.instance.call.activeCall!;
     final action = await showIncomingCallScreen(context, activeCall);
     if (action == true) {
       printDebug("accepting call");
-      TwilioVoice.instance.call.answer();
+      TwilioVoicePlatform.instance.call.answer();
     } else if (action == false) {
       printDebug("rejecting call");
-      TwilioVoice.instance.call.hangUp();
+      TwilioVoicePlatform.instance.call.hangUp();
     } else {
       printDebug("no action");
     }
@@ -441,7 +458,7 @@ class _LogoutAction extends StatelessWidget {
   Widget build(BuildContext context) {
     return TextButton.icon(
         onPressed: () async {
-          final result = await TwilioVoice.instance.unregister();
+          final result = await TwilioVoicePlatform.instance.unregister();
           if (result == true) {
             onSuccess?.call();
           } else {
@@ -450,5 +467,33 @@ class _LogoutAction extends StatelessWidget {
         },
         label: const Text("Logout", style: TextStyle(color: Colors.white)),
         icon: const Icon(Icons.logout, color: Colors.white));
+  }
+}
+
+class _UpdateTokenAction extends StatelessWidget {
+  const _UpdateTokenAction({Key? key}): super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton.icon(
+      onPressed: () async {
+        // show dialog to enter new token
+        final token = await showDialog<String?>(
+          context: context,
+          builder: (context) => const UpdateTokenDialogContent(),
+        );
+        if (token?.isEmpty ?? true) {
+          return;
+        }
+        final result = await TwilioVoicePlatform.instance.setTokens(accessToken: token!);
+        final message = (result ?? false) ? "Successfully updated token" : "Failed to update token";
+        // ignore: use_build_context_synchronously
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message)),
+        );
+      },
+      label: const Text("Update Token", style: TextStyle(color: Colors.white)),
+      icon: const Icon(Icons.refresh, color: Colors.white),
+    );
   }
 }

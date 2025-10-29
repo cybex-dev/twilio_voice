@@ -4,17 +4,14 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../../twilio_voice.dart';
+import '../js/core/enums/device_sound_name.dart';
 import '../platform_interface/twilio_call_platform_interface.dart';
 import '../platform_interface/twilio_voice_platform_interface.dart';
 import '../utils.dart';
 import 'twilio_call_method_channel.dart';
 
-typedef OnDeviceTokenChanged = Function(String token);
-
 /// Implementation of [TwilioVoicePlatform] that uses method channels.
 class MethodChannelTwilioVoice extends TwilioVoicePlatform {
-  static TwilioVoicePlatform get instance => TwilioVoicePlatform.instance;
-
   late final TwilioCallPlatform _call = MethodChannelTwilioCall();
 
   @override
@@ -331,12 +328,15 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
         printDebug(tokens[1]);
       }
 
+      // https://www.twilio.com/docs/api/errors/31600
+      // Busy Everywhere. All possible destinations are busy.
+      //
       // source: https://www.twilio.com/docs/api/errors/31603
       // The callee does not wish to participate in the call.
       //
       // https://www.twilio.com/docs/api/errors/31486
       // The callee is busy.
-      if (tokens[1].contains("31603") || tokens[1].contains("31486")) {
+      if (tokens[1].contains("31600") || tokens[1].contains("31603") || tokens[1].contains("31486")) {
         call.activeCall = null;
         return CallEvent.declined;
       } else if (tokens.toString().toLowerCase().contains("call rejected")) {
@@ -429,6 +429,26 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
         }
         throw ArgumentError('$state is not a valid CallState.');
     }
+  }
+
+  @override
+  Future<void> updateSound(SoundName soundName, String? url) {
+    // TODO: implement updateSound
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<void> updateSounds({Map<SoundName, String>? sounds}) {
+    // TODO: implement updateSounds
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<void> enableCallLogging({bool enable = true}) {
+    if (defaultTargetPlatform != TargetPlatform.iOS) {
+      return Future.value();
+    }
+    return _channel.invokeMethod('enableCallLogging', <String, dynamic>{"enable": enable});
   }
 }
 

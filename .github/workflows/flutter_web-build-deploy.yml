@@ -1,0 +1,70 @@
+# This workflow uses actions that are not certified by GitHub.
+# They are provided by a third-party and are governed by
+# separate terms of service, privacy policy, and support
+# documentation.
+
+name: Flutter Web deploy Example to Firebase Hosting
+
+on:
+  push:
+    branches: [ "prod" ]
+
+  workflow_dispatch:
+
+env:
+  FLUTTER_VERSION: 3.27.4
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+
+      - run: flutter --version
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Enable web support
+        run: flutter config --enable-web
+
+      - name: Create web build with release mode
+        run: |
+          cd ./example
+          flutter build web --release --target=lib/main.dart --output=build/web          
+
+      - name: Archive Production Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-build
+          path: example/build/web
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Production Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-build
+          path: ./example/build/web
+
+      - name: Firebase Deploy
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: '${{ secrets.GITHUB_TOKEN }}'
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_TWILIO_VOICE_WEB }}'
+          channelId: live
+          projectId: twilio-voice-web
+

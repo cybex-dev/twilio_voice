@@ -139,6 +139,11 @@ class TVConnectionService : ConnectionService() {
         const val EXTRA_TOKEN: String = "EXTRA_TOKEN"
 
         /**
+         * Extra used with [ACTION_PLACE_OUTGOING_CALL] to place an outgoing call connection, denotes the call parameters treated as a Bundle.
+         */
+        const val EXTRA_CONNECT_RAW: String = "EXTRA_CONNECT_RAW"
+
+        /**
          * Extra used with [ACTION_PLACE_OUTGOING_CALL] to place an outgoing call connection. Denotes the recipient's identity.
          */
         const val EXTRA_TO: String = "EXTRA_TO"
@@ -334,40 +339,38 @@ class TVConnectionService : ConnectionService() {
                 }
 
                 ACTION_PLACE_OUTGOING_CALL -> {
-                    // check required EXTRA_TOKEN, EXTRA_TO, EXTRA_FROM
-                    val token = it.getStringExtra(EXTRA_TOKEN) ?: run {
-                        Log.e(TAG, "onStartCommand: ACTION_PLACE_OUTGOING_CALL is missing String EXTRA_TOKEN")
-                        return@let
-                    }
-                    val to = it.getStringExtra(EXTRA_TO) ?: run {
-                        Log.e(TAG, "onStartCommand: ACTION_PLACE_OUTGOING_CALL is missing String EXTRA_TO")
-                        return@let
-                    }
-                    val from = it.getStringExtra(EXTRA_FROM) ?: run {
-                        Log.e(TAG, "onStartCommand: ACTION_PLACE_OUTGOING_CALL is missing String EXTRA_FROM")
-                        return@let
+
+                    val rawConnect = it.getBooleanExtra(EXTRA_CONNECT_RAW, false)
+
+                    fun getRequiredString(key: String, allowNullIfRaw: Boolean = false): String? {
+                        val value = it.getStringExtra(key)
+                        if (value == null) {
+                            Log.e(TAG, "onStartCommand: ACTION_PLACE_OUTGOING_CALL is missing String $key")
+                            if (!rawConnect || !allowNullIfRaw) return null
+                        }
+                        return value
                     }
 
-                    // Get all params from bundle
-                    val params = HashMap<String, String>()
-                    val outGoingParams = it.getParcelableExtraSafe<Bundle>(EXTRA_OUTGOING_PARAMS)
-                    outGoingParams?.keySet()?.forEach { key ->
-                        outGoingParams.getString(key)?.let { value ->
-                            params[key] = value
+                    val token = getRequiredString(EXTRA_TOKEN) ?: return@let
+                    val to = getRequiredString(EXTRA_TO, allowNullIfRaw = true)
+                    val from = getRequiredString(EXTRA_FROM, allowNullIfRaw = true)
+
+                    val params = buildMap {
+                        it.getParcelableExtraSafe<Bundle>(EXTRA_OUTGOING_PARAMS)?.let { bundle ->
+                            for (key in bundle.keySet()) {
+                                bundle.getString(key)?.let { value -> put(key, value) }
+                            }
+                        }
+                        put(EXTRA_TOKEN, token)
+                        if (!rawConnect) {
+                            to?.let { v -> put(EXTRA_TO, v) }
+                            from?.let { v -> put(EXTRA_FROM, v) }
                         }
                     }
 
-                    // Add required params
-                    params[EXTRA_FROM] = from
-                    params[EXTRA_TO] = to
-                    params[EXTRA_TOKEN] = token
-
-                    // Create Twilio Param bundles
                     val myBundle = Bundle().apply {
                         putBundle(EXTRA_OUTGOING_PARAMS, Bundle().apply {
-                            params.forEach { (key, value) ->
-                                putString(key, value)
-                            }
+                            params.forEach { (key, value) -> putString(key, value) }
                         })
                     }
 
@@ -594,7 +597,36 @@ class TVConnectionService : ConnectionService() {
                 }
             }
         }
+
+
+        // Set call disconnected listener, removes connection from active connections when call is disconnected
+        val onCallInitializingDisconnectedListener: CompletionHandler<DisconnectCause> = CompletionHandler {
+            connection.twilioCall?.let {
+                if (activeConnections.containsKey(it.sid)) {
+                    activeConnections.remove(it.sid)
+                }
+                sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, it.sid ?: "", connection.extras)
+                stopForegroundService()
+                stopSelfSafe()
+            }
+        }
+
+        // NOTE(cybex-dev): This could be used as an alternative to the [onCallInitializingDisconnectedListener],
+        // however in the case of a call being initialized followed by a local disconnect - the call only has a temporary SID.
+        // The call SID is set in the [attachCallEventListeners] method when the call is in a RINGING or CONNECTED state.
+        // Thus, using [onEvent] will pass through a null call handle which may not be a good design.
+//        val onEvent: ValueBundleChanged<String> = ValueBundleChanged { event: String?, extra: Bundle? ->
+//            if(event == TVBroadcastReceiver.ACTION_CALL_ENDED) {
+//                val callSid = connection.twilioCall?.sid;
+//                sendBroadcastEvent(applicationContext, event ?: "", callSid, extra)
+//                // This is a temporary solution since `isOnCall` returns true when there is an active ConnectionService, regardless of the source app. This also applies to SIM/Telecom calls.
+//                sendBroadcastCallHandle(applicationContext, extra?.getString(TVBroadcastReceiver.EXTRA_CALL_HANDLE))
+//            }
+//        }
+
         connection.setOnCallStateListener(onCallStateListener)
+        connection.setOnCallDisconnected(onCallInitializingDisconnectedListener)
+//        connection.setOnCallEventListener(onEvent)
 
         // Setup connection UI parameters
         connection.setInitializing()
@@ -630,6 +662,15 @@ class TVConnectionService : ConnectionService() {
             stopForegroundService()
             stopSelfSafe()
         }
+        val onCallState: CompletionHandler<Call.State> = CompletionHandler { state ->
+            if (state == Call.State.DISCONNECTED) {
+                if (activeConnections.containsKey(callSid)) {
+                    activeConnections.remove(callSid)
+                }
+                stopForegroundService()
+                stopSelfSafe()
+            }
+        }
 
         // Add to local connection cache
         activeConnections[callSid] = connection
@@ -638,6 +679,7 @@ class TVConnectionService : ConnectionService() {
         connection.setOnCallActionListener(onAction)
         connection.setOnCallEventListener(onEvent)
         connection.setOnCallDisconnected(onDisconnect)
+        connection.setOnCallStateListener(onCallState);
     }
 
     /**

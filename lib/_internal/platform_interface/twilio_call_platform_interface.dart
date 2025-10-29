@@ -31,15 +31,9 @@ abstract class TwilioCallPlatform extends SharedPlatformInterface {
   /// [extraOptions] will be added to the callPayload sent to your server
   Future<bool?> place({required String from, required String to, Map<String, dynamic>? extraOptions});
 
-  /// Place outgoing call with raw parameters. Returns true if successful, false otherwise.
-  /// Parameters send to Twilio's REST API endpoint 'makeCall' can be passed in [extraOptions];
-  /// Parameters are reduced to this format
-  /// <code>
-  /// {
-  ///  ...extraOptions
-  /// }
-  /// </code>
-  /// [extraOptions] will be added to the call payload sent to your server
+  /// Places new call using raw parameters passed directly to Twilio's REST API endpoint 'makeCall'. Returns true if successful, false otherwise.
+  ///
+  /// [extraOptions] will be added to the callPayload sent to your server
   Future<bool?> connect({Map<String, dynamic>? extraOptions});
 
   /// Hangs up active call

@@ -1,5 +1,3 @@
-part of twilio_voice;
-
 enum CallEvent {
   incoming,
   ringing,

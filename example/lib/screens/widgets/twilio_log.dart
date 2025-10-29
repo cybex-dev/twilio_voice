@@ -12,7 +12,7 @@ class TwilioLog extends StatefulWidget {
 
 class _TwilioLogState extends State<TwilioLog> {
   late final StreamSubscription<CallEvent> _subscription;
-  final _tv = TwilioVoice.instance;
+  final _tv = TwilioVoicePlatform.instance;
   final _events = <CallEvent>[];
 
   @override

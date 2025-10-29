@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 import '../../twilio_voice.dart';
+import '../js/core/enums/device_sound_name.dart';
 import '../method_channel/twilio_voice_method_channel.dart';
 import 'shared_platform_interface.dart';
 import 'twilio_call_platform_interface.dart';
@@ -30,7 +31,7 @@ abstract class TwilioVoicePlatform extends SharedPlatformInterface {
 
   OnDeviceTokenChanged? deviceTokenChanged;
   void setOnDeviceTokenChanged(OnDeviceTokenChanged deviceTokenChanged) {
-    deviceTokenChanged = deviceTokenChanged;
+    this.deviceTokenChanged = deviceTokenChanged;
   }
 
   /// register fcm token, and device token for android
@@ -167,6 +168,16 @@ abstract class TwilioVoicePlatform extends SharedPlatformInterface {
   /// Use `TwilioVoice.instance.updateCallKitIcon(icon: "TransparentIcon")`
   Future<bool?> updateCallKitIcon({String? icon});
 
+  /// Update Twilio Device sound defined by [SoundName], this will override the default Twilio Javascript sound.
+  /// If url is null, the default will be used.
+  /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#deviceoptionssounds-properties-and-default-sounds
+  Future<void> updateSound(SoundName soundName, String? url);
+
+  /// Update Twilio Device sounds defined by [SoundName], this will override the default Twilio Javascript sounds.
+  /// If a corresponding null value is provided, the default will be used.
+  /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#deviceoptionssounds-properties-and-default-sounds
+  Future<void> updateSounds({Map<SoundName, String>? sounds});
+
   /// Register clientId for background calls
   ///
   /// Register the client name for incoming calls while calling using ids
@@ -186,4 +197,9 @@ abstract class TwilioVoicePlatform extends SharedPlatformInterface {
 
   /// Sends call events
   CallEvent parseCallEvent(String state);
+
+  /// Enable or disable call logging in call manager, or phone app recents.
+  ///
+  /// Defaults to true.
+  Future<void> enableCallLogging({bool enable = true});
 }
