@@ -104,8 +104,8 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     private var isBluetoothOn: Boolean = false
     private var isMuted: Boolean = false
     private var isHolding: Boolean = false
-    private val callSid: String?
-        get() = TVConnectionService.getActiveCallHandle()
+    private var callSid: String? = null
+
 
     private var hasStarted = false
 
@@ -475,8 +475,8 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             }
 
             TVMethodChannels.GetActiveCallOnResumeFromTerminatedState -> {
-             //is on call
-             val hasActiveCalls = isOnCall()
+                //is on call
+                val hasActiveCalls = isOnCall()
                 if(hasActiveCalls){
                     val activeCalls = TVConnectionService.Companion.activeConnections
                     val currentCall = activeCalls.values.firstOrNull()
@@ -487,8 +487,8 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                         val callDirection = currentCall?.callDirection ?: CallDirection.INCOMING
                         logEvents("", arrayOf("Connected", from, to, callDirection.label ))
                     }
-                    }
-                    result.success(true)
+                }
+                result.success(true)
 
             }
 
@@ -527,8 +527,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             }
 
             TVMethodChannels.CALL_SID -> {
-                val activeCallHandle = TVConnectionService.getActiveCallHandle();
-                result.success(activeCallHandle)
+                result.success(callSid)
             }
 
             TVMethodChannels.IS_ON_CALL -> {
@@ -641,9 +640,9 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
 
                 val callerName = call.argument<String>(Constants.CALLER_NAME) ?: run {
                     result.error(
-                            FlutterErrorCodes.MALFORMED_ARGUMENTS,
-                            "No '${Constants.CALLER_NAME}' provided or invalid type",
-                            null
+                        FlutterErrorCodes.MALFORMED_ARGUMENTS,
+                        "No '${Constants.CALLER_NAME}' provided or invalid type",
+                        null
                     )
                     return@onMethodCall
                 }
@@ -1769,7 +1768,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                         put(key, value)
                     }
                 }.toString()
-//                callSid = callHandle
+                callSid = callHandle
                 logEvents("", arrayOf("Incoming", from, to, CallDirection.INCOMING.label, params))
                 logEvents("", arrayOf("Ringing", from, to, CallDirection.INCOMING.label, params))
             }
@@ -1784,7 +1783,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                         )
                         return
                     }
-//                callSid = null
+                callSid = null
                 Log.d(TAG, "handleBroadcastIntent: Call Ended $callHandle")
                 logEvent("", "Call Ended")
             }
@@ -1837,7 +1836,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                         put(key, value)
                     }
                 }.toString()
-//                callSid = callHandle
+                callSid = callHandle
                 logEvents("", arrayOf("Answer", from, to, CallDirection.INCOMING.label, params))
             }
 
@@ -1857,11 +1856,13 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
 
             TVNativeCallActions.ACTION_REJECTED -> {
                 logEvent("Call Rejected")
+                callSid = null
             }
 
             TVNativeCallActions.ACTION_ABORT -> {
                 Log.d(TAG, "handleBroadcastIntent: Abort")
                 logEvent("", "Call Ended")
+                callSid = null
             }
 
             TVNativeCallActions.ACTION_HOLD -> {
@@ -1895,7 +1896,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 val direction = intent.getIntExtra(TVBroadcastReceiver.EXTRA_CALL_DIRECTION, -1)
                 val callDirection = CallDirection.fromId(direction).toString()
 
-//                callSid = callHandle
+                callSid = callHandle
                 logEvents("", arrayOf("Ringing", from, to, callDirection))
             }
 
@@ -1925,7 +1926,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 }
                 val direction = intent.getIntExtra(TVBroadcastReceiver.EXTRA_CALL_DIRECTION, -1)
                 val callDirection = CallDirection.fromId(direction)!!.label
-//                callSid = callHandle
+                callSid = callHandle
                 logEvents("", arrayOf("Connected", from, to, callDirection))
             }
 
@@ -1941,6 +1942,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 }
                 logEvent("Call Error: ${code}, $message");
                 logEvent("", "Call Ended")
+                callSid = null
                 TVConnectionService.clearActiveConnections()
 
             }
@@ -1955,15 +1957,18 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
 
             TVNativeCallEvents.EVENT_DISCONNECTED_LOCAL -> {
                 logEvent("", "Call Ended")
+                callSid = null
             }
 
             TVNativeCallEvents.EVENT_DISCONNECTED_REMOTE -> {
                 logEvent("", "Call Ended")
+                callSid = null
             }
 
             TVNativeCallEvents.EVENT_MISSED -> {
                 logEvent("", "Missed Call")
                 logEvent("", "Call Ended")
+                callSid = null
             }
 
             else -> {
