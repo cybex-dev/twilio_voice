@@ -1020,13 +1020,15 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     }
     //endregion
 
+
     private fun sendDigits(digits: String): Boolean {
         // Send to active call via Intent
         context?.let { ctx ->
             Intent(ctx, TVConnectionService::class.java).apply {
                 action = TVConnectionService.ACTION_SEND_DIGITS
                 putExtra(TVConnectionService.EXTRA_CALL_HANDLE, callSid)
-                putExtra(TVConnectionService.ACTION_SEND_DIGITS, digits)
+                // Corrected line: Use EXTRA_DIGITS as the key for the digits extra
+                putExtra(TVConnectionService.EXTRA_DIGITS, digits)
                 ctx.startService(this)
             }
             return true
@@ -1035,6 +1037,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             return false
         }
     }
+
 
     private fun answer() {
         // Send to active call via Intent
