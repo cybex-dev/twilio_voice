@@ -50,6 +50,10 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     
     // Speaker state management
     private var desiredSpeakerState: Bool = false
+    
+    // MARK: Ringback Tone Management
+    private var ringbackPlayer: AVAudioPlayer?
+    private var isPlayingRingback: Bool = false
 
     static var appName: String {
         get {
@@ -786,6 +790,11 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         let to = (call.to ?? self.callTo)
         self.sendPhoneCallEvents(description: "Ringing|\(String(describing: from))|\(to)|\(direction)", isError: false)
         
+        // Start ringback tone for outgoing calls
+        if self.callOutgoing {
+            startRingbackTone()
+        }
+        
         // Try to apply speaker setting early if audio session is ready
         if audioDevice.isEnabled && desiredSpeakerState {
             applySpeakerSetting(toSpeaker: desiredSpeakerState)
@@ -795,6 +804,9 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     }
     
     public func callDidConnect(call: Call) {
+        // Stop ringback tone when call connects (callee answered)
+        stopRingbackTone()
+        
         let direction = (self.callOutgoing ? "Outgoing" : "Incoming")
         let from = extractUserNumber(from:(call.from ?? self.identity))
         let to = (call.to ?? self.callTo)
@@ -852,6 +864,9 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     }
     
     func callDisconnected() {
+        // Stop ringback tone if playing
+        stopRingbackTone()
+        
         self.sendPhoneCallEvents(description: "LOG|Call Disconnected", isError: false)
         if (self.call != nil) {
             
@@ -892,11 +907,155 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     func isBluetoothOn() -> Bool {
         return false;
     }
+    
+    // MARK: - Ringback Tone Management
+    
+    /// Starts playing the ringback tone for outgoing calls
+    /// - Parameter useSpeaker: Whether to play through speaker or earpiece
+    private func startRingbackTone() {
+        guard !isPlayingRingback else {
+            self.sendPhoneCallEvents(description: "LOG|Ringback already playing", isError: false)
+            return
+        }
+        
+        // Find the ringback audio file in the plugin bundle
+        guard let ringbackURL = findRingbackAudioFile() else {
+            self.sendPhoneCallEvents(description: "LOG|Ringback audio file not found", isError: false)
+            return
+        }
+        
+        do {
+            // Configure audio session for ringback playback
+            try configureAudioSessionForRingback()
+            
+            // Create and configure the audio player
+            ringbackPlayer = try AVAudioPlayer(contentsOf: ringbackURL)
+            ringbackPlayer?.delegate = self
+            ringbackPlayer?.numberOfLoops = -1 // Loop indefinitely
+            ringbackPlayer?.volume = 1.0
+            
+            // Prepare and play
+            ringbackPlayer?.prepareToPlay()
+            ringbackPlayer?.play()
+            isPlayingRingback = true
+            
+            self.sendPhoneCallEvents(description: "LOG|Started ringback tone, speaker: \(desiredSpeakerState)", isError: false)
+        } catch {
+            self.sendPhoneCallEvents(description: "LOG|Failed to start ringback: \(error.localizedDescription)", isError: false)
+        }
+    }
+    
+    /// Stops the ringback tone
+    private func stopRingbackTone() {
+        guard isPlayingRingback else { return }
+        
+        ringbackPlayer?.stop()
+        ringbackPlayer = nil
+        isPlayingRingback = false
+        
+        self.sendPhoneCallEvents(description: "LOG|Stopped ringback tone", isError: false)
+    }
+    
+    /// Finds the ringback audio file in the plugin bundle
+    /// - Returns: URL to the ringback audio file, or nil if not found
+    private func findRingbackAudioFile() -> URL? {
+        // Look for the audio file in various locations
+        let supportedExtensions = ["mp3", "wav", "m4a", "caf", "aiff"]
+        let fileName = "ringback"
+        
+        // First, try to find in the main bundle (for when the file is in the app)
+        for ext in supportedExtensions {
+            if let url = Bundle.main.url(forResource: fileName, withExtension: ext) {
+                self.sendPhoneCallEvents(description: "LOG|Found ringback in main bundle: \(url.lastPathComponent)", isError: false)
+                return url
+            }
+        }
+        
+        // Try to find in the plugin's bundle
+        let pluginBundle = Bundle(for: SwiftTwilioVoicePlugin.self)
+        for ext in supportedExtensions {
+            if let url = pluginBundle.url(forResource: fileName, withExtension: ext) {
+                self.sendPhoneCallEvents(description: "LOG|Found ringback in plugin bundle: \(url.lastPathComponent)", isError: false)
+                return url
+            }
+        }
+        
+        // Try to find in a specific Assets folder within the plugin bundle
+        if let resourcePath = pluginBundle.resourcePath {
+            let assetsPath = (resourcePath as NSString).appendingPathComponent("Assets")
+            for ext in supportedExtensions {
+                let filePath = (assetsPath as NSString).appendingPathComponent("\(fileName).\(ext)")
+                if FileManager.default.fileExists(atPath: filePath) {
+                    self.sendPhoneCallEvents(description: "LOG|Found ringback in Assets: \(filePath)", isError: false)
+                    return URL(fileURLWithPath: filePath)
+                }
+            }
+        }
+        
+        return nil
+    }
+    
+    /// Configures the audio session for ringback tone playback
+    private func configureAudioSessionForRingback() throws {
+        let audioSession = AVAudioSession.sharedInstance()
+        
+        // Use playAndRecord category to allow switching between speaker and earpiece
+        // Do NOT use .defaultToSpeaker - it forces speaker mode on initially
+        try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetooth])
+        try audioSession.setActive(true)
+        
+        // Apply the current speaker preference (defaults to earpiece/receiver)
+        if desiredSpeakerState {
+            try audioSession.overrideOutputAudioPort(.speaker)
+        } else {
+            try audioSession.overrideOutputAudioPort(.none)
+        }
+    }
+    
+    /// Updates the ringback audio route when speaker state changes
+    private func updateRingbackAudioRoute() {
+        guard isPlayingRingback else { return }
+        
+        do {
+            let audioSession = AVAudioSession.sharedInstance()
+            if desiredSpeakerState {
+                try audioSession.overrideOutputAudioPort(.speaker)
+                self.sendPhoneCallEvents(description: "LOG|Ringback switched to speaker", isError: false)
+            } else {
+                try audioSession.overrideOutputAudioPort(.none)
+                self.sendPhoneCallEvents(description: "LOG|Ringback switched to earpiece", isError: false)
+            }
+        } catch {
+            self.sendPhoneCallEvents(description: "LOG|Failed to update ringback audio route: \(error.localizedDescription)", isError: false)
+        }
+    }
+    
+    // MARK: - AVAudioPlayerDelegate
+    
+    public func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        // This shouldn't be called since we loop indefinitely, but handle it just in case
+        if player == ringbackPlayer && !flag {
+            self.sendPhoneCallEvents(description: "LOG|Ringback playback finished unexpectedly", isError: false)
+            isPlayingRingback = false
+        }
+    }
+    
+    public func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
+        if player == ringbackPlayer {
+            self.sendPhoneCallEvents(description: "LOG|Ringback decode error: \(error?.localizedDescription ?? "unknown")", isError: false)
+            stopRingbackTone()
+        }
+    }
 
     // MARK: AVAudioSession
     func toggleAudioRoute(toSpeaker: Bool) {
         // Store the desired speaker state
         desiredSpeakerState = toSpeaker
+        
+        // Update ringback audio route if playing
+        if isPlayingRingback {
+            updateRingbackAudioRoute()
+        }
         
         // If no active call, just store the preference
         guard self.call != nil else {

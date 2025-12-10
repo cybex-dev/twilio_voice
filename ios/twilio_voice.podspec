@@ -14,6 +14,7 @@ Pod::Spec.new do |s|
   s.author           = { 'Charles Dyason' => 'charles@earthbase.io' }
   s.source           = { :path => '.' }
   s.source_files = 'Classes/**/*'
+  s.resources = 'Assets/**/*'
   s.dependency 'Flutter'
   s.dependency 'TwilioVoice','~> 6.13.1'
   s.platform = :ios, '11.0'
