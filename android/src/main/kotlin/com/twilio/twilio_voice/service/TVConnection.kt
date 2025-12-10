@@ -12,6 +12,7 @@ import android.telecom.Connection
 import android.telecom.DisconnectCause
 import android.util.Log
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
+import com.twilio.twilio_voice.audio.RingbackManager
 import com.twilio.twilio_voice.call.TVParameters
 import com.twilio.twilio_voice.receivers.TVBroadcastReceiver
 import com.twilio.twilio_voice.types.CallAudioStateExtension.copyWith
@@ -153,6 +154,10 @@ open class TVCallConnection(
      */
     override fun onConnectFailure(call: Call, callException: CallException) {
         Log.d(TAG, "onConnectFailure: onConnectFailure")
+        
+        // Stop ringback tone on connect failure
+        stopRingback()
+        
         twilioCall = null
         val rejectedErrorCodeList = listOf(
             31600, // Call invite rejected
@@ -186,6 +191,8 @@ open class TVCallConnection(
             }
             CallDirection.OUTGOING -> {
                 setInitialized()
+                // Start ringback tone for outgoing calls
+                startRingback()
             }
         }
         onCallStateListener?.withValue(call.state)
@@ -195,6 +202,33 @@ open class TVCallConnection(
             putString(TVBroadcastReceiver.EXTRA_CALL_TO, callParams?.toRaw)
             putInt(TVBroadcastReceiver.EXTRA_CALL_DIRECTION, callDirection.id)
         })
+    }
+    
+    /**
+     * Starts the ringback tone for outgoing calls.
+     */
+    private fun startRingback() {
+        try {
+            val ringbackManager = RingbackManager.getInstance(context)
+            val useSpeaker = callAudioState?.route == CallAudioState.ROUTE_SPEAKER
+            ringbackManager.startRingback(useSpeaker)
+            Log.d(TAG, "Started ringback tone")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start ringback: ${e.message}")
+        }
+    }
+    
+    /**
+     * Stops the ringback tone.
+     */
+    private fun stopRingback() {
+        try {
+            val ringbackManager = RingbackManager.getInstance(context)
+            ringbackManager.stopRingback()
+            Log.d(TAG, "Stopped ringback tone")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to stop ringback: ${e.message}")
+        }
     }
 
 
@@ -211,6 +245,10 @@ open class TVCallConnection(
 
     override fun onConnected(call: Call) {
         Log.d(TAG, "onConnected: onConnected")
+        
+        // Stop ringback tone when call connects (callee answered)
+        stopRingback()
+        
         twilioCall = call
         setActive()
         onCallStateListener?.withValue(call.state)
@@ -265,6 +303,10 @@ open class TVCallConnection(
     override fun onDisconnected(call: Call, reason: CallException?) {
         // TODO run below only if we did NOT ended call i.e. remove disconnect from other client
         Log.d(TAG, "onDisconnected: onDisconnected, reason: ${reason?.message}.\nException: ${reason.toString()}")
+        
+        // Stop ringback tone if playing
+        stopRingback()
+        
         twilioCall = null
         onCallStateListener?.withValue(call.state)
         onEvent?.onChange(TVNativeCallEvents.EVENT_DISCONNECTED_REMOTE, Bundle().apply {
@@ -279,6 +321,10 @@ open class TVCallConnection(
     override fun onAbort() {
         super.onAbort()
         Log.i(TAG, "onAbort: onAbort")
+        
+        // Stop ringback tone if playing
+        stopRingback()
+        
         twilioCall?.disconnect()
         setDisconnected(DisconnectCause(DisconnectCause.CANCELED))
         onAction?.onChange(TVNativeCallActions.ACTION_ABORT, null)
@@ -289,6 +335,10 @@ open class TVCallConnection(
     override fun onDisconnect() {
         super.onDisconnect()
         Log.i(TAG, "onDisconnect: onDisconnect")
+        
+        // Stop ringback tone if playing
+        stopRingback()
+        
         twilioCall?.disconnect()
         setDisconnected(DisconnectCause(DisconnectCause.LOCAL))
         this.onDisconnected?.withValue(DisconnectCause(DisconnectCause.LOCAL))
@@ -460,6 +510,16 @@ open class TVCallConnection(
      * @param newState: true if speaker is enabled, false if speaker is disabled
      */
     fun toggleSpeaker(newState: Boolean) {
+        // Update ringback audio route if playing
+        try {
+            val ringbackManager = RingbackManager.getInstance(context)
+            if (ringbackManager.isRingbackPlaying()) {
+                ringbackManager.updateAudioRoute(newState)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to update ringback audio route: ${e.message}")
+        }
+        
         toggleAudioRoute(CallAudioState.ROUTE_SPEAKER, newState)
     }
 
@@ -510,6 +570,10 @@ open class TVCallConnection(
      */
     fun disconnect() {
         Log.d(TAG, "disconnect: disconnect")
+        
+        // Stop ringback tone if playing
+        stopRingback()
+        
         if (this is TVCallInviteConnection && state == STATE_RINGING) {
             rejectInvite()
         } else {
