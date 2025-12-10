@@ -94,7 +94,9 @@ class IncomingCallActivity : AppCompatActivity() {
         }
 
         // Set up decline button
-        findViewById<Button>(R.id.btn_decline).setOnClickListener {
+        val declineButton = findViewById<Button>(R.id.btn_decline)
+        declineButton.setOnClickListener {
+            declineButton.isEnabled = false // Prevent double tap
             declineCall()
         }
     }
@@ -213,6 +215,7 @@ class IncomingCallActivity : AppCompatActivity() {
                 }
             }
         }
+        // Optionally disable decline button here as well
         finish()
     }
 

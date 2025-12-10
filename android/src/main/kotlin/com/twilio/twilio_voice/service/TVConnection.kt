@@ -1,6 +1,3 @@
-// TODO
-// - add twilio parameter interpretation
-// - create contact with twi:// from twilio parameters
 
 package com.twilio.twilio_voice.service
 
@@ -114,6 +111,29 @@ open class TVCallConnection(
         this.onAction = onAction
         audioModeIsVoip = true
         connectionCapabilities = CAPABILITY_MUTE or CAPABILITY_HOLD or CAPABILITY_SUPPORT_HOLD
+    }
+
+    /**
+     * Force disconnect with extra logging for debugging decline issues.
+     */
+    fun forceDisconnectWithLogging() {
+        Log.i(TAG, "[Decline] forceDisconnectWithLogging called. State: $state, Direction: $callDirection, CallParams: ${getCallParameters()?.callSid}")
+        try {
+            if (this is TVCallInviteConnection && state == STATE_RINGING) {
+                Log.i(TAG, "[Decline] TVCallInviteConnection in RINGING, calling rejectInvite()")
+                (this as TVCallInviteConnection).rejectInvite()
+            } else {
+                Log.i(TAG, "[Decline] Not RINGING or not TVCallInviteConnection, calling disconnect() on twilioCall")
+                twilioCall?.disconnect() ?: Log.w(TAG, "[Decline] twilioCall is null")
+                onEvent?.onChange(TVNativeCallEvents.EVENT_DISCONNECTED_LOCAL, null)
+                setDisconnected(DisconnectCause(DisconnectCause.LOCAL))
+                onDisconnected?.withValue(DisconnectCause(DisconnectCause.LOCAL))
+                onCallStateListener?.withValue(Call.State.DISCONNECTED)
+                destroy()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "[Decline] Exception in forceDisconnectWithLogging: ${e.message}", e)
+        }
     }
 
     fun setOnCallDisconnected(handler: CompletionHandler<DisconnectCause>) {

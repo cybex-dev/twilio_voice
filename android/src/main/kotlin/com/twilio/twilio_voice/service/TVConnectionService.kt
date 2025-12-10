@@ -425,16 +425,29 @@ class TVConnectionService : ConnectionService() {
                     val callHandle = it.getStringExtra(EXTRA_CALL_HANDLE) ?: getActiveCallHandle() ?: run {
                         Log.e(TAG, "onStartCommand: ACTION_HANGUP is missing String EXTRA_CALL_HANDLE")
                         activeConnections.clear()
+                        sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, null, null)
+                        stopForegroundService()
+                        stopSelfSafe()
                         return@let
                     }
 
-                    // Cancel incoming call notification and release wake lock
+                    Log.i(TAG, "[Decline] Received ACTION_HANGUP for callHandle: $callHandle. Active connections: ${activeConnections.keys}")
                     cancelIncomingCallNotification()
                     releaseWakeLock()
 
-                    getConnection(callHandle)?.disconnect() ?: run {
-                        Log.e(TAG, "onStartCommand: [ACTION_HANGUP] could not find connection for callHandle: $callHandle")
+                    val connection = getConnection(callHandle)
+                    if (connection != null) {
+                        Log.i(TAG, "[Decline] Found connection for $callHandle, state=${connection.state}")
+                        connection.forceDisconnectWithLogging()
+                        sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, callHandle, connection.extras)
+                        activeConnections.remove(callHandle)
+                    } else {
+                        Log.e(TAG, "[Decline] No connection found for $callHandle. Forcing cleanup.")
+                        activeConnections.clear()
+                        sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, callHandle, null)
                     }
+                    stopForegroundService()
+                    stopSelfSafe()
                 }
 
                 ACTION_PLACE_OUTGOING_CALL -> {
