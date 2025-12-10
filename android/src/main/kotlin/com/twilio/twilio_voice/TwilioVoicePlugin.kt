@@ -40,6 +40,7 @@ import com.twilio.twilio_voice.types.TVNativeCallEvents
 import com.twilio.twilio_voice.types.TelecomManagerExtension.canReadPhoneNumbers
 import com.twilio.twilio_voice.types.TelecomManagerExtension.getPhoneAccountHandle
 import com.twilio.twilio_voice.types.TelecomManagerExtension.hasCallCapableAccount
+import com.twilio.twilio_voice.types.TelecomManagerExtension.hasCallCapableAccountSafe
 import com.twilio.twilio_voice.types.TelecomManagerExtension.openPhoneAccountSettings
 import com.twilio.twilio_voice.types.TelecomManagerExtension.registerPhoneAccount
 import com.twilio.voice.Call
@@ -865,18 +866,14 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             }
 
             TVMethodChannels.HAS_READ_PHONE_STATE_PERMISSION -> {
-                result.success(checkReadPhoneStatePermission())
+                // No longer required - always return true
+                result.success(true)
             }
 
             TVMethodChannels.REQUEST_READ_PHONE_STATE_PERMISSION -> {
-                logEvent("requestingReadPhoneStatePermission")
-                if (!checkReadPhoneStatePermission()) {
-                    requestPermissionForPhoneState() { granted ->
-                        result.success(granted)
-                    }
-                } else {
-                    result.success(true)
-                }
+                // No longer required - skip and return success
+                logEvent("requestingReadPhoneStatePermission - skipped, not required")
+                result.success(true)
             }
 
             TVMethodChannels.HAS_CALL_PHONE_PERMISSION -> {
@@ -1117,11 +1114,9 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     /**
      * Attempts to place a call using the [TVConnectionService].
      * Requires permissions:
-     * - [Manifest.permission.READ_PHONE_STATE]: for checking call capable accounts
-     * - [Manifest.permission.READ_PHONE_NUMBERS]: for getting the phone account via the handle.
      * - [Manifest.permission.RECORD_AUDIO]: for placing the call and capturing microphone audio.
      */
-    @RequiresPermission(allOf = [Manifest.permission.READ_PHONE_STATE, Manifest.permission.READ_PHONE_NUMBERS, Manifest.permission.RECORD_AUDIO])
+    @RequiresPermission(Manifest.permission.RECORD_AUDIO)
     private fun placeCall(
         ctx: Context,
         accessToken: String,
@@ -1135,60 +1130,40 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         assert(!connect && (to == null || to.isNotEmpty())) { "To cannot be empty" }
         assert(!connect && (from == null || from.isNotEmpty())) { "From cannot be empty" }
 
-        telecomManager?.let { tm ->
-            if (!tm.hasCallCapableAccount(ctx, TVConnectionService::class.java.name)) {
-                Log.e(TAG, "No registered phone account, call `registerPhoneAccount()` first")
-                return false
-            }
-            if (!checkMicrophonePermission()) {
-                Log.e(TAG, "No microphone permission, call `requestMicrophonePermission()` first")
-                return false
-            }
-            if (!checkReadPhoneNumbersPermission()) {
-                Log.e(TAG, "No read phone state permission, call `requestReadPhoneStatePermission()` first")
-                return false
-            }
-            if (!checkCallPhonePermission()) {
-                Log.e(TAG, "No call phone permission, call `requestCallPhonePermission()` first")
-                return false
-            }
-            if (!checkManageOwnCallsPermission()) {
-                Log.e(TAG, "No manage own calls permission, call `requestManageOwnCallsPermission()` first")
-                return false
-            }
-
-            val callParams = HashMap<String, String>(params)
-            if (params[Constants.PARAM_TO] == null) {
-                Log.w(TAG, "Call parameters must include '${Constants.PARAM_TO}', removing...")
-                callParams.remove(Constants.PARAM_TO)
-            }
-            if (params[Constants.PARAM_FROM] == null) {
-                Log.w(TAG, "Call parameters must include '${Constants.PARAM_FROM}', removing...")
-                callParams.remove(Constants.PARAM_FROM)
-            }
-
-            Intent(ctx, TVConnectionService::class.java).apply {
-                action = TVConnectionService.ACTION_PLACE_OUTGOING_CALL
-                putExtra(TVConnectionService.EXTRA_TOKEN, accessToken)
-                if(connect) {
-                    putExtra(TVConnectionService.EXTRA_CONNECT_RAW, true)
-                }
-                putExtra(TVConnectionService.EXTRA_TO, to)
-                putExtra(TVConnectionService.EXTRA_FROM, from)
-                putExtra(TVConnectionService.EXTRA_CALLER_NAME, callerName)
-                putExtra(TVConnectionService.EXTRA_OUTGOING_PARAMS, Bundle().apply {
-                    for ((key, value) in params) {
-                        putString(key, value)
-                    }
-                })
-                ctx.startService(this)
-            }
-
-            return true
-        } ?: run {
-            Log.e(TAG, "TelecomManager is null, cannot place call")
+        // Only microphone permission is required for direct Twilio Voice calls
+        if (!checkMicrophonePermission()) {
+            Log.e(TAG, "No microphone permission, call `requestMicrophonePermission()` first")
             return false
         }
+
+        val callParams = HashMap<String, String>(params)
+        if (params[Constants.PARAM_TO] == null) {
+            Log.w(TAG, "Call parameters must include '${Constants.PARAM_TO}', removing...")
+            callParams.remove(Constants.PARAM_TO)
+        }
+        if (params[Constants.PARAM_FROM] == null) {
+            Log.w(TAG, "Call parameters must include '${Constants.PARAM_FROM}', removing...")
+            callParams.remove(Constants.PARAM_FROM)
+        }
+
+        Intent(ctx, TVConnectionService::class.java).apply {
+            action = TVConnectionService.ACTION_PLACE_OUTGOING_CALL
+            putExtra(TVConnectionService.EXTRA_TOKEN, accessToken)
+            if(connect) {
+                putExtra(TVConnectionService.EXTRA_CONNECT_RAW, true)
+            }
+            putExtra(TVConnectionService.EXTRA_TO, to)
+            putExtra(TVConnectionService.EXTRA_FROM, from)
+            putExtra(TVConnectionService.EXTRA_CALLER_NAME, callerName)
+            putExtra(TVConnectionService.EXTRA_OUTGOING_PARAMS, Bundle().apply {
+                for ((key, value) in params) {
+                    putString(key, value)
+                }
+            })
+            ctx.startService(this)
+        }
+
+        return true
     }
 
     private fun formatCustomParams(
@@ -1203,21 +1178,8 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     }
 
     private fun checkAccountConnection(context: Context): Boolean {
-        var isConnected = false
-        val permissionResult =
-            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE)
-        if (permissionResult == PackageManager.PERMISSION_GRANTED) {
-            telecomManager?.let {
-                val enabledAccounts: List<PhoneAccountHandle> = it.callCapablePhoneAccounts
-                for (account in enabledAccounts) {
-                    if (account.componentName.className == TVConnectionService::class.java.name) {
-                        isConnected = true
-                        break
-                    }
-                }
-            }
-        }
-        return isConnected
+        // Simply check if we have active connections instead of querying TelecomManager
+        return TVConnectionService.hasActiveCalls()
     }
 
     /**
@@ -1260,7 +1222,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
 //                    return false
 //                }
 
-                if (tm.hasCallCapableAccount(ctx, phoneAccountHandle.componentName.className)) {
+                if (tm.hasCallCapableAccountSafe(ctx, phoneAccountHandle.componentName.className)) {
                     Log.w(TAG, "registerPhoneAccount: Phone account already registered, re-registering anyway")
 //                    return true
                 }
@@ -1414,6 +1376,8 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 addAction(TVNativeCallEvents.EVENT_DISCONNECTED_LOCAL)
                 addAction(TVNativeCallEvents.EVENT_DISCONNECTED_REMOTE)
                 addAction(TVNativeCallEvents.EVENT_MISSED)
+                addAction(TVNativeCallEvents.EVENT_MUTE)
+                addAction(TVNativeCallEvents.EVENT_SPEAKER)
             }
             LocalBroadcastManager.getInstance(context!!)
                 .registerReceiver(broadcastReceiver!!, intentFilter)
@@ -1972,6 +1936,20 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 logEvent("", "Missed Call")
                 logEvent("", "Call Ended")
                 callSid = null
+            }
+
+            TVNativeCallEvents.EVENT_MUTE -> {
+                val muteState = intent.getBooleanExtra(TVBroadcastReceiver.EXTRA_CALL_MUTE_STATE, false)
+                isMuted = muteState
+                logEvent("", if (muteState) "Mute" else "Unmute")
+                Log.d(TAG, "handleBroadcastIntent: Mute state changed to $muteState")
+            }
+
+            TVNativeCallEvents.EVENT_SPEAKER -> {
+                val speakerState = intent.getBooleanExtra(TVBroadcastReceiver.EXTRA_CALL_SPEAKER_STATE, false)
+                isSpeakerOn = speakerState
+                logEvent("", if (speakerState) "Speaker On" else "Speaker Off")
+                Log.d(TAG, "handleBroadcastIntent: Speaker state changed to $speakerState")
             }
 
             else -> {

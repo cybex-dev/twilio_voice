@@ -11,6 +11,7 @@ import android.content.pm.ServiceInfo
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.telecom.*
 import android.util.Log
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
@@ -28,10 +29,13 @@ import com.twilio.twilio_voice.types.CompletionHandler
 import com.twilio.twilio_voice.types.ContextExtension.appName
 import com.twilio.twilio_voice.types.ContextExtension.hasCallPhonePermission
 import com.twilio.twilio_voice.types.ContextExtension.hasManageOwnCallsPermission
+import com.twilio.twilio_voice.types.TVNativeCallEvents
+import com.twilio.twilio_voice.IncomingCallActivity
+import com.twilio.voice.CallInvite
+import com.twilio.twilio_voice.types.ContextExtension.hasMicrophoneAccess
 import com.twilio.twilio_voice.types.IntentExtension.getParcelableExtraSafe
 import com.twilio.twilio_voice.types.TelecomManagerExtension.getPhoneAccountHandle
-import com.twilio.twilio_voice.types.TelecomManagerExtension.hasCallCapableAccount
-import com.twilio.twilio_voice.types.TelecomManagerExtension.canReadPhoneState
+import com.twilio.twilio_voice.types.TelecomManagerExtension.hasCallCapableAccountSafe
 import com.twilio.twilio_voice.types.TelecomManagerExtension.registerPhoneAccount
 import com.twilio.twilio_voice.types.ValueBundleChanged
 import com.twilio.voice.*
@@ -47,6 +51,8 @@ class TVConnectionService : ConnectionService() {
         val TWI_SCHEME: String = "twi"
 
         val SERVICE_TYPE_MICROPHONE: Int = 100
+        
+        val INCOMING_CALL_NOTIFICATION_ID: Int = 101
 
         //region ACTIONS_* Constants
         /**
@@ -215,6 +221,41 @@ class TVConnectionService : ConnectionService() {
         }
     }
 
+    // WakeLock to keep CPU awake during incoming call
+    private var wakeLock: PowerManager.WakeLock? = null
+
+    @SuppressLint("WakelockTimeout")
+    private fun wakeScreen() {
+        try {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+            
+            // Acquire a partial wake lock to keep CPU running
+            wakeLock = powerManager.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                "TwilioVoice:IncomingCallWakeLock"
+            )
+            wakeLock?.acquire(60 * 1000L) // 60 seconds max
+            
+            Log.d(TAG, "[VoiceConnectionService] Wake lock acquired for incoming call")
+        } catch (e: Exception) {
+            Log.w(TAG, "[VoiceConnectionService] Failed to acquire wake lock: $e")
+        }
+    }
+
+    private fun releaseWakeLock() {
+        try {
+            wakeLock?.let {
+                if (it.isHeld) {
+                    it.release()
+                    Log.d(TAG, "[VoiceConnectionService] Wake lock released")
+                }
+            }
+            wakeLock = null
+        } catch (e: Exception) {
+            Log.w(TAG, "[VoiceConnectionService] Failed to release wake lock: $e")
+        }
+    }
+
 
     private fun stopSelfSafe(): Boolean {
         if (!hasActiveCalls()) {
@@ -257,9 +298,17 @@ class TVConnectionService : ConnectionService() {
                     }
 
                     val callHandle = cancelledCallInvite.callSid
+                    
+                    // Cancel the incoming call notification
+                    cancelIncomingCallNotification()
+                    
                     getConnection(callHandle)?.onAbort() ?: run {
                         Log.e(TAG, "onStartCommand: [ACTION_CANCEL_CALL_INVITE] could not find connection for callHandle: $callHandle")
                     }
+                    
+                    // Stop foreground and self if no active calls
+                    stopForegroundService()
+                    stopSelfSafe()
                 }
 
                 ACTION_INCOMING_CALL -> {
@@ -269,69 +318,84 @@ class TVConnectionService : ConnectionService() {
                         return@let
                     }
 
-                    val telecomManager = getSystemService(TELECOM_SERVICE) as TelecomManager
-                    if (!telecomManager.canReadPhoneState(applicationContext)) {
-                        Log.e(TAG, "onCallInvite: Permission to read phone state not granted or requested.")
-                        callInvite.reject(applicationContext)
-                        return@let
-                    }
+                    // Wake the screen first - this is critical for terminated state
+                    wakeScreen()
 
-                    val phoneAccountHandle = telecomManager.getPhoneAccountHandle(applicationContext)
-                    val phoneAccount = telecomManager.getPhoneAccount(phoneAccountHandle)
-                    if(phoneAccount == null) {
-                        Log.e(TAG, "onStartCommand: PhoneAccount is null, make sure to register one with `registerPhoneAccount()`")
-                        return@let
-                    }
-                    if(!phoneAccount.isEnabled) {
-                        Log.e(TAG, "onStartCommand: PhoneAccount is not enabled, prompt the user to enable the phone account by opening settings with `openPhoneAccountSettings()`")
-                        return@let
-                    }
+                    // Start foreground service first for Android O+
+                    startIncomingCallForegroundService(callInvite)
 
-                    // Get telecom manager
-                    if (!telecomManager.hasCallCapableAccount(applicationContext, phoneAccountHandle.componentName.className)) {
-                        Log.e(
-                            TAG, "onCallInvite: No registered phone account for PhoneHandle $phoneAccountHandle.\n" +
-                                    "Check the following:\n" +
-                                    "- Have you requested READ_PHONE_STATE permissions\n" +
-                                    "- Have you registered a PhoneAccount \n" +
-                                    "- Have you activated the Calling Account?"
-                        )
-                        callInvite.reject(applicationContext)
-                        return@let
-                    }
-
-                    val myBundle: Bundle = Bundle().apply {
-                        putParcelable(EXTRA_INCOMING_CALL_INVITE, callInvite)
-                    }
-                    myBundle.classLoader = CallInvite::class.java.classLoader
-
-                    // Add extras for [addNewIncomingCall] method
-                    val extras = Bundle().apply {
-                        putBundle(TelecomManager.EXTRA_INCOMING_CALL_EXTRAS, myBundle)
-                        putParcelable(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, phoneAccountHandle)
-
-                        if (callInvite.customParameters.containsKey("_TWI_SUBJECT")) {
-                            putString(TelecomManager.EXTRA_CALL_SUBJECT, callInvite.customParameters["_TWI_SUBJECT"])
+                    // Bypass TelecomManager - handle incoming call directly without PhoneAccount
+                    val mStorage: Storage = StorageImpl(applicationContext)
+                    
+                    // Get call parameters from invite
+                    val callParams = TVCallInviteParametersImpl(mStorage, callInvite)
+                    
+                    // Create incoming call connection with required parameters
+                    val connection = TVCallInviteConnection(applicationContext, callInvite, callParams)
+                    
+                    val callSid = callInvite.callSid
+                    
+                    // Apply parameters and attach listeners
+                    applyParameters(connection, callParams, callInvite.from ?: "")
+                    attachCallEventListeners(connection, callSid)
+                    
+                    // Set call disconnected listener
+                    val onCallDisconnectedListener: CompletionHandler<DisconnectCause> = CompletionHandler {
+                        if (activeConnections.containsKey(callSid)) {
+                            activeConnections.remove(callSid)
                         }
+                        sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, callSid, connection.extras)
+                        cancelIncomingCallNotification()
+                        releaseWakeLock()
+                        stopForegroundService()
+                        stopSelfSafe()
                     }
-                    android.util.Log.d(TAG, "onCallRecived basil: $extras")
-                    // Add new incoming call to the telecom manager
-                    telecomManager.addNewIncomingCall(phoneAccountHandle, extras)
+                    connection.setOnCallDisconnected(onCallDisconnectedListener)
+                    
+                    // Notify about incoming call
+                    sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_INCOMING_CALL, callSid, connection.extras)
+                    sendBroadcastCallHandle(applicationContext, callSid)
+                    
+                    // Directly launch IncomingCallActivity - use a short delay to ensure foreground service is ready
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        try {
+                            val incomingCallIntent = IncomingCallActivity.createIntent(applicationContext, callInvite)
+                            incomingCallIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                            applicationContext.startActivity(incomingCallIntent)
+                            Log.d(TAG, "onStartCommand: IncomingCallActivity launched successfully")
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Could not start IncomingCallActivity directly, relying on notification: ${e.message}")
+                        }
+                    }, 100)
+                    
+                    Log.d(TAG, "onStartCommand: Direct incoming call handled - callSid: $callSid")
                 }
 
                 ACTION_ANSWER -> {
                     val callHandle = it.getStringExtra(EXTRA_CALL_HANDLE) ?: getIncomingCallHandle() ?: run {
-                        Log.e(TAG, "onStartCommand: ACTION_HANGUP is missing String EXTRA_CALL_HANDLE")
+                        Log.e(TAG, "onStartCommand: ACTION_ANSWER is missing String EXTRA_CALL_HANDLE")
                         return@let
                     }
 
                     val connection = getConnection(callHandle) ?: run {
-                        Log.e(TAG, "onStartCommand: [ACTION_HANGUP] could not find connection for callHandle: $callHandle")
+                        Log.e(TAG, "onStartCommand: [ACTION_ANSWER] could not find connection for callHandle: $callHandle")
                         return@let
                     }
 
+                    // Cancel incoming call notification
+                    cancelIncomingCallNotification()
+
                     if(connection is TVCallInviteConnection) {
                         connection.acceptInvite()
+                        
+                        // Send connected event after answering
+                        val params = connection.getCallParameters()
+                        sendBroadcastEvent(applicationContext, TVNativeCallEvents.EVENT_CONNECTED, callHandle, Bundle().apply {
+                            putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callHandle)
+                            putString(TVBroadcastReceiver.EXTRA_CALL_FROM, params?.fromRaw ?: "")
+                            putString(TVBroadcastReceiver.EXTRA_CALL_TO, params?.toRaw ?: "")
+                            putInt(TVBroadcastReceiver.EXTRA_CALL_DIRECTION, CallDirection.INCOMING.id)
+                        })
                     } else {
                         Log.e(TAG, "onStartCommand: [ACTION_ANSWER] could not find connection for callHandle: $callHandle")
                     }
@@ -343,6 +407,9 @@ class TVConnectionService : ConnectionService() {
                         activeConnections.clear()
                         return@let
                     }
+
+                    // Cancel incoming call notification
+                    cancelIncomingCallNotification()
 
                     getConnection(callHandle)?.disconnect() ?: run {
                         Log.e(TAG, "onStartCommand: [ACTION_HANGUP] could not find connection for callHandle: $callHandle")
@@ -386,47 +453,91 @@ class TVConnectionService : ConnectionService() {
                         })
                     }
 
-                    val telecomManager = getSystemService(TELECOM_SERVICE) as TelecomManager
-                    val phoneAccountHandle = telecomManager.getPhoneAccountHandle(applicationContext)
-
-                    if (!telecomManager.canReadPhoneState(applicationContext)) {
-                        Log.e(TAG, "onStartCommand: Missing READ_PHONE_STATE permission")
+                    // Bypass TelecomManager - directly create Twilio Voice call
+                    // This avoids the need for PhoneAccount registration/enablement
+                    
+                    if (!applicationContext.hasMicrophoneAccess()) {
+                        Log.e(TAG, "onStartCommand: Missing RECORD_AUDIO permission")
                         return@let
                     }
 
-                    val phoneAccount = telecomManager.getPhoneAccount(phoneAccountHandle)
-                    if(phoneAccount == null) {
-                        Log.e(TAG, "onStartCommand: PhoneAccount is null, make sure to register one with `registerPhoneAccount()`")
-                        return@let
-                    }
-                    if(!phoneAccount.isEnabled) {
-                        Log.e(TAG, "onStartCommand: PhoneAccount is not enabled, prompt the user to enable the phone account by opening settings with `openPhoneAccountSettings()`")
-                        return@let
-                    }
-
-                    if (!telecomManager.hasCallCapableAccount(applicationContext, phoneAccountHandle.componentName.className)) {
-                        Log.e(TAG, "onStartCommand: No registered phone account for PhoneHandle $phoneAccountHandle")
-                        telecomManager.registerPhoneAccount(applicationContext, phoneAccountHandle)
-                    }
-
-                    if (!applicationContext.hasCallPhonePermission()) {
-                        Log.e(TAG, "onStartCommand: Missing CALL_PHONE permission, request permission with `requestCallPhonePermission()`")
-                        return@let
+                    // Create call parameters
+                    val callParams = HashMap<String, String>()
+                    if (from != null) callParams["From"] = from
+                    if (to != null) callParams["To"] = to
+                    
+                    // Add extra params
+                    it.getParcelableExtraSafe<Bundle>(EXTRA_OUTGOING_PARAMS)?.let { bundle ->
+                        for (key in bundle.keySet()) {
+                            bundle.getString(key)?.let { value -> 
+                                if (key != EXTRA_TOKEN && key != EXTRA_TO && key != EXTRA_FROM) {
+                                    callParams[key] = value 
+                                }
+                            }
+                        }
                     }
 
-                    if (!applicationContext.hasManageOwnCallsPermission()) {
-                        Log.e(TAG, "onStartCommand: Missing MANAGE_OWN_CALLS permission, request permission with `requestManageOwnCallsPermission()`")
-                        return@let
+                    // Create connect options
+                    val connectOptions = ConnectOptions.Builder(token)
+                        .params(callParams)
+                        .build()
+
+                    // Create outgoing connection without TelecomManager
+                    val connection = TVCallConnection(applicationContext)
+                    
+                    // Create storage instance for call parameters
+                    val mStorage: Storage = StorageImpl(applicationContext)
+
+                    // Set call state listener BEFORE connecting
+                    val onCallStateListener: CompletionHandler<Call.State> = CompletionHandler { state ->
+                        if (state == Call.State.RINGING || state == Call.State.CONNECTED) {
+                            val call = connection.twilioCall!!
+                            val callSid = call.sid!!
+
+                            // Resolve call parameters
+                            val tvCallParams = TVCallParametersImpl(mStorage, call, to ?: "", from ?: "", callParams)
+                            connection.setCallParameters(tvCallParams)
+
+                            // If call is not attached, attach it
+                            if (!activeConnections.containsKey(callSid)) {
+                                applyParameters(connection, tvCallParams, outgoingName ?: "")
+                                attachCallEventListeners(connection, callSid)
+                                tvCallParams.callSid = callSid
+                                
+                                // Manually send the ringing/connected event since onEvent was null when it first fired
+                                val event = if (state == Call.State.RINGING) TVNativeCallEvents.EVENT_RINGING else TVNativeCallEvents.EVENT_CONNECTED
+                                sendBroadcastEvent(applicationContext, event, callSid, Bundle().apply {
+                                    putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callSid)
+                                    putString(TVBroadcastReceiver.EXTRA_CALL_FROM, tvCallParams.fromRaw)
+                                    putString(TVBroadcastReceiver.EXTRA_CALL_TO, tvCallParams.toRaw)
+                                    putInt(TVBroadcastReceiver.EXTRA_CALL_DIRECTION, CallDirection.OUTGOING.id)
+                                })
+                                // Also send call handle broadcast
+                                sendBroadcastCallHandle(applicationContext, callSid)
+                            }
+                        }
                     }
 
-                    // Create outgoing extras
-                    val extras = Bundle().apply {
-                        putParcelable(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, phoneAccountHandle)
-                        putBundle(TelecomManager.EXTRA_OUTGOING_CALL_EXTRAS, myBundle)
+                    // Set call disconnected listener BEFORE connecting
+                    val onCallDisconnectedListener: CompletionHandler<DisconnectCause> = CompletionHandler {
+                        connection.twilioCall?.let { call ->
+                            if (activeConnections.containsKey(call.sid)) {
+                                activeConnections.remove(call.sid)
+                            }
+                            sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, call.sid ?: "", connection.extras)
+                            stopForegroundService()
+                            stopSelfSafe()
+                        }
                     }
 
-                    val address: Uri = Uri.fromParts(PhoneAccount.SCHEME_TEL, to, null)
-                    telecomManager.placeCall(address, extras)
+                    // Set listeners BEFORE calling Voice.connect
+                    connection.setOnCallStateListener(onCallStateListener)
+                    connection.setOnCallDisconnected(onCallDisconnectedListener)
+                    
+                    // Now connect with Voice SDK
+                    connection.twilioCall = Voice.connect(applicationContext, connectOptions, connection)
+
+                    Log.d(TAG, "onStartCommand: Direct Twilio Voice call initiated")
                 }
 
                 ACTION_TOGGLE_BLUETOOTH -> {
@@ -830,5 +941,99 @@ class TVConnectionService : ConnectionService() {
         } catch (e: java.lang.Exception) {
             Log.w(TAG, "[VoiceConnectionService] can't stop foreground service :$e")
         }
+    }
+
+    private fun getOrCreateIncomingCallChannel(): NotificationChannel {
+        val id = "${applicationContext.packageName}_incoming_calls_v2"
+        val name = "Incoming Calls"
+        val descriptionText = "Incoming Voice Calls"
+        val notificationManager: NotificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        
+        // Delete old channel if exists (in case importance was wrong)
+        notificationManager.deleteNotificationChannel("${applicationContext.packageName}_incoming_calls")
+        
+        // IMPORTANCE_HIGH is required for full-screen intent to work in terminated state
+        val importance = NotificationManager.IMPORTANCE_HIGH
+        val channel = NotificationChannel(id, name, importance).apply {
+            description = descriptionText
+            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            setSound(null, null) // No sound from notification, activity will handle it
+            enableVibration(false)
+            setShowBadge(false)
+        }
+        notificationManager.createNotificationChannel(channel)
+        return channel
+    }
+
+    private fun createIncomingCallNotification(callInvite: CallInvite): Notification {
+        val channel = getOrCreateIncomingCallChannel()
+        
+        // Create full-screen intent for incoming call activity
+        val fullScreenIntent = IncomingCallActivity.createIntent(applicationContext, callInvite)
+        val fullScreenPendingIntent = PendingIntent.getActivity(
+            applicationContext,
+            0,
+            fullScreenIntent,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) 
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE 
+            else 
+                PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        // Notification with full-screen intent - this is needed for terminated state
+        // The full-screen intent will show the IncomingCallActivity directly
+        val builder = Notification.Builder(this, channel.id).apply {
+            setOngoing(true)
+            setContentTitle("Incoming Call")
+            setCategory(Notification.CATEGORY_CALL)
+            setSmallIcon(R.drawable.ic_microphone)
+            setFullScreenIntent(fullScreenPendingIntent, true)
+            setContentIntent(fullScreenPendingIntent)
+            setVisibility(Notification.VISIBILITY_PUBLIC)
+            setAutoCancel(true)
+            // Priority for pre-Oreo devices
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+                @Suppress("DEPRECATION")
+                setPriority(Notification.PRIORITY_MAX)
+            }
+            // On Android 12+ this ensures the notification shows immediately
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
+            }
+        }
+        return builder.build()
+    }
+
+    private fun startIncomingCallForegroundService(callInvite: CallInvite) {
+        val notification = createIncomingCallNotification(callInvite)
+        Log.d(TAG, "[VoiceConnectionService] Starting incoming call foreground service")
+        try {
+            // For incoming call notification (before answering), use PHONE_CALL type only
+            // MICROPHONE type requires RECORD_AUDIO permission to be granted at runtime
+            // which may not be available yet when showing the incoming call UI
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                // Android 14+ - use PHONE_CALL type
+                startForeground(INCOMING_CALL_NOTIFICATION_ID, notification, 
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                // Android 10-13 - use SHORT_SERVICE or default
+                startForeground(INCOMING_CALL_NOTIFICATION_ID, notification)
+            } else {
+                startForeground(INCOMING_CALL_NOTIFICATION_ID, notification)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "[VoiceConnectionService] Can't start incoming call foreground service : $e")
+            // Fallback: try without specific service type
+            try {
+                startForeground(INCOMING_CALL_NOTIFICATION_ID, notification)
+            } catch (e2: Exception) {
+                Log.e(TAG, "[VoiceConnectionService] Fallback foreground service also failed: $e2")
+            }
+        }
+    }
+
+    private fun cancelIncomingCallNotification() {
+        val notificationManager: NotificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.cancel(INCOMING_CALL_NOTIFICATION_ID)
     }
 }

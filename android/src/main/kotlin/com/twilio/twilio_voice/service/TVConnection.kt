@@ -6,6 +6,7 @@ package com.twilio.twilio_voice.service
 
 import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
 import android.os.Bundle
 import android.telecom.CallAudioState
 import android.telecom.Connection
@@ -448,7 +449,12 @@ open class TVCallConnection(
                 val newAudioRoute = a.copyWith(newState)
                 onCallAudioStateChanged(newAudioRoute)
             } ?: run {
-                Log.e(TAG, "toggleMute: Unable to toggle mute, callAudioState is null")
+                // Fallback: Broadcast mute state change directly when not using TelecomManager
+                Log.d(TAG, "toggleMute: Using direct mute, newState=$newState")
+                onEvent?.onChange(TVNativeCallEvents.EVENT_MUTE, Bundle().apply {
+                    putBoolean(TVBroadcastReceiver.EXTRA_CALL_MUTE_STATE, newState)
+                    putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callParams?.callSid)
+                })
             }
         } ?: run {
             Log.e(TAG, "toggleMute: Unable to toggle mute, active call is null")
@@ -460,7 +466,22 @@ open class TVCallConnection(
      * @param newState: true if speaker is enabled, false if speaker is disabled
      */
     fun toggleSpeaker(newState: Boolean) {
-        toggleAudioRoute(CallAudioState.ROUTE_SPEAKER, newState)
+        // First try using TelecomManager's audio route
+        if (callAudioState != null) {
+            toggleAudioRoute(CallAudioState.ROUTE_SPEAKER, newState)
+        } else {
+            // Fallback: Use AudioManager directly when not using TelecomManager
+            Log.d(TAG, "toggleSpeaker: Using AudioManager directly, newState=$newState")
+            val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+            audioManager.isSpeakerphoneOn = newState
+            
+            // Broadcast speaker state change
+            onEvent?.onChange(TVNativeCallEvents.EVENT_SPEAKER, Bundle().apply {
+                putBoolean(TVBroadcastReceiver.EXTRA_CALL_SPEAKER_STATE, newState)
+                putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callParams?.callSid)
+            })
+        }
     }
 
     /**
@@ -490,6 +511,27 @@ open class TVCallConnection(
             // Since audio route onCallAudioStateChanged does not respond to changes when call is on hold, we invoke this change manually to notify the UI.
             if (state == STATE_HOLDING) {
                 onCallAudioStateChanged(callAudioState.copyWith(newRoute))
+            }
+        } ?: run {
+            // Fallback for when not using TelecomManager
+            Log.d(TAG, "toggleAudioRoute: callAudioState is null, using AudioManager directly")
+            val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+            when (newAudioRoute) {
+                CallAudioState.ROUTE_SPEAKER -> {
+                    audioManager.isSpeakerphoneOn = condition ?: true
+                }
+                CallAudioState.ROUTE_WIRED_OR_EARPIECE -> {
+                    audioManager.isSpeakerphoneOn = false
+                }
+                CallAudioState.ROUTE_BLUETOOTH -> {
+                    audioManager.isBluetoothScoOn = condition ?: true
+                    if (condition == true) {
+                        audioManager.startBluetoothSco()
+                    } else {
+                        audioManager.stopBluetoothSco()
+                    }
+                }
             }
         }
     }
