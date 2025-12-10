@@ -384,6 +384,7 @@ class TVConnectionService : ConnectionService() {
 
                     // Cancel incoming call notification
                     cancelIncomingCallNotification()
+                    releaseWakeLock()
 
                     if(connection is TVCallInviteConnection) {
                         connection.acceptInvite()
@@ -396,6 +397,25 @@ class TVConnectionService : ConnectionService() {
                             putString(TVBroadcastReceiver.EXTRA_CALL_TO, params?.toRaw ?: "")
                             putInt(TVBroadcastReceiver.EXTRA_CALL_DIRECTION, CallDirection.INCOMING.id)
                         })
+                        
+                        // Launch main activity after answering from notification
+                        // Use Handler to give foreground service time to establish before launching activity
+                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                            try {
+                                val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+                                launchIntent?.let { intent ->
+                                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
+                                                   Intent.FLAG_ACTIVITY_CLEAR_TOP or 
+                                                   Intent.FLAG_ACTIVITY_SINGLE_TOP
+                                    intent.putExtra("fromIncomingCall", true)
+                                    intent.putExtra("callHandle", callHandle)
+                                    startActivity(intent)
+                                    Log.d(TAG, "Launched main activity after answering call")
+                                }
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Could not launch main activity after answering: ${e.message}")
+                            }
+                        }, 200)
                     } else {
                         Log.e(TAG, "onStartCommand: [ACTION_ANSWER] could not find connection for callHandle: $callHandle")
                     }
@@ -408,8 +428,9 @@ class TVConnectionService : ConnectionService() {
                         return@let
                     }
 
-                    // Cancel incoming call notification
+                    // Cancel incoming call notification and release wake lock
                     cancelIncomingCallNotification()
+                    releaseWakeLock()
 
                     getConnection(callHandle)?.disconnect() ?: run {
                         Log.e(TAG, "onStartCommand: [ACTION_HANGUP] could not find connection for callHandle: $callHandle")
@@ -980,25 +1001,124 @@ class TVConnectionService : ConnectionService() {
                 PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        // Notification with full-screen intent - this is needed for terminated state
-        // The full-screen intent will show the IncomingCallActivity directly
-        val builder = Notification.Builder(this, channel.id).apply {
-            setOngoing(true)
-            setContentTitle("Incoming Call")
-            setCategory(Notification.CATEGORY_CALL)
-            setSmallIcon(R.drawable.ic_microphone)
-            setFullScreenIntent(fullScreenPendingIntent, true)
-            setContentIntent(fullScreenPendingIntent)
-            setVisibility(Notification.VISIBILITY_PUBLIC)
-            setAutoCancel(true)
-            // Priority for pre-Oreo devices
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-                @Suppress("DEPRECATION")
-                setPriority(Notification.PRIORITY_MAX)
-            }
-            // On Android 12+ this ensures the notification shows immediately
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        // Create answer intent
+        val answerIntent = Intent(applicationContext, TVConnectionService::class.java).apply {
+            action = ACTION_ANSWER
+            putExtra(EXTRA_CALL_HANDLE, callInvite.callSid)
+        }
+        val answerPendingIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            PendingIntent.getForegroundService(
+                applicationContext,
+                1,
+                answerIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+        } else {
+            PendingIntent.getService(
+                applicationContext,
+                1,
+                answerIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT
+            )
+        }
+
+        // Create decline intent
+        val declineIntent = Intent(applicationContext, TVConnectionService::class.java).apply {
+            action = ACTION_HANGUP
+            putExtra(EXTRA_CALL_HANDLE, callInvite.callSid)
+        }
+        val declinePendingIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            PendingIntent.getForegroundService(
+                applicationContext,
+                2,
+                declineIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+        } else {
+            PendingIntent.getService(
+                applicationContext,
+                2,
+                declineIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT
+            )
+        }
+
+        // Extract caller info
+        val callerName = callInvite.customParameters["client_name"] ?: "Unknown Caller"
+        
+        // Create an intent that launches IncomingCallActivity with answer action
+        val answerActivityIntent = Intent(applicationContext, IncomingCallActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(IncomingCallActivity.EXTRA_CALL_SID, callInvite.callSid)
+            putExtra(IncomingCallActivity.EXTRA_CALLER_NAME, callerName)
+            putExtra("action", "answer")
+        }
+        val answerActivityPendingIntent = PendingIntent.getActivity(
+            applicationContext,
+            3,
+            answerActivityIntent,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) 
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE 
+            else 
+                PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        
+        // Use CallStyle for Android 12+ for native incoming call UI in notification
+        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // Android 12+ - Use CallStyle for proper call notification
+            val person = android.app.Person.Builder()
+                .setName(callerName)
+                .setImportant(true)
+                .build()
+            
+            Notification.Builder(this, channel.id).apply {
+                setSmallIcon(R.drawable.ic_microphone)
+                setContentTitle("Incoming Call")
+                setContentText(callerName)
+                setCategory(Notification.CATEGORY_CALL)
+                setVisibility(Notification.VISIBILITY_PUBLIC)
+                setOngoing(true)
+                setAutoCancel(false)
+                setFullScreenIntent(fullScreenPendingIntent, true)
+                setContentIntent(fullScreenPendingIntent)
                 setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
+                // Use CallStyle for proper incoming call notification
+                // answerActivityPendingIntent launches activity that answers and opens app
+                // declinePendingIntent sends hangup to service
+                style = Notification.CallStyle.forIncomingCall(
+                    person,
+                    declinePendingIntent,
+                    answerActivityPendingIntent
+                )
+            }
+        } else {
+            // Pre-Android 12 - Use regular notification with actions
+            Notification.Builder(this, channel.id).apply {
+                setOngoing(true)
+                setContentTitle("Incoming Call")
+                setContentText(callerName)
+                setCategory(Notification.CATEGORY_CALL)
+                setSmallIcon(R.drawable.ic_microphone)
+                setFullScreenIntent(fullScreenPendingIntent, true)
+                setContentIntent(fullScreenPendingIntent)
+                setVisibility(Notification.VISIBILITY_PUBLIC)
+                setAutoCancel(false)
+                // Add answer and decline actions
+                addAction(Notification.Action.Builder(
+                    android.R.drawable.ic_menu_call,
+                    "Answer",
+                    answerPendingIntent
+                ).build())
+                addAction(Notification.Action.Builder(
+                    android.R.drawable.ic_menu_close_clear_cancel,
+                    "Decline",
+                    declinePendingIntent
+                ).build())
+                // Priority for pre-Oreo devices
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+                    @Suppress("DEPRECATION")
+                    setPriority(Notification.PRIORITY_MAX)
+                }
             }
         }
         return builder.build()

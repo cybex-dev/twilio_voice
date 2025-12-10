@@ -62,6 +62,14 @@ class IncomingCallActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
+        // Check if this is an answer action from notification
+        val action = intent.getStringExtra("action")
+        if (action == "answer") {
+            // Direct answer from notification - answer and launch main app
+            handleAnswerFromNotification()
+            return
+        }
+        
         // Wake up the screen first
         wakeUpScreen()
         
@@ -89,6 +97,26 @@ class IncomingCallActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btn_decline).setOnClickListener {
             declineCall()
         }
+    }
+    
+    private fun handleAnswerFromNotification() {
+        val sid = intent.getStringExtra(EXTRA_CALL_SID)
+        if (sid != null) {
+            // Send answer intent to TVConnectionService
+            Intent(this, TVConnectionService::class.java).apply {
+                action = TVConnectionService.ACTION_ANSWER
+                putExtra(TVConnectionService.EXTRA_CALL_HANDLE, sid)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    startForegroundService(this)
+                } else {
+                    startService(this)
+                }
+            }
+            
+            // Launch the main Flutter activity
+            launchMainActivity()
+        }
+        finish()
     }
 
     @SuppressLint("WakelockTimeout")
