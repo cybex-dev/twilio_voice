@@ -113,10 +113,19 @@ open class TVCallConnection(
         connectionCapabilities = CAPABILITY_MUTE or CAPABILITY_HOLD or CAPABILITY_SUPPORT_HOLD
     }
 
+    // Idempotency guard for disconnect/decline
+    @Volatile private var isDisconnectingOrDisconnected = false
+
     /**
      * Force disconnect with extra logging for debugging decline issues.
+     * Idempotent: only processes disconnect once.
      */
     fun forceDisconnectWithLogging() {
+        if (isDisconnectingOrDisconnected) {
+            Log.w(TAG, "[Decline] forceDisconnectWithLogging called but already disconnecting/disconnected. Ignoring repeat call. State: $state, Direction: $callDirection, CallParams: ${getCallParameters()?.callSid}")
+            return
+        }
+        isDisconnectingOrDisconnected = true
         Log.i(TAG, "[Decline] forceDisconnectWithLogging called. State: $state, Direction: $callDirection, CallParams: ${getCallParameters()?.callSid}")
         try {
             if (this is TVCallInviteConnection && state == STATE_RINGING) {
