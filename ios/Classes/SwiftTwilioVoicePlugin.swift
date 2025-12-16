@@ -77,13 +77,17 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         _ = updateCallKitIcon(icon: defaultIcon)
         
         voipRegistry.delegate = self
-        voipRegistry.desiredPushTypes = Set([PKPushType.voIP])
+        // Only set PushKit types if available (requires PushKit entitlement)
+        if #available(iOS 8.0, *) {
+            voipRegistry.desiredPushTypes = Set([PKPushType.voIP])
+        }
         
         UNUserNotificationCenter.current().delegate = self
 
         let appDelegate = UIApplication.shared.delegate
         guard let controller = appDelegate?.window??.rootViewController as? FlutterViewController else {
-            fatalError("rootViewController is not type FlutterViewController")
+            NSLog("Warning: FlutterViewController not available during Twilio Voice plugin init, event channel setup will be skipped")
+            return
         }
         let registrar = controller.registrar(forPlugin: "twilio_voice")
         if let unwrappedRegistrar = registrar {
