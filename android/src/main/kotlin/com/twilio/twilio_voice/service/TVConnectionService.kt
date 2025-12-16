@@ -20,6 +20,7 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import android.telecom.*
 import android.util.Log
+import androidx.annotation.RequiresApi
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.twilio.twilio_voice.R
 import com.twilio.twilio_voice.call.TVCallInviteParametersImpl
@@ -59,6 +60,8 @@ class TVConnectionService : ConnectionService() {
         val SERVICE_TYPE_MICROPHONE: Int = 100
         
         val INCOMING_CALL_NOTIFICATION_ID: Int = 101
+        
+        val ONGOING_CALL_NOTIFICATION_ID: Int = 102
 
         //region ACTIONS_* Constants
         /**
@@ -470,6 +473,7 @@ class TVConnectionService : ConnectionService() {
                         
                         // Send connected event after answering
                         val params = connection.getCallParameters()
+                        val callerName = params?.from ?: params?.fromRaw ?: "Unknown"
                         sendBroadcastEvent(applicationContext, TVNativeCallEvents.EVENT_CONNECTED, callSid, Bundle().apply {
                             putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callSid)
                             putString(TVBroadcastReceiver.EXTRA_CALL_FROM, params?.fromRaw ?: "")
@@ -477,24 +481,30 @@ class TVConnectionService : ConnectionService() {
                             putInt(TVBroadcastReceiver.EXTRA_CALL_DIRECTION, CallDirection.INCOMING.id)
                         })
                         
+                        // Show ongoing call notification so user can see there's an active call
+                        showOngoingCallNotification(callSid, callerName)
+                        
                         // Launch main activity after answering from notification
-                        // Use Handler to give foreground service time to establish before launching activity
+                        // Use Handler to give time for everything to settle before launching activity
                         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                             try {
                                 val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
                                 launchIntent?.let { intent ->
+                                    // Use flags that work well from lock screen
                                     intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
                                                    Intent.FLAG_ACTIVITY_CLEAR_TOP or 
-                                                   Intent.FLAG_ACTIVITY_SINGLE_TOP
+                                                   Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                                                   Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
                                     intent.putExtra("fromIncomingCall", true)
                                     intent.putExtra("callHandle", callSid)
+                                    intent.putExtra("callAnswered", true)
                                     startActivity(intent)
                                     Log.d(TAG, "Launched main activity after answering call")
                                 }
                             } catch (e: Exception) {
                                 Log.w(TAG, "Could not launch main activity after answering: ${e.message}")
                             }
-                        }, 200)
+                        }, 500) // Increased delay for lock screen scenarios
                     } else {
                         Log.e(TAG, "onStartCommand: [ACTION_ANSWER] connection is not TVCallInviteConnection")
                     }
@@ -503,6 +513,9 @@ class TVConnectionService : ConnectionService() {
                 ACTION_HANGUP -> {
                     // Set classloader for CallInvite deserialization
                     it.setExtrasClassLoader(CallInvite::class.java.classLoader)
+                    
+                    // Cancel ongoing call notification
+                    cancelOngoingCallNotification()
                     
                     val callHandle = it.getStringExtra(EXTRA_CALL_HANDLE) ?: getActiveCallHandle() ?: run {
                         Log.e(TAG, "onStartCommand: ACTION_HANGUP is missing String EXTRA_CALL_HANDLE")
@@ -977,6 +990,11 @@ class TVConnectionService : ConnectionService() {
 
 
     private fun sendBroadcastEvent(ctx: Context, event: String, callSid: String?, extras: Bundle? = null) {
+        // Cancel ongoing call notification when call ends
+        if (event == TVBroadcastReceiver.ACTION_CALL_ENDED) {
+            cancelOngoingCallNotification()
+        }
+        
         Intent(ctx, TVBroadcastReceiver::class.java).apply {
             action = event
             putExtra(EXTRA_CALL_HANDLE, callSid)
@@ -1070,6 +1088,253 @@ class TVConnectionService : ConnectionService() {
         } catch (e: java.lang.Exception) {
             Log.w(TAG, "[VoiceConnectionService] can't stop foreground service :$e")
         }
+    }
+    
+    private fun getOrCreateOngoingCallChannel(): NotificationChannel {
+        val id = "${applicationContext.packageName}_ongoing_calls"
+        val name = "Ongoing Calls"
+        val descriptionText = "Active Voice Calls"
+        val notificationManager: NotificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        
+        // Use IMPORTANCE_DEFAULT for ongoing calls - shows in notification shade but no sound
+        val importance = NotificationManager.IMPORTANCE_DEFAULT
+        val channel = NotificationChannel(id, name, importance).apply {
+            description = descriptionText
+            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            setSound(null, null) // No sound for ongoing call notification
+            enableVibration(false)
+            setShowBadge(true)
+        }
+        notificationManager.createNotificationChannel(channel)
+        return channel
+    }
+    
+    private fun showOngoingCallNotification(callSid: String, callerName: String?) {
+        Log.d(TAG, "[VoiceConnectionService] showOngoingCallNotification for callSid: $callSid")
+        
+        val channel = getOrCreateOngoingCallChannel()
+        
+        // Create intent to launch main app when notification is tapped
+        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or 
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra("fromOngoingCall", true)
+            putExtra("callHandle", callSid)
+        }
+        val contentIntent = PendingIntent.getActivity(
+            applicationContext,
+            0,
+            launchIntent,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) 
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE 
+            else 
+                PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        
+        // Create hang up action
+        val hangupIntent = Intent(applicationContext, TVConnectionService::class.java).apply {
+            action = ACTION_HANGUP
+            putExtra(EXTRA_CALL_HANDLE, callSid)
+        }
+        val hangupPendingIntent = PendingIntent.getService(
+            applicationContext,
+            2,
+            hangupIntent,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) 
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE 
+            else 
+                PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        
+        val displayName = callerName ?: "Unknown"
+        
+        // Get app icon as a rounded bitmap for the caller icon
+        val appIconBitmap = try {
+            val appInfo = packageManager.getApplicationInfo(packageName, 0)
+            val drawable = packageManager.getApplicationIcon(appInfo)
+            
+            // Convert to bitmap
+            val originalBitmap = if (drawable is android.graphics.drawable.BitmapDrawable) {
+                drawable.bitmap
+            } else {
+                val bitmap = android.graphics.Bitmap.createBitmap(
+                    drawable.intrinsicWidth.coerceAtLeast(1),
+                    drawable.intrinsicHeight.coerceAtLeast(1),
+                    android.graphics.Bitmap.Config.ARGB_8888
+                )
+                val canvas = android.graphics.Canvas(bitmap)
+                drawable.setBounds(0, 0, canvas.width, canvas.height)
+                drawable.draw(canvas)
+                bitmap
+            }
+            
+            // Create a circular/rounded bitmap
+            val size = minOf(originalBitmap.width, originalBitmap.height)
+            val output = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
+            val canvas = android.graphics.Canvas(output)
+            val paint = android.graphics.Paint().apply {
+                isAntiAlias = true
+                shader = android.graphics.BitmapShader(originalBitmap, android.graphics.Shader.TileMode.CLAMP, android.graphics.Shader.TileMode.CLAMP)
+            }
+            val radius = size / 2f
+            canvas.drawCircle(radius, radius, radius, paint)
+            output
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not get app icon: ${e.message}")
+            null
+        }
+        
+        // Store the call start time for duration tracking
+        val callStartTime = System.currentTimeMillis()
+        
+        // Start a handler to update the call duration in subtitle
+        startOngoingCallDurationUpdater(callSid, displayName, appIconBitmap, callStartTime, channel, contentIntent, hangupPendingIntent)
+    }
+    
+    // Handler for updating ongoing call notification duration
+    private var ongoingCallHandler: android.os.Handler? = null
+    private var ongoingCallRunnable: Runnable? = null
+    
+    private fun startOngoingCallDurationUpdater(
+        callSid: String,
+        displayName: String,
+        appIconBitmap: android.graphics.Bitmap?,
+        callStartTime: Long,
+        channel: NotificationChannel,
+        contentIntent: PendingIntent,
+        hangupPendingIntent: PendingIntent
+    ) {
+        // Cancel any existing handler
+        stopOngoingCallDurationUpdater()
+        
+        ongoingCallHandler = android.os.Handler(android.os.Looper.getMainLooper())
+        ongoingCallRunnable = object : Runnable {
+            override fun run() {
+                // Calculate duration
+                val durationMs = System.currentTimeMillis() - callStartTime
+                val durationText = formatCallDuration(durationMs)
+                
+                // Build and update notification
+                val notification = buildOngoingCallNotification(
+                    displayName, durationText, appIconBitmap, channel, contentIntent, hangupPendingIntent
+                )
+                
+                try {
+                    val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                    notificationManager.notify(ONGOING_CALL_NOTIFICATION_ID, notification)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to update ongoing call notification: ${e.message}")
+                }
+                
+                // Update every second
+                ongoingCallHandler?.postDelayed(this, 1000)
+            }
+        }
+        
+        // Build initial notification and start foreground
+        val initialNotification = buildOngoingCallNotification(
+            displayName, "00:00", appIconBitmap, channel, contentIntent, hangupPendingIntent
+        )
+        
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(ONGOING_CALL_NOTIFICATION_ID, initialNotification, 
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(ONGOING_CALL_NOTIFICATION_ID, initialNotification, ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
+            } else {
+                startForeground(ONGOING_CALL_NOTIFICATION_ID, initialNotification)
+            }
+            Log.d(TAG, "[VoiceConnectionService] Started foreground service with ongoing call notification")
+        } catch (e: Exception) {
+            Log.w(TAG, "[VoiceConnectionService] Could not start foreground with ongoing call notification: ${e.message}")
+            try {
+                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                notificationManager.notify(ONGOING_CALL_NOTIFICATION_ID, initialNotification)
+            } catch (e2: Exception) {
+                Log.e(TAG, "[VoiceConnectionService] Fallback notify also failed: ${e2.message}")
+            }
+        }
+        
+        // Start updating after 1 second
+        ongoingCallHandler?.postDelayed(ongoingCallRunnable!!, 1000)
+    }
+    
+    private fun stopOngoingCallDurationUpdater() {
+        ongoingCallRunnable?.let { ongoingCallHandler?.removeCallbacks(it) }
+        ongoingCallHandler = null
+        ongoingCallRunnable = null
+    }
+    
+    private fun formatCallDuration(durationMs: Long): String {
+        val totalSeconds = durationMs / 1000
+        val hours = totalSeconds / 3600
+        val minutes = (totalSeconds % 3600) / 60
+        val seconds = totalSeconds % 60
+        
+        return if (hours > 0) {
+            String.format("%02d:%02d:%02d", hours, minutes, seconds)
+        } else {
+            String.format("%02d:%02d", minutes, seconds)
+        }
+    }
+    
+    private fun buildOngoingCallNotification(
+        displayName: String,
+        durationText: String,
+        appIconBitmap: android.graphics.Bitmap?,
+        channel: NotificationChannel,
+        contentIntent: PendingIntent,
+        hangupPendingIntent: PendingIntent
+    ): Notification {
+        // Create custom RemoteViews for the notification
+        val remoteViews = android.widget.RemoteViews(packageName, R.layout.notification_ongoing_call)
+        
+        // Set caller name (title)
+        remoteViews.setTextViewText(R.id.caller_name, displayName)
+        
+        // Set call duration (subtitle)
+        remoteViews.setTextViewText(R.id.call_duration, durationText)
+        
+        // Set hangup button click action
+        remoteViews.setOnClickPendingIntent(R.id.hangup_button, hangupPendingIntent)
+        
+        return Notification.Builder(this, channel.id).apply {
+            setOngoing(true)
+            setSmallIcon(R.drawable.ic_microphone)
+            setContentIntent(contentIntent)
+            setCategory(Notification.CATEGORY_CALL)
+            setVisibility(Notification.VISIBILITY_PUBLIC)
+            setColor(0xFFFF0000.toInt())
+            
+            // Set the large icon which will appear in the header
+            appIconBitmap?.let { setLargeIcon(it) }
+            
+            // Use custom view for the notification content
+            setCustomContentView(remoteViews)
+            setCustomBigContentView(remoteViews)
+        }.build()
+    }
+    
+    private fun cancelOngoingCallNotification() {
+        // Stop the duration updater
+        stopOngoingCallDurationUpdater()
+        Log.d(TAG, "[VoiceConnectionService] cancelOngoingCallNotification")
+        try {
+            // Stop the foreground service that was started for ongoing call notification
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                @Suppress("DEPRECATION")
+                stopForeground(true)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "[VoiceConnectionService] Error stopping foreground for ongoing call: ${e.message}")
+        }
+        // Also cancel via NotificationManager as fallback
+        val notificationManager: NotificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.cancel(ONGOING_CALL_NOTIFICATION_ID)
     }
 
     private fun getOrCreateIncomingCallChannel(): NotificationChannel {
