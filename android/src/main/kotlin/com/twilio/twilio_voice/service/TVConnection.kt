@@ -126,13 +126,18 @@ open class TVCallConnection(
             return
         }
         isDisconnectingOrDisconnected = true
-        Log.i(TAG, "[Decline] forceDisconnectWithLogging called. State: $state, Direction: $callDirection, CallParams: ${getCallParameters()?.callSid}")
+        Log.i(TAG, "[Decline] forceDisconnectWithLogging called. State: $state, Direction: $callDirection, twilioCall: ${twilioCall != null}, CallParams: ${getCallParameters()?.callSid}")
         try {
-            if (this is TVCallInviteConnection && state == STATE_RINGING) {
-                Log.i(TAG, "[Decline] TVCallInviteConnection in RINGING, calling rejectInvite()")
+            // For incoming call invites that haven't been answered yet, reject the invite
+            // The twilioCall is null until the invite is accepted via callInvite.accept()
+            if (this is TVCallInviteConnection && twilioCall == null) {
+                Log.i(TAG, "[Decline] TVCallInviteConnection with no active call (not answered yet), calling rejectInvite()")
+                (this as TVCallInviteConnection).rejectInvite()
+            } else if (this is TVCallInviteConnection && state == STATE_RINGING) {
+                Log.i(TAG, "[Decline] TVCallInviteConnection in RINGING state, calling rejectInvite()")
                 (this as TVCallInviteConnection).rejectInvite()
             } else {
-                Log.i(TAG, "[Decline] Not RINGING or not TVCallInviteConnection, calling disconnect() on twilioCall")
+                Log.i(TAG, "[Decline] Active call present, calling disconnect() on twilioCall")
                 twilioCall?.disconnect() ?: Log.w(TAG, "[Decline] twilioCall is null")
                 onEvent?.onChange(TVNativeCallEvents.EVENT_DISCONNECTED_LOCAL, null)
                 setDisconnected(DisconnectCause(DisconnectCause.LOCAL))

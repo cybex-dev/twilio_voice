@@ -2,8 +2,10 @@ package com.twilio.twilio_voice
 
 import android.annotation.SuppressLint
 import android.app.KeyguardManager
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
@@ -11,6 +13,8 @@ import android.view.WindowManager
 import android.widget.Button
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
+import com.twilio.twilio_voice.receivers.TVBroadcastReceiver
 import com.twilio.twilio_voice.service.TVConnectionService
 import com.twilio.voice.CallInvite
 
@@ -57,6 +61,25 @@ class IncomingCallActivity : AppCompatActivity() {
     private var callInvite: CallInvite? = null
     private var callSid: String? = null
     private var wakeLock: PowerManager.WakeLock? = null
+    
+    // Idempotency flag to prevent double-handling of answer/decline
+    @Volatile
+    private var callHandled = false
+    
+    // Broadcast receiver to listen for call ended events (e.g., from notification decline)
+    private val callEndedReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val action = intent?.action
+            android.util.Log.d(TAG, "Received broadcast: $action")
+            if (action == TVBroadcastReceiver.ACTION_CALL_ENDED) {
+                // Call was ended (possibly from notification), close this activity
+                android.util.Log.d(TAG, "Call ended broadcast received, finishing activity")
+                callHandled = true
+                releaseWakeLock()
+                finishAndRemoveTask()
+            }
+        }
+    }
 
     @SuppressLint("WakelockTimeout")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -99,26 +122,52 @@ class IncomingCallActivity : AppCompatActivity() {
             declineButton.isEnabled = false // Prevent double tap
             declineCall()
         }
+        
+        // Register broadcast receiver to listen for call ended events
+        registerCallEndedReceiver()
+    }
+    
+    private fun registerCallEndedReceiver() {
+        try {
+            val filter = IntentFilter(TVBroadcastReceiver.ACTION_CALL_ENDED)
+            LocalBroadcastManager.getInstance(this).registerReceiver(callEndedReceiver, filter)
+            android.util.Log.d(TAG, "Registered call ended broadcast receiver")
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "Failed to register call ended receiver: $e")
+        }
+    }
+    
+    private fun unregisterCallEndedReceiver() {
+        try {
+            LocalBroadcastManager.getInstance(this).unregisterReceiver(callEndedReceiver)
+            android.util.Log.d(TAG, "Unregistered call ended broadcast receiver")
+        } catch (e: Exception) {
+            // Receiver might not be registered
+            android.util.Log.w(TAG, "Failed to unregister call ended receiver: $e")
+        }
     }
     
     private fun handleAnswerFromNotification() {
+        // Mark as handled immediately to prevent any race conditions
+        callHandled = true
         val sid = intent.getStringExtra(EXTRA_CALL_SID)
         if (sid != null) {
+            android.util.Log.d(TAG, "handleAnswerFromNotification: Answering call with callSid: $sid")
             // Send answer intent to TVConnectionService
-            Intent(this, TVConnectionService::class.java).apply {
+            val answerIntent = Intent(this, TVConnectionService::class.java).apply {
                 action = TVConnectionService.ACTION_ANSWER
                 putExtra(TVConnectionService.EXTRA_CALL_HANDLE, sid)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    startForegroundService(this)
-                } else {
-                    startService(this)
-                }
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(answerIntent)
+            } else {
+                startService(answerIntent)
             }
             
             // Launch the main Flutter activity
             launchMainActivity()
         }
-        finish()
+        finishAndRemoveTask()
     }
 
     @SuppressLint("WakelockTimeout")
@@ -178,45 +227,64 @@ class IncomingCallActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        unregisterCallEndedReceiver()
         releaseWakeLock()
     }
 
     private fun answerCall() {
+        // Idempotency check - prevent double handling
+        if (callHandled) {
+            android.util.Log.w(TAG, "answerCall: Call already handled, ignoring")
+            finishAndRemoveTask()
+            return
+        }
+        callHandled = true
+        android.util.Log.d(TAG, "answerCall: Answering call with callSid: $callSid")
         releaseWakeLock()
         callSid?.let { sid ->
             // Send answer intent to TVConnectionService
-            Intent(this, TVConnectionService::class.java).apply {
+            val answerIntent = Intent(this, TVConnectionService::class.java).apply {
                 action = TVConnectionService.ACTION_ANSWER
                 putExtra(TVConnectionService.EXTRA_CALL_HANDLE, sid)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    startForegroundService(this)
-                } else {
-                    startService(this)
-                }
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(answerIntent)
+            } else {
+                startService(answerIntent)
             }
             
             // Launch the main Flutter activity
             launchMainActivity()
         }
-        finish()
+        finishAndRemoveTask()
     }
 
     private fun declineCall() {
+        // Idempotency check - prevent double handling
+        if (callHandled) {
+            android.util.Log.w(TAG, "declineCall: Call already handled, ignoring")
+            finishAndRemoveTask()
+            return
+        }
+        callHandled = true
+        
         releaseWakeLock()
         callSid?.let { sid ->
+            android.util.Log.d(TAG, "declineCall: Sending hangup for callSid: $sid")
             // Send hangup intent to TVConnectionService
-            Intent(this, TVConnectionService::class.java).apply {
+            val hangupIntent = Intent(this, TVConnectionService::class.java).apply {
                 action = TVConnectionService.ACTION_HANGUP
                 putExtra(TVConnectionService.EXTRA_CALL_HANDLE, sid)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    startForegroundService(this)
-                } else {
-                    startService(this)
-                }
             }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(hangupIntent)
+            } else {
+                startService(hangupIntent)
+            }
+        } ?: run {
+            android.util.Log.w(TAG, "declineCall: No callSid available")
         }
-        // Optionally disable decline button here as well
-        finish()
+        finishAndRemoveTask()
     }
 
     private fun launchMainActivity() {
