@@ -372,14 +372,47 @@ class TVConnectionService : ConnectionService() {
                 }
 
                 ACTION_ANSWER -> {
-                    val callHandle = it.getStringExtra(EXTRA_CALL_HANDLE) ?: getIncomingCallHandle() ?: run {
-                        Log.e(TAG, "onStartCommand: ACTION_ANSWER is missing String EXTRA_CALL_HANDLE")
-                        return@let
-                    }
-
-                    val connection = getConnection(callHandle) ?: run {
-                        Log.e(TAG, "onStartCommand: [ACTION_ANSWER] could not find connection for callHandle: $callHandle")
-                        return@let
+                    // Set classloader for CallInvite deserialization
+                    it.setExtrasClassLoader(CallInvite::class.java.classLoader)
+                    
+                    val callHandle = it.getStringExtra(EXTRA_CALL_HANDLE) ?: getIncomingCallHandle()
+                    var connection = if (callHandle != null) getConnection(callHandle) else null
+                    
+                    // If connection not found, try to recover from CallInvite in intent (terminated state case)
+                    if (connection == null) {
+                        val callInvite = it.getParcelableExtraSafe<CallInvite>(EXTRA_INCOMING_CALL_INVITE)
+                        if (callInvite != null) {
+                            Log.i(TAG, "onStartCommand: [ACTION_ANSWER] Recovering connection from CallInvite for terminated state")
+                            // Start foreground service first
+                            startIncomingCallForegroundService(callInvite)
+                            
+                            // Create and register the connection
+                            val mStorage: Storage = StorageImpl(applicationContext)
+                            val callParams = TVCallInviteParametersImpl(mStorage, callInvite)
+                            val newConnection = TVCallInviteConnection(applicationContext, callInvite, callParams)
+                            val callSid = callInvite.callSid
+                            
+                            applyParameters(newConnection, callParams, callInvite.from ?: "")
+                            attachCallEventListeners(newConnection, callSid)
+                            
+                            // Set disconnect listener
+                            val onCallDisconnectedListener: CompletionHandler<DisconnectCause> = CompletionHandler {
+                                if (activeConnections.containsKey(callSid)) {
+                                    activeConnections.remove(callSid)
+                                }
+                                sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, callSid, newConnection.extras)
+                                cancelIncomingCallNotification()
+                                releaseWakeLock()
+                                stopForegroundService()
+                                stopSelfSafe()
+                            }
+                            newConnection.setOnCallDisconnected(onCallDisconnectedListener)
+                            
+                            connection = newConnection
+                        } else {
+                            Log.e(TAG, "onStartCommand: [ACTION_ANSWER] could not find connection and no CallInvite in intent")
+                            return@let
+                        }
                     }
 
                     // Cancel incoming call notification
@@ -387,12 +420,47 @@ class TVConnectionService : ConnectionService() {
                     releaseWakeLock()
 
                     if(connection is TVCallInviteConnection) {
+                        // Check for RECORD_AUDIO permission before accepting
+                        if (!applicationContext.hasMicrophoneAccess()) {
+                            Log.e(TAG, "onStartCommand: [ACTION_ANSWER] Missing RECORD_AUDIO permission, launching activity for permission")
+                            // Store the call invite for later and launch activity to request permission
+                            val callInviteFromConnection = (connection as TVCallInviteConnection).callInvite
+                            val callSid = connection.getCallParameters()?.callSid ?: callInviteFromConnection.callSid
+                            
+                            // Launch main activity with permission request flag
+                            try {
+                                val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+                                launchIntent?.let { intent ->
+                                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
+                                                   Intent.FLAG_ACTIVITY_CLEAR_TOP or 
+                                                   Intent.FLAG_ACTIVITY_SINGLE_TOP
+                                    intent.putExtra("fromIncomingCall", true)
+                                    intent.putExtra("callHandle", callSid)
+                                    intent.putExtra("needsMicrophonePermission", true)
+                                    intent.putExtra(EXTRA_INCOMING_CALL_INVITE, callInviteFromConnection)
+                                    startActivity(intent)
+                                    Log.d(TAG, "Launched main activity for microphone permission request")
+                                }
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Could not launch main activity for permission: ${e.message}")
+                            }
+                            
+                            // Send event to Flutter to request permission and then answer
+                            sendBroadcastEvent(applicationContext, TVNativeCallEvents.EVENT_PERMISSION_REQUIRED, callSid, Bundle().apply {
+                                putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callSid)
+                                putString("permission", "RECORD_AUDIO")
+                            })
+                            return@let
+                        }
+                        
                         connection.acceptInvite()
+                        
+                        val callSid = connection.getCallParameters()?.callSid ?: callHandle ?: ""
                         
                         // Send connected event after answering
                         val params = connection.getCallParameters()
-                        sendBroadcastEvent(applicationContext, TVNativeCallEvents.EVENT_CONNECTED, callHandle, Bundle().apply {
-                            putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callHandle)
+                        sendBroadcastEvent(applicationContext, TVNativeCallEvents.EVENT_CONNECTED, callSid, Bundle().apply {
+                            putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callSid)
                             putString(TVBroadcastReceiver.EXTRA_CALL_FROM, params?.fromRaw ?: "")
                             putString(TVBroadcastReceiver.EXTRA_CALL_TO, params?.toRaw ?: "")
                             putInt(TVBroadcastReceiver.EXTRA_CALL_DIRECTION, CallDirection.INCOMING.id)
@@ -408,7 +476,7 @@ class TVConnectionService : ConnectionService() {
                                                    Intent.FLAG_ACTIVITY_CLEAR_TOP or 
                                                    Intent.FLAG_ACTIVITY_SINGLE_TOP
                                     intent.putExtra("fromIncomingCall", true)
-                                    intent.putExtra("callHandle", callHandle)
+                                    intent.putExtra("callHandle", callSid)
                                     startActivity(intent)
                                     Log.d(TAG, "Launched main activity after answering call")
                                 }
@@ -417,11 +485,14 @@ class TVConnectionService : ConnectionService() {
                             }
                         }, 200)
                     } else {
-                        Log.e(TAG, "onStartCommand: [ACTION_ANSWER] could not find connection for callHandle: $callHandle")
+                        Log.e(TAG, "onStartCommand: [ACTION_ANSWER] connection is not TVCallInviteConnection")
                     }
                 }
 
                 ACTION_HANGUP -> {
+                    // Set classloader for CallInvite deserialization
+                    it.setExtrasClassLoader(CallInvite::class.java.classLoader)
+                    
                     val callHandle = it.getStringExtra(EXTRA_CALL_HANDLE) ?: getActiveCallHandle() ?: run {
                         Log.e(TAG, "onStartCommand: ACTION_HANGUP is missing String EXTRA_CALL_HANDLE")
                         activeConnections.clear()
@@ -435,16 +506,29 @@ class TVConnectionService : ConnectionService() {
                     cancelIncomingCallNotification()
                     releaseWakeLock()
 
-                    val connection = getConnection(callHandle)
-                    if (connection != null) {
+                    var connection = getConnection(callHandle)
+                    
+                    // If connection not found, try to recover from CallInvite in intent (terminated state case)
+                    if (connection == null) {
+                        val callInvite = it.getParcelableExtraSafe<CallInvite>(EXTRA_INCOMING_CALL_INVITE)
+                        if (callInvite != null) {
+                            Log.i(TAG, "[Decline] Recovering CallInvite from intent for terminated state reject")
+                            // Directly reject the invite without creating a connection
+                            callInvite.reject(applicationContext)
+                            sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, callHandle, null)
+                            stopForegroundService()
+                            stopSelfSafe()
+                            return@let
+                        } else {
+                            Log.e(TAG, "[Decline] No connection found and no CallInvite in intent for $callHandle. Forcing cleanup.")
+                            activeConnections.clear()
+                            sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, callHandle, null)
+                        }
+                    } else {
                         Log.i(TAG, "[Decline] Found connection for $callHandle, state=${connection.state}")
                         connection.forceDisconnectWithLogging()
                         sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, callHandle, connection.extras)
                         activeConnections.remove(callHandle)
-                    } else {
-                        Log.e(TAG, "[Decline] No connection found for $callHandle. Forcing cleanup.")
-                        activeConnections.clear()
-                        sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, callHandle, null)
                     }
                     stopForegroundService()
                     stopSelfSafe()
@@ -1014,10 +1098,11 @@ class TVConnectionService : ConnectionService() {
                 PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        // Create answer intent
+        // Create answer intent - include CallInvite for terminated state recovery
         val answerIntent = Intent(applicationContext, TVConnectionService::class.java).apply {
             action = ACTION_ANSWER
             putExtra(EXTRA_CALL_HANDLE, callInvite.callSid)
+            putExtra(EXTRA_INCOMING_CALL_INVITE, callInvite)
         }
         val answerPendingIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             PendingIntent.getForegroundService(
@@ -1035,10 +1120,11 @@ class TVConnectionService : ConnectionService() {
             )
         }
 
-        // Create decline intent
+        // Create decline intent - include CallInvite for terminated state recovery
         val declineIntent = Intent(applicationContext, TVConnectionService::class.java).apply {
             action = ACTION_HANGUP
             putExtra(EXTRA_CALL_HANDLE, callInvite.callSid)
+            putExtra(EXTRA_INCOMING_CALL_INVITE, callInvite)
         }
         val declinePendingIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             PendingIntent.getForegroundService(

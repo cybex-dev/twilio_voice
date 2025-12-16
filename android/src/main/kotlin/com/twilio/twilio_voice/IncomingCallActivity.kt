@@ -1,11 +1,13 @@
 package com.twilio.twilio_voice
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.app.KeyguardManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
@@ -13,6 +15,8 @@ import android.view.WindowManager
 import android.widget.Button
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.twilio.twilio_voice.receivers.TVBroadcastReceiver
 import com.twilio.twilio_voice.service.TVConnectionService
@@ -31,6 +35,7 @@ class IncomingCallActivity : AppCompatActivity() {
         const val EXTRA_CALLER_NAME = "EXTRA_CALLER_NAME"
         const val EXTRA_CALLER_NUMBER = "EXTRA_CALLER_NUMBER"
         const val EXTRA_CALL_SID = "EXTRA_CALL_SID"
+        private const val REQUEST_RECORD_AUDIO_PERMISSION = 200
 
         fun createIntent(context: Context, callInvite: CallInvite): Intent {
             return Intent(context, IncomingCallActivity::class.java).apply {
@@ -151,12 +156,35 @@ class IncomingCallActivity : AppCompatActivity() {
         // Mark as handled immediately to prevent any race conditions
         callHandled = true
         val sid = intent.getStringExtra(EXTRA_CALL_SID)
+        // Try to get CallInvite from intent
+        val invite: CallInvite? = intent.getParcelableExtra(EXTRA_CALL_INVITE)
+        
+        // Store invite for permission callback
+        if (invite != null) {
+            callInvite = invite
+        }
         if (sid != null) {
-            android.util.Log.d(TAG, "handleAnswerFromNotification: Answering call with callSid: $sid")
-            // Send answer intent to TVConnectionService
+            callSid = sid
+        }
+        
+        // Check for RECORD_AUDIO permission before answering
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            android.util.Log.d(TAG, "handleAnswerFromNotification: Requesting RECORD_AUDIO permission")
+            // Reset callHandled so proceedWithAnswer can set it again
+            callHandled = false
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_RECORD_AUDIO_PERMISSION)
+            return
+        }
+        
+        if (sid != null) {
+            android.util.Log.d(TAG, "handleAnswerFromNotification: Answering call with callSid: $sid, hasCallInvite: ${invite != null}")
+            // Send answer intent to TVConnectionService - include CallInvite for terminated state recovery
             val answerIntent = Intent(this, TVConnectionService::class.java).apply {
                 action = TVConnectionService.ACTION_ANSWER
                 putExtra(TVConnectionService.EXTRA_CALL_HANDLE, sid)
+                invite?.let { 
+                    putExtra(TVConnectionService.EXTRA_INCOMING_CALL_INVITE, it) 
+                }
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startForegroundService(answerIntent)
@@ -238,14 +266,29 @@ class IncomingCallActivity : AppCompatActivity() {
             finishAndRemoveTask()
             return
         }
+        
+        // Check for RECORD_AUDIO permission before answering
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            android.util.Log.d(TAG, "answerCall: Requesting RECORD_AUDIO permission")
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_RECORD_AUDIO_PERMISSION)
+            return
+        }
+        
+        proceedWithAnswer()
+    }
+    
+    private fun proceedWithAnswer() {
         callHandled = true
-        android.util.Log.d(TAG, "answerCall: Answering call with callSid: $callSid")
+        android.util.Log.d(TAG, "proceedWithAnswer: Answering call with callSid: $callSid")
         releaseWakeLock()
         callSid?.let { sid ->
-            // Send answer intent to TVConnectionService
+            // Send answer intent to TVConnectionService - include CallInvite for terminated state recovery
             val answerIntent = Intent(this, TVConnectionService::class.java).apply {
                 action = TVConnectionService.ACTION_ANSWER
                 putExtra(TVConnectionService.EXTRA_CALL_HANDLE, sid)
+                callInvite?.let { invite ->
+                    putExtra(TVConnectionService.EXTRA_INCOMING_CALL_INVITE, invite)
+                }
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startForegroundService(answerIntent)
@@ -257,6 +300,22 @@ class IncomingCallActivity : AppCompatActivity() {
             launchMainActivity()
         }
         finishAndRemoveTask()
+    }
+    
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        when (requestCode) {
+            REQUEST_RECORD_AUDIO_PERMISSION -> {
+                if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    android.util.Log.d(TAG, "onRequestPermissionsResult: RECORD_AUDIO permission granted, proceeding with answer")
+                    proceedWithAnswer()
+                } else {
+                    android.util.Log.w(TAG, "onRequestPermissionsResult: RECORD_AUDIO permission denied, cannot answer call")
+                    // Show toast or message that permission is required
+                    android.widget.Toast.makeText(this, "Microphone permission is required to answer calls", android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
 
     private fun declineCall() {
@@ -271,10 +330,13 @@ class IncomingCallActivity : AppCompatActivity() {
         releaseWakeLock()
         callSid?.let { sid ->
             android.util.Log.d(TAG, "declineCall: Sending hangup for callSid: $sid")
-            // Send hangup intent to TVConnectionService
+            // Send hangup intent to TVConnectionService - include CallInvite for terminated state recovery
             val hangupIntent = Intent(this, TVConnectionService::class.java).apply {
                 action = TVConnectionService.ACTION_HANGUP
                 putExtra(TVConnectionService.EXTRA_CALL_HANDLE, sid)
+                callInvite?.let { invite ->
+                    putExtra(TVConnectionService.EXTRA_INCOMING_CALL_INVITE, invite)
+                }
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startForegroundService(hangupIntent)

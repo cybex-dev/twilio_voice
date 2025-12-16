@@ -34,7 +34,7 @@ class TVCallInviteConnection(
 ) : TVCallConnection(ctx, onEvent, onAction, onDisconnected) {
 
     override val TAG = "VoipCallInviteConnection"
-    private val callInvite: CallInvite
+    val callInvite: CallInvite
     override val callDirection = CallDirection.INCOMING
 
     init {
