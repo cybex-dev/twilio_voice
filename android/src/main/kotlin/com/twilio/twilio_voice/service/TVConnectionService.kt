@@ -8,10 +8,16 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.media.AudioAttributes
+import android.media.Ringtone
+import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.telecom.*
 import android.util.Log
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
@@ -223,6 +229,11 @@ class TVConnectionService : ConnectionService() {
 
     // WakeLock to keep CPU awake during incoming call
     private var wakeLock: PowerManager.WakeLock? = null
+    
+    // Ringtone and vibration for incoming calls
+    private var ringtone: Ringtone? = null
+    private var vibrator: Vibrator? = null
+    private var isRinging = false
 
     @SuppressLint("WakelockTimeout")
     private fun wakeScreen() {
@@ -1240,11 +1251,16 @@ class TVConnectionService : ConnectionService() {
             } else {
                 startForeground(INCOMING_CALL_NOTIFICATION_ID, notification)
             }
+            
+            // Start ringtone and vibration for incoming call
+            startRinging()
         } catch (e: Exception) {
             Log.w(TAG, "[VoiceConnectionService] Can't start incoming call foreground service : $e")
             // Fallback: try without specific service type
             try {
                 startForeground(INCOMING_CALL_NOTIFICATION_ID, notification)
+                // Start ringtone even if fallback
+                startRinging()
             } catch (e2: Exception) {
                 Log.e(TAG, "[VoiceConnectionService] Fallback foreground service also failed: $e2")
             }
@@ -1253,6 +1269,9 @@ class TVConnectionService : ConnectionService() {
 
     private fun cancelIncomingCallNotification() {
         Log.d(TAG, "[VoiceConnectionService] cancelIncomingCallNotification")
+        // Stop ringtone when cancelling notification
+        stopRinging()
+        
         // When a foreground service notification is shown, we need to stop the foreground state
         // to remove the notification, not just call notificationManager.cancel()
         try {
@@ -1269,5 +1288,91 @@ class TVConnectionService : ConnectionService() {
         // Also try to cancel via NotificationManager as a fallback
         val notificationManager: NotificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.cancel(INCOMING_CALL_NOTIFICATION_ID)
+    }
+    
+    private fun startRinging() {
+        if (isRinging) return
+        isRinging = true
+        
+        Log.d(TAG, "[VoiceConnectionService] Starting ringtone and vibration")
+        
+        try {
+            // Get the default ringtone URI
+            val ringtoneUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+            ringtone = RingtoneManager.getRingtone(applicationContext, ringtoneUri)
+            
+            ringtone?.let { ring ->
+                // Set audio attributes for ringtone (call category)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    val audioAttributes = AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                    ring.audioAttributes = audioAttributes
+                }
+                
+                // Set looping for continuous ringing
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    ring.isLooping = true
+                }
+                
+                ring.play()
+                Log.d(TAG, "[VoiceConnectionService] Ringtone started playing")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "[VoiceConnectionService] Error starting ringtone: ${e.message}", e)
+        }
+        
+        // Start vibration
+        try {
+            vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+                vibratorManager.defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+            }
+            
+            vibrator?.let { vib ->
+                if (vib.hasVibrator()) {
+                    // Vibrate pattern: wait 0ms, vibrate 1000ms, pause 1000ms, repeat
+                    val pattern = longArrayOf(0, 1000, 1000)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        vib.vibrate(VibrationEffect.createWaveform(pattern, 0)) // 0 = repeat from index 0
+                    } else {
+                        @Suppress("DEPRECATION")
+                        vib.vibrate(pattern, 0)
+                    }
+                    Log.d(TAG, "[VoiceConnectionService] Vibration started")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "[VoiceConnectionService] Error starting vibration: ${e.message}", e)
+        }
+    }
+    
+    private fun stopRinging() {
+        if (!isRinging) return
+        isRinging = false
+        
+        Log.d(TAG, "[VoiceConnectionService] Stopping ringtone and vibration")
+        
+        try {
+            ringtone?.let { ring ->
+                if (ring.isPlaying) {
+                    ring.stop()
+                }
+            }
+            ringtone = null
+        } catch (e: Exception) {
+            Log.e(TAG, "[VoiceConnectionService] Error stopping ringtone: ${e.message}", e)
+        }
+        
+        try {
+            vibrator?.cancel()
+            vibrator = null
+        } catch (e: Exception) {
+            Log.e(TAG, "[VoiceConnectionService] Error stopping vibration: ${e.message}", e)
+        }
     }
 }

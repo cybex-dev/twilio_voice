@@ -8,9 +8,16 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.media.AudioAttributes
+import android.media.AudioManager
+import android.media.Ringtone
+import android.media.RingtoneManager
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.TextView
@@ -67,6 +74,11 @@ class IncomingCallActivity : AppCompatActivity() {
     private var callSid: String? = null
     private var wakeLock: PowerManager.WakeLock? = null
     
+    // Ringtone and vibration for incoming call
+    private var ringtone: Ringtone? = null
+    private var vibrator: Vibrator? = null
+    private var isRinging = false
+    
     // Idempotency flag to prevent double-handling of answer/decline
     @Volatile
     private var callHandled = false
@@ -79,6 +91,7 @@ class IncomingCallActivity : AppCompatActivity() {
             if (action == TVBroadcastReceiver.ACTION_CALL_ENDED) {
                 // Call was ended (possibly from notification), close this activity
                 android.util.Log.d(TAG, "Call ended broadcast received, finishing activity")
+                stopRinging()
                 callHandled = true
                 releaseWakeLock()
                 finishAndRemoveTask()
@@ -130,6 +143,95 @@ class IncomingCallActivity : AppCompatActivity() {
         
         // Register broadcast receiver to listen for call ended events
         registerCallEndedReceiver()
+        
+        // Note: Ringtone is handled by TVConnectionService to ensure it plays even in terminated state
+        // The activity doesn't need to start ringing since the service already does it
+    }
+    
+    private fun startRinging() {
+        if (isRinging) return
+        isRinging = true
+        
+        android.util.Log.d(TAG, "Starting ringtone and vibration")
+        
+        try {
+            // Get the default ringtone URI
+            val ringtoneUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+            ringtone = RingtoneManager.getRingtone(applicationContext, ringtoneUri)
+            
+            ringtone?.let { ring ->
+                // Set audio attributes for ringtone (call category)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    val audioAttributes = AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                    ring.audioAttributes = audioAttributes
+                }
+                
+                // Set looping for continuous ringing
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    ring.isLooping = true
+                }
+                
+                ring.play()
+                android.util.Log.d(TAG, "Ringtone started playing")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error starting ringtone: ${e.message}", e)
+        }
+        
+        // Start vibration
+        try {
+            vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+                vibratorManager.defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+            }
+            
+            vibrator?.let { vib ->
+                if (vib.hasVibrator()) {
+                    // Vibrate pattern: wait 0ms, vibrate 1000ms, pause 1000ms, repeat
+                    val pattern = longArrayOf(0, 1000, 1000)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        vib.vibrate(VibrationEffect.createWaveform(pattern, 0)) // 0 = repeat from index 0
+                    } else {
+                        @Suppress("DEPRECATION")
+                        vib.vibrate(pattern, 0)
+                    }
+                    android.util.Log.d(TAG, "Vibration started")
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error starting vibration: ${e.message}", e)
+        }
+    }
+    
+    private fun stopRinging() {
+        if (!isRinging) return
+        isRinging = false
+        
+        android.util.Log.d(TAG, "Stopping ringtone and vibration")
+        
+        try {
+            ringtone?.let { ring ->
+                if (ring.isPlaying) {
+                    ring.stop()
+                }
+            }
+            ringtone = null
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error stopping ringtone: ${e.message}", e)
+        }
+        
+        try {
+            vibrator?.cancel()
+            vibrator = null
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error stopping vibration: ${e.message}", e)
+        }
     }
     
     private fun registerCallEndedReceiver() {
@@ -255,11 +357,15 @@ class IncomingCallActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        stopRinging()
         unregisterCallEndedReceiver()
         releaseWakeLock()
     }
 
     private fun answerCall() {
+        // Stop ringing immediately when answering
+        stopRinging()
+        
         // Idempotency check - prevent double handling
         if (callHandled) {
             android.util.Log.w(TAG, "answerCall: Call already handled, ignoring")
@@ -319,6 +425,9 @@ class IncomingCallActivity : AppCompatActivity() {
     }
 
     private fun declineCall() {
+        // Stop ringing immediately when declining
+        stopRinging()
+        
         // Idempotency check - prevent double handling
         if (callHandled) {
             android.util.Log.w(TAG, "declineCall: Call already handled, ignoring")
