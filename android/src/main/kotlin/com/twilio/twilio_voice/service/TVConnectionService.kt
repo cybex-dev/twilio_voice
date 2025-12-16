@@ -1252,6 +1252,21 @@ class TVConnectionService : ConnectionService() {
     }
 
     private fun cancelIncomingCallNotification() {
+        Log.d(TAG, "[VoiceConnectionService] cancelIncomingCallNotification")
+        // When a foreground service notification is shown, we need to stop the foreground state
+        // to remove the notification, not just call notificationManager.cancel()
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                // STOP_FOREGROUND_REMOVE removes the notification
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                @Suppress("DEPRECATION")
+                stopForeground(true)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "[VoiceConnectionService] Error stopping foreground for incoming call: $e")
+        }
+        // Also try to cancel via NotificationManager as a fallback
         val notificationManager: NotificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.cancel(INCOMING_CALL_NOTIFICATION_ID)
     }
