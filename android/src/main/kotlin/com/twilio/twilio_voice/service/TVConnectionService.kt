@@ -232,6 +232,7 @@ class TVConnectionService : ConnectionService() {
 
     // WakeLock to keep CPU awake during incoming call
     private var wakeLock: PowerManager.WakeLock? = null
+    private var incomingCallWakeLock: PowerManager.WakeLock? = null
     
     // Ringtone and vibration for incoming calls
     private var ringtone: Ringtone? = null
@@ -265,6 +266,15 @@ class TVConnectionService : ConnectionService() {
                 }
             }
             wakeLock = null
+            
+            // Also release incoming call wake lock
+            incomingCallWakeLock?.let {
+                if (it.isHeld) {
+                    it.release()
+                    Log.d(TAG, "[VoiceConnectionService] Incoming call wake lock released")
+                }
+            }
+            incomingCallWakeLock = null
         } catch (e: Exception) {
             Log.w(TAG, "[VoiceConnectionService] Failed to release wake lock: $e")
         }
@@ -370,17 +380,8 @@ class TVConnectionService : ConnectionService() {
                     sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_INCOMING_CALL, callSid, connection.extras)
                     sendBroadcastCallHandle(applicationContext, callSid)
                     
-                    // Directly launch IncomingCallActivity - use a short delay to ensure foreground service is ready
-                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                        try {
-                            val incomingCallIntent = IncomingCallActivity.createIntent(applicationContext, callInvite)
-                            incomingCallIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                            applicationContext.startActivity(incomingCallIntent)
-                            Log.d(TAG, "onStartCommand: IncomingCallActivity launched successfully")
-                        } catch (e: Exception) {
-                            Log.w(TAG, "Could not start IncomingCallActivity directly, relying on notification: ${e.message}")
-                        }
-                    }, 100)
+                    // Note: IncomingCallActivity is launched from startIncomingCallForegroundService
+                    // via showIncomingCallOverLockScreen() - no need to launch it again here
                     
                     Log.d(TAG, "onStartCommand: Direct incoming call handled - callSid: $callSid")
                 }
@@ -1519,6 +1520,10 @@ class TVConnectionService : ConnectionService() {
             
             // Start ringtone and vibration for incoming call
             startRinging()
+            
+            // Wake up screen and show incoming call activity over lock screen
+            showIncomingCallOverLockScreen(callInvite)
+            
         } catch (e: Exception) {
             Log.w(TAG, "[VoiceConnectionService] Can't start incoming call foreground service : $e")
             // Fallback: try without specific service type
@@ -1526,10 +1531,67 @@ class TVConnectionService : ConnectionService() {
                 startForeground(INCOMING_CALL_NOTIFICATION_ID, notification)
                 // Start ringtone even if fallback
                 startRinging()
+                // Try to launch activity on fallback too
+                showIncomingCallOverLockScreen(callInvite)
             } catch (e2: Exception) {
                 Log.e(TAG, "[VoiceConnectionService] Fallback foreground service also failed: $e2")
             }
         }
+    }
+    
+    @SuppressLint("WakelockTimeout")
+    private fun showIncomingCallOverLockScreen(callInvite: CallInvite) {
+        try {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
+            val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as? android.app.KeyguardManager
+            
+            val isScreenOff = powerManager?.isInteractive == false
+            val isDeviceLocked = keyguardManager?.isKeyguardLocked == true
+            
+            Log.d(TAG, "[VoiceConnectionService] showIncomingCallOverLockScreen: isScreenOff=$isScreenOff, isDeviceLocked=$isDeviceLocked")
+            
+            // Step 1: Always acquire wake lock to ensure screen turns on
+            // Use FULL_WAKE_LOCK for maximum compatibility
+            @Suppress("DEPRECATION")
+            val wakeLockFlags = PowerManager.FULL_WAKE_LOCK or
+                PowerManager.ACQUIRE_CAUSES_WAKEUP or
+                PowerManager.ON_AFTER_RELEASE
+            
+            incomingCallWakeLock = powerManager?.newWakeLock(wakeLockFlags, "TwilioVoice:IncomingCallWakeLock")
+            incomingCallWakeLock?.acquire(60000) // 60 seconds for incoming call
+            Log.d(TAG, "[VoiceConnectionService] Acquired FULL wake lock to turn on screen")
+            
+            // Step 2: Launch the activity after a short delay to let wake lock take effect
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                launchIncomingCallActivity(callInvite)
+            }, 200)
+            
+        } catch (e: Exception) {
+            Log.w(TAG, "[VoiceConnectionService] Failed to show incoming call over lock screen: $e")
+        }
+    }
+    
+    private fun launchIncomingCallActivity(callInvite: CallInvite) {
+        try {
+            // The activity is configured with showWhenLocked, turnScreenOn flags in theme and manifest
+            val intent = IncomingCallActivity.createIntent(applicationContext, callInvite).apply {
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_NO_USER_ACTION
+                )
+            }
+            
+            startActivity(intent)
+            Log.d(TAG, "[VoiceConnectionService] Started IncomingCallActivity")
+        } catch (e: Exception) {
+            Log.w(TAG, "[VoiceConnectionService] Failed to start IncomingCallActivity: $e")
+        }
+    }
+    
+    private fun isCallHandled(callSid: String): Boolean {
+        // Check if call is still pending (not answered or declined)
+        val connection = activeConnections[callSid]
+        return connection == null || connection.state != Connection.STATE_RINGING
     }
 
     private fun cancelIncomingCallNotification() {

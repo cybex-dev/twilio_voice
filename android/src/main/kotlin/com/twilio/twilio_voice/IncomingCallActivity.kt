@@ -46,12 +46,10 @@ class IncomingCallActivity : AppCompatActivity() {
 
         fun createIntent(context: Context, callInvite: CallInvite): Intent {
             return Intent(context, IncomingCallActivity::class.java).apply {
-                // Flags that work best for full-screen incoming call UI
+                // Minimal flags for lock screen incoming call - let manifest attributes handle the rest
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or
-                        Intent.FLAG_ACTIVITY_NO_USER_ACTION or
-                        Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS or
-                        Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
-                        Intent.FLAG_ACTIVITY_SINGLE_TOP
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                        Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
                 putExtra(EXTRA_CALL_INVITE, callInvite)
                 putExtra(EXTRA_CALL_SID, callInvite.callSid)
                 
@@ -101,7 +99,13 @@ class IncomingCallActivity : AppCompatActivity() {
 
     @SuppressLint("WakelockTimeout")
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Set window flags before super.onCreate()
+        showOverLockScreen()
+        
         super.onCreate(savedInstanceState)
+        
+        // Wake up the screen after onCreate
+        wakeUpScreen()
         
         // Check if this is an answer action from notification
         val action = intent.getStringExtra("action")
@@ -110,12 +114,6 @@ class IncomingCallActivity : AppCompatActivity() {
             handleAnswerFromNotification()
             return
         }
-        
-        // Wake up the screen first
-        wakeUpScreen()
-        
-        // Enable showing over lock screen
-        showOverLockScreen()
         
         setContentView(R.layout.activity_incoming_call)
 
@@ -336,23 +334,39 @@ class IncomingCallActivity : AppCompatActivity() {
     }
 
     private fun showOverLockScreen() {
-        // Always add window flags first (works on all versions)
+        android.util.Log.d(TAG, "showOverLockScreen: Setting up window flags for lock screen display")
+        
+        // For Android O_MR1+ (API 27+) use the newer API methods - these are REQUIRED on newer Android
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+            android.util.Log.d(TAG, "showOverLockScreen: setShowWhenLocked and setTurnScreenOn called")
+        }
+        
+        // Add window flags for lock screen display
         @Suppress("DEPRECATION")
         window.addFlags(
             WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-            WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
             WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
             WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
             WindowManager.LayoutParams.FLAG_ALLOW_LOCK_WHILE_SCREEN_ON
         )
         
-        // For Android O_MR1+ also use the newer API
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            setShowWhenLocked(true)
-            setTurnScreenOn(true)
-            val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
-            keyguardManager.requestDismissKeyguard(this, null)
+        // Handle display cutout for notched devices (Android P+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes.layoutInDisplayCutoutMode = 
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
+    }
+    
+    override fun onResume() {
+        super.onResume()
+        android.util.Log.d(TAG, "onResume: Activity resumed")
+    }
+    
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        android.util.Log.d(TAG, "onWindowFocusChanged: hasFocus=$hasFocus")
     }
 
     override fun onDestroy() {

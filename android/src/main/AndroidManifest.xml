@@ -28,7 +28,7 @@
             android:turnScreenOn="true"
             android:noHistory="true"
             android:excludeFromRecents="true"
-            android:theme="@style/Theme.AppCompat.NoActionBar" />
+            android:theme="@style/Theme.IncomingCall" />
 
         <service
             android:name=".service.TVConnectionService"
