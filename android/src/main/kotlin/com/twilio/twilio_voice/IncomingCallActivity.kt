@@ -70,6 +70,9 @@ class IncomingCallActivity : AppCompatActivity() {
 
     private var callInvite: CallInvite? = null
     private var callSid: String? = null
+    private var callerName: String? = null
+    private var callerNumber: String? = null
+    private var myNumber: String? = null  // The number receiving the call (to)
     private var wakeLock: PowerManager.WakeLock? = null
     
     // Ringtone and vibration for incoming call
@@ -120,8 +123,11 @@ class IncomingCallActivity : AppCompatActivity() {
         // Get call info from intent
         callInvite = intent.getParcelableExtra(EXTRA_CALL_INVITE)
         callSid = intent.getStringExtra(EXTRA_CALL_SID)
-        val callerName = intent.getStringExtra(EXTRA_CALLER_NAME) ?: "Unknown"
-        val callerNumber = intent.getStringExtra(EXTRA_CALLER_NUMBER) ?: ""
+        callerName = intent.getStringExtra(EXTRA_CALLER_NAME) ?: "Unknown"
+        callerNumber = intent.getStringExtra(EXTRA_CALLER_NUMBER) ?: ""
+        
+        // Extract the "to" number (the number receiving the call)
+        myNumber = callInvite?.to ?: ""
 
         // Set caller info
         findViewById<TextView>(R.id.tv_caller_name).text = callerName
@@ -477,7 +483,17 @@ class IncomingCallActivity : AppCompatActivity() {
         val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
         launchIntent?.let {
             it.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            // Add extras to tell MainActivity to show over lock screen
+            it.putExtra("SHOW_OVER_LOCK_SCREEN", true)
+            it.putExtra("CALL_ANSWERED", true)
+            it.putExtra("CALL_SID", callSid)
+            // Pass call data so Flutter can display it immediately without waiting for plugin sync
+            it.putExtra("CALLER_NAME", callerName)
+            it.putExtra("CALLER_NUMBER", callerNumber)
+            it.putExtra("MY_NUMBER", myNumber)
+            it.putExtra("CALL_DIRECTION", "incoming")
             startActivity(it)
+            android.util.Log.d(TAG, "launchMainActivity: Launched with call data - caller: $callerName, number: $callerNumber, myNumber: $myNumber")
         }
     }
 
