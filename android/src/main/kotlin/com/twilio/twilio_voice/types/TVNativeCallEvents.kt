@@ -68,6 +68,11 @@ object TVNativeCallEvents {
     val EVENT_SPEAKER: String = "com.twilio.EVENT_SPEAKER"
 
     /**
+     * The event name for when bluetooth state changes
+     */
+    val EVENT_BLUETOOTH: String = "com.twilio.EVENT_BLUETOOTH"
+
+    /**
      * The event name for when a permission is required to complete an action
      */
     val EVENT_PERMISSION_REQUIRED: String = "com.twilio.EVENT_PERMISSION_REQUIRED"
