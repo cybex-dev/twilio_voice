@@ -499,8 +499,16 @@ class TVConnectionService : ConnectionService() {
                                     intent.putExtra("fromIncomingCall", true)
                                     intent.putExtra("callHandle", callSid)
                                     intent.putExtra("callAnswered", true)
+                                    // Add extras that MainActivity expects for call data
+                                    intent.putExtra("SHOW_OVER_LOCK_SCREEN", true)
+                                    intent.putExtra("CALL_ANSWERED", true)
+                                    intent.putExtra("CALL_SID", callSid)
+                                    intent.putExtra("CALLER_NAME", params?.from ?: callerName)
+                                    intent.putExtra("CALLER_NUMBER", params?.fromRaw ?: "")
+                                    intent.putExtra("MY_NUMBER", params?.toRaw ?: "")
+                                    intent.putExtra("CALL_DIRECTION", "incoming")
                                     startActivity(intent)
-                                    Log.d(TAG, "Launched main activity after answering call")
+                                    Log.d(TAG, "Launched main activity after answering call with call data - caller: ${params?.from}, number: ${params?.fromRaw}")
                                 }
                             } catch (e: Exception) {
                                 Log.w(TAG, "Could not launch main activity after answering: ${e.message}")
