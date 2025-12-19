@@ -84,6 +84,13 @@ class IncomingCallActivity : AppCompatActivity() {
     @Volatile
     private var callHandled = false
     
+    // Helper function to extract user number from Twilio format
+    private fun extractUserNumber(input: String): String {
+        val pattern = Regex("""user_number:([^\s:]+)""")
+        val match = pattern.find(input)
+        return match?.groups?.get(1)?.value ?: input
+    }
+    
     // Broadcast receiver to listen for call ended events (e.g., from notification decline)
     private val callEndedReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -272,6 +279,17 @@ class IncomingCallActivity : AppCompatActivity() {
         if (sid != null) {
             callSid = sid
         }
+        
+        // Extract caller info from intent extras or callInvite (for launchMainActivity)
+        callerName = intent.getStringExtra(EXTRA_CALLER_NAME) 
+            ?: invite?.customParameters?.get("client_name")
+            ?: extractUserNumber(invite?.from ?: "Unknown")
+        callerNumber = intent.getStringExtra(EXTRA_CALLER_NUMBER)
+            ?: extractUserNumber(invite?.from ?: "")
+        myNumber = intent.getStringExtra("extra_my_number")
+            ?: invite?.to ?: ""
+        
+        android.util.Log.d(TAG, "handleAnswerFromNotification: Extracted caller info - name: $callerName, number: $callerNumber, myNumber: $myNumber")
         
         // Check for RECORD_AUDIO permission before answering
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {

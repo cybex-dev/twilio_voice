@@ -90,6 +90,9 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     private var methodChannel: MethodChannel? = null
     private var eventChannel: EventChannel? = null
     private var eventSink: EventSink? = null
+    
+    // Event queue for events that arrive before Flutter is ready
+    private val pendingEvents = mutableListOf<String>()
 
     // member instance functions
     private var callListener = callListener()
@@ -326,6 +329,16 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     override fun onListen(arguments: Any?, events: EventSink?) {
         Log.i(TAG, "Setting event sink")
         this.eventSink = events
+        
+        // Flush any pending events that arrived before Flutter was ready
+        if (events != null && pendingEvents.isNotEmpty()) {
+            Log.d(TAG, "Flushing ${pendingEvents.size} pending events to Flutter")
+            for (event in pendingEvents) {
+                Log.d(TAG, "Sending queued event: $event")
+                events.success(event)
+            }
+            pendingEvents.clear()
+        }
     }
 
     override fun onCancel(arguments: Any?) {
@@ -1648,13 +1661,25 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         description: String,
         isError: Boolean = false
     ) {
+        val message = if (prefix.isEmpty()) description else "$prefix$separator$description"
+        
         if (eventSink == null) {
+            // Queue important call events for when Flutter is ready
+            // Only queue call state events, not general logs
+            if (message.contains("Connected|") || message.contains("Ringing|") || 
+                message.contains("Answer|") || message.contains("Call Ended") ||
+                message.contains("Incoming|") || message.contains("Reconnecting") ||
+                message.contains("Reconnected")) {
+                Log.d(TAG, "logEvent: eventSink is null, queuing event: $message")
+                pendingEvents.add(message)
+            } else {
+                Log.d(TAG, "logEvent: eventSink is null, dropping non-critical event: $message")
+            }
             return
         }
         if (isError) {
             eventSink!!.error(FlutterErrorCodes.UNAVAILABLE_ERROR, description, null)
         } else {
-            val message = if (prefix.isEmpty()) description else "$prefix$separator$description"
             Log.d(TAG, "logEvent: $message")
             eventSink!!.success(message)
         }

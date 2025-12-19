@@ -470,50 +470,50 @@ class TVConnectionService : ConnectionService() {
                         
                         connection.acceptInvite()
                         
-                        val callSid = connection.getCallParameters()?.callSid ?: callHandle ?: ""
+                        // Get call info from the CallInvite (this is immediately available)
+                        val callInvite = (connection as TVCallInviteConnection).callInvite
+                        val callSid = callInvite.callSid
+                        val callerFromInvite = callInvite.from ?: "Unknown"
+                        val callerNumber = extractUserNumber(callerFromInvite)
+                        val myNumber = callInvite.to ?: ""
                         
-                        // Send connected event after answering
-                        val params = connection.getCallParameters()
-                        val callerName = params?.from ?: params?.fromRaw ?: "Unknown"
-                        sendBroadcastEvent(applicationContext, TVNativeCallEvents.EVENT_CONNECTED, callSid, Bundle().apply {
-                            putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callSid)
-                            putString(TVBroadcastReceiver.EXTRA_CALL_FROM, params?.fromRaw ?: "")
-                            putString(TVBroadcastReceiver.EXTRA_CALL_TO, params?.toRaw ?: "")
-                            putInt(TVBroadcastReceiver.EXTRA_CALL_DIRECTION, CallDirection.INCOMING.id)
-                        })
+                        Log.d(TAG, "ACTION_ANSWER: Call answered from callInvite - from=$callerFromInvite, callerNumber=$callerNumber, to=$myNumber, callSid=$callSid")
                         
-                        // Show ongoing call notification so user can see there's an active call
-                        showOngoingCallNotification(callSid, callerName)
+                        // NOTE: Do NOT send EVENT_CONNECTED here! The call is NOT connected yet.
+                        // acceptInvite() starts ICE negotiation which takes 2-4 seconds.
+                        // The real EVENT_CONNECTED will be sent from TVConnection.onConnected() 
+                        // callback when ICE completes and media connection is established.
                         
-                        // Launch main activity after answering from notification
-                        // Use Handler to give time for everything to settle before launching activity
-                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                            try {
-                                val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
-                                launchIntent?.let { intent ->
-                                    // Use flags that work well from lock screen
-                                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
-                                                   Intent.FLAG_ACTIVITY_CLEAR_TOP or 
-                                                   Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                                                   Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
-                                    intent.putExtra("fromIncomingCall", true)
-                                    intent.putExtra("callHandle", callSid)
-                                    intent.putExtra("callAnswered", true)
-                                    // Add extras that MainActivity expects for call data
-                                    intent.putExtra("SHOW_OVER_LOCK_SCREEN", true)
-                                    intent.putExtra("CALL_ANSWERED", true)
-                                    intent.putExtra("CALL_SID", callSid)
-                                    intent.putExtra("CALLER_NAME", params?.from ?: callerName)
-                                    intent.putExtra("CALLER_NUMBER", params?.fromRaw ?: "")
-                                    intent.putExtra("MY_NUMBER", params?.toRaw ?: "")
-                                    intent.putExtra("CALL_DIRECTION", "incoming")
-                                    startActivity(intent)
-                                    Log.d(TAG, "Launched main activity after answering call with call data - caller: ${params?.from}, number: ${params?.fromRaw}")
-                                }
-                            } catch (e: Exception) {
-                                Log.w(TAG, "Could not launch main activity after answering: ${e.message}")
+                        // Show ongoing call notification
+                        showOngoingCallNotification(callSid, callerNumber)
+                        
+                        // Launch main activity IMMEDIATELY with call data from callInvite
+                        // No delay needed since callInvite data is available immediately
+                        try {
+                            val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+                            launchIntent?.let { intent ->
+                                // Use flags that work well from lock screen
+                                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
+                                               Intent.FLAG_ACTIVITY_CLEAR_TOP or 
+                                               Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                                               Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                                intent.putExtra("fromIncomingCall", true)
+                                intent.putExtra("callHandle", callSid)
+                                intent.putExtra("callAnswered", true)
+                                // Add extras that MainActivity expects for call data
+                                intent.putExtra("SHOW_OVER_LOCK_SCREEN", true)
+                                intent.putExtra("CALL_ANSWERED", true)
+                                intent.putExtra("CALL_SID", callSid)
+                                intent.putExtra("CALLER_NAME", callerNumber) // Use number as name for now
+                                intent.putExtra("CALLER_NUMBER", callerNumber)
+                                intent.putExtra("MY_NUMBER", myNumber)
+                                intent.putExtra("CALL_DIRECTION", "incoming")
+                                startActivity(intent)
+                                Log.d(TAG, "Launched main activity with call data from callInvite - caller: $callerNumber")
                             }
-                        }, 500) // Increased delay for lock screen scenarios
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Could not launch main activity after answering: ${e.message}")
+                        }
                     } else {
                         Log.e(TAG, "onStartCommand: [ACTION_ANSWER] connection is not TVCallInviteConnection")
                     }
@@ -1429,12 +1429,17 @@ class TVConnectionService : ConnectionService() {
 
         // Extract caller info
         val callerName = callInvite.customParameters["client_name"] ?: "Unknown Caller"
+        val callerNumber = extractUserNumber(callInvite.from ?: "")
+        val myNumber = callInvite.to ?: ""
         
         // Create an intent that launches IncomingCallActivity with answer action
         val answerActivityIntent = Intent(applicationContext, IncomingCallActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra(IncomingCallActivity.EXTRA_CALL_SID, callInvite.callSid)
+            putExtra(IncomingCallActivity.EXTRA_CALL_INVITE, callInvite)
             putExtra(IncomingCallActivity.EXTRA_CALLER_NAME, callerName)
+            putExtra(IncomingCallActivity.EXTRA_CALLER_NUMBER, callerNumber)
+            putExtra("extra_my_number", myNumber)
             putExtra("action", "answer")
         }
         val answerActivityPendingIntent = PendingIntent.getActivity(
