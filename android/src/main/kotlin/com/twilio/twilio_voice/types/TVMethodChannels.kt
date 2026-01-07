@@ -51,6 +51,9 @@ enum class TVMethodChannels(val method: String) {
     IS_REJECTING_CALL_ON_NO_PERMISSIONS("isRejectingCallOnNoPermissions"),
     GetActiveCallOnResumeFromTerminatedState("getActiveCallOnResumeFromTerminatedState"),
     UPDATE_CALLKIT_ICON("updateCallKitIcon"),
+    IS_BATTERY_OPTIMIZED("isBatteryOptimized"),
+    REQUEST_IGNORE_BATTERY_OPTIMIZATIONS("requestIgnoreBatteryOptimizations"),
+    OPEN_BATTERY_SETTINGS("openBatterySettings"),
     CONNECT("connect");
 
     companion object {

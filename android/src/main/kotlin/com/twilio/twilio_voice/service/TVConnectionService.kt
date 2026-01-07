@@ -293,9 +293,12 @@ class TVConnectionService : ConnectionService() {
     //region Service onStartCommand
     @SuppressLint("MissingPermission")
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.d(TAG, "========== onStartCommand START ==========")
+        Log.d(TAG, "onStartCommand: action=${intent?.action}, flags=$flags, startId=$startId")
         Thread.currentThread().contextClassLoader = CallInvite::class.java.classLoader
         super.onStartCommand(intent, flags, startId)
         intent?.let {
+            Log.d(TAG, "onStartCommand: Processing action: ${it.action}")
             when (it.action) {
                 ACTION_SEND_DIGITS -> {
                     val callHandle = it.getStringExtra(EXTRA_CALL_HANDLE) ?: getActiveCallHandle() ?: run {
@@ -336,32 +339,61 @@ class TVConnectionService : ConnectionService() {
                 }
 
                 ACTION_INCOMING_CALL -> {
+                    Log.d(TAG, "========== ACTION_INCOMING_CALL START ==========")
                     // Load CallInvite class loader & get callInvite
+                    try {
+                        it.setExtrasClassLoader(CallInvite::class.java.classLoader)
+                        Log.d(TAG, "ACTION_INCOMING_CALL: ClassLoader set successfully")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "ACTION_INCOMING_CALL: Failed to set ClassLoader: ${e.message}", e)
+                    }
+                    
                     val callInvite = it.getParcelableExtraSafe<CallInvite>(EXTRA_INCOMING_CALL_INVITE) ?: run {
                         Log.e(TAG, "onStartCommand: 'ACTION_INCOMING_CALL' is missing parcelable 'EXTRA_INCOMING_CALL_INVITE'")
+                        // Even if we can't get the CallInvite, try to start foreground to avoid ANR
+                        try {
+                            val channel = getOrCreateIncomingCallChannel()
+                            val notification = Notification.Builder(this, channel.id).apply {
+                                setSmallIcon(R.drawable.ic_microphone)
+                                setContentTitle("Incoming Call")
+                                setContentText("Connecting...")
+                                setCategory(Notification.CATEGORY_CALL)
+                            }.build()
+                            startForeground(INCOMING_CALL_NOTIFICATION_ID, notification)
+                            Log.d(TAG, "ACTION_INCOMING_CALL: Started fallback foreground notification")
+                        } catch (e2: Exception) {
+                            Log.e(TAG, "ACTION_INCOMING_CALL: Failed to start fallback foreground: ${e2.message}", e2)
+                        }
                         return@let
                     }
+                    Log.d(TAG, "ACTION_INCOMING_CALL: Got CallInvite - callSid=${callInvite.callSid}")
 
                     // Wake the screen first - this is critical for terminated state
+                    Log.d(TAG, "ACTION_INCOMING_CALL: Waking screen...")
                     wakeScreen()
 
                     // Start foreground service first for Android O+
+                    Log.d(TAG, "ACTION_INCOMING_CALL: Starting foreground service...")
                     startIncomingCallForegroundService(callInvite)
+                    Log.d(TAG, "ACTION_INCOMING_CALL: Foreground service started")
 
                     // Bypass TelecomManager - handle incoming call directly without PhoneAccount
                     val mStorage: Storage = StorageImpl(applicationContext)
                     
                     // Get call parameters from invite
                     val callParams = TVCallInviteParametersImpl(mStorage, callInvite)
+                    Log.d(TAG, "ACTION_INCOMING_CALL: Call params created")
                     
                     // Create incoming call connection with required parameters
                     val connection = TVCallInviteConnection(applicationContext, callInvite, callParams)
+                    Log.d(TAG, "ACTION_INCOMING_CALL: Connection created")
                     
                     val callSid = callInvite.callSid
                     
                     // Apply parameters and attach listeners
                     applyParameters(connection, callParams, callInvite.from ?: "")
                     attachCallEventListeners(connection, callSid)
+                    Log.d(TAG, "ACTION_INCOMING_CALL: Event listeners attached")
                     
                     // Set call disconnected listener
                     val onCallDisconnectedListener: CompletionHandler<DisconnectCause> = CompletionHandler {
@@ -383,7 +415,7 @@ class TVConnectionService : ConnectionService() {
                     // Note: IncomingCallActivity is launched from startIncomingCallForegroundService
                     // via showIncomingCallOverLockScreen() - no need to launch it again here
                     
-                    Log.d(TAG, "onStartCommand: Direct incoming call handled - callSid: $callSid")
+                    Log.d(TAG, "========== ACTION_INCOMING_CALL END - callSid: $callSid ==========")
                 }
 
                 ACTION_ANSWER -> {
@@ -1383,23 +1415,30 @@ class TVConnectionService : ConnectionService() {
                 PendingIntent.FLAG_UPDATE_CURRENT
         )
 
+        // Use unique request codes based on callSid hash to avoid PendingIntent caching issues
+        val answerServiceRequestCode = (callInvite.callSid.hashCode() and 0x7FFFFFFF) % 10000 + 2000
+        val declineRequestCode = (callInvite.callSid.hashCode() and 0x7FFFFFFF) % 10000 + 3000
+        Log.d(TAG, "createIncomingCallNotification: answerServiceRequestCode=$answerServiceRequestCode, declineRequestCode=$declineRequestCode")
+        
         // Create answer intent - include CallInvite for terminated state recovery
         val answerIntent = Intent(applicationContext, TVConnectionService::class.java).apply {
             action = ACTION_ANSWER
             putExtra(EXTRA_CALL_HANDLE, callInvite.callSid)
             putExtra(EXTRA_INCOMING_CALL_INVITE, callInvite)
+            // Add unique data URI to ensure PendingIntent is unique
+            data = android.net.Uri.parse("twilio://answer-service/${callInvite.callSid}")
         }
         val answerPendingIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             PendingIntent.getForegroundService(
                 applicationContext,
-                1,
+                answerServiceRequestCode,
                 answerIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
         } else {
             PendingIntent.getService(
                 applicationContext,
-                1,
+                answerServiceRequestCode,
                 answerIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT
             )
@@ -1410,18 +1449,20 @@ class TVConnectionService : ConnectionService() {
             action = ACTION_HANGUP
             putExtra(EXTRA_CALL_HANDLE, callInvite.callSid)
             putExtra(EXTRA_INCOMING_CALL_INVITE, callInvite)
+            // Add unique data URI to ensure PendingIntent is unique
+            data = android.net.Uri.parse("twilio://decline/${callInvite.callSid}")
         }
         val declinePendingIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             PendingIntent.getForegroundService(
                 applicationContext,
-                2,
+                declineRequestCode,
                 declineIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
         } else {
             PendingIntent.getService(
                 applicationContext,
-                2,
+                declineRequestCode,
                 declineIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT
             )
@@ -1432,19 +1473,28 @@ class TVConnectionService : ConnectionService() {
         val callerNumber = extractUserNumber(callInvite.from ?: "")
         val myNumber = callInvite.to ?: ""
         
+        // Use unique request code based on callSid hash to avoid PendingIntent caching issues
+        val answerRequestCode = (callInvite.callSid.hashCode() and 0x7FFFFFFF) % 10000 + 1000
+        Log.d(TAG, "createIncomingCallNotification: Creating answer intent with requestCode=$answerRequestCode for callSid=${callInvite.callSid}")
+        
         // Create an intent that launches IncomingCallActivity with answer action
         val answerActivityIntent = Intent(applicationContext, IncomingCallActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            // Use flags that ensure the activity is started even when app is in foreground
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or 
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra(IncomingCallActivity.EXTRA_CALL_SID, callInvite.callSid)
             putExtra(IncomingCallActivity.EXTRA_CALL_INVITE, callInvite)
             putExtra(IncomingCallActivity.EXTRA_CALLER_NAME, callerName)
             putExtra(IncomingCallActivity.EXTRA_CALLER_NUMBER, callerNumber)
             putExtra("extra_my_number", myNumber)
             putExtra("action", "answer")
+            // Add a unique data URI to ensure PendingIntent is unique and not cached
+            data = android.net.Uri.parse("twilio://answer/${callInvite.callSid}")
         }
         val answerActivityPendingIntent = PendingIntent.getActivity(
             applicationContext,
-            3,
+            answerRequestCode,
             answerActivityIntent,
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) 
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE 
@@ -1472,12 +1522,13 @@ class TVConnectionService : ConnectionService() {
                 setContentIntent(fullScreenPendingIntent)
                 setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
                 // Use CallStyle for proper incoming call notification
-                // answerActivityPendingIntent launches activity that answers and opens app
-                // declinePendingIntent sends hangup to service
+                // Use activity-based answerActivityPendingIntent to bring app to foreground first
+                // This is required for Android 14+ because foreground services started from background
+                // cannot access microphone. The activity brings app to foreground, then starts service.
                 style = Notification.CallStyle.forIncomingCall(
                     person,
                     declinePendingIntent,
-                    answerActivityPendingIntent
+                    answerActivityPendingIntent  // Use activity-based intent to bring app to foreground first for microphone access
                 )
             }
         } else {
@@ -1493,10 +1544,11 @@ class TVConnectionService : ConnectionService() {
                 setVisibility(Notification.VISIBILITY_PUBLIC)
                 setAutoCancel(false)
                 // Add answer and decline actions
+                // Use activity-based intent to bring app to foreground first for microphone access
                 addAction(Notification.Action.Builder(
                     android.R.drawable.ic_menu_call,
                     "Answer",
-                    answerPendingIntent
+                    answerActivityPendingIntent  // Use activity-based intent for microphone access
                 ).build())
                 addAction(Notification.Action.Builder(
                     android.R.drawable.ic_menu_close_clear_cancel,

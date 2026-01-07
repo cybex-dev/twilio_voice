@@ -282,6 +282,43 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
         {}).then<bool>((bool? value) => value ?? false);
   }
 
+  /// Checks if the app is being battery optimized (which can prevent background FCM delivery)
+  /// Returns true if the app is being battery optimized
+  ///
+  /// Android only
+  @override
+  Future<bool> isBatteryOptimized() {
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      return Future.value(false);
+    }
+    return _channel.invokeMethod<bool?>(
+        'isBatteryOptimized', {}).then<bool>((bool? value) => value ?? false);
+  }
+
+  /// Request to be excluded from battery optimization
+  /// Shows the system dialog asking user to allow ignoring battery optimizations
+  ///
+  /// Android only
+  @override
+  Future<bool?> requestIgnoreBatteryOptimizations() {
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      return Future.value(true);
+    }
+    return _channel.invokeMethod('requestIgnoreBatteryOptimizations', {});
+  }
+
+  /// Opens the app's battery settings page so user can manually disable battery optimization
+  /// This is needed for Samsung and other OEMs with aggressive battery optimization
+  ///
+  /// Android only
+  @override
+  Future<bool?> openBatterySettings() {
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      return Future.value(true);
+    }
+    return _channel.invokeMethod('openBatterySettings', {});
+  }
+
   /// Set iOS call kit icon
   ///
   /// This allows for CallKit customization: setting the last button (bottom right) of the callkit.

@@ -109,6 +109,7 @@ class IncomingCallActivity : AppCompatActivity() {
 
     @SuppressLint("WakelockTimeout")
     override fun onCreate(savedInstanceState: Bundle?) {
+        android.util.Log.d(TAG, "onCreate: STARTED - IncomingCallActivity created")
         // Set window flags before super.onCreate()
         showOverLockScreen()
         
@@ -119,7 +120,9 @@ class IncomingCallActivity : AppCompatActivity() {
         
         // Check if this is an answer action from notification
         val action = intent.getStringExtra("action")
+        android.util.Log.d(TAG, "onCreate: action=$action, callSid=${intent.getStringExtra(EXTRA_CALL_SID)}, hasCallInvite=${intent.hasExtra(EXTRA_CALL_INVITE)}")
         if (action == "answer") {
+            android.util.Log.d(TAG, "onCreate: Detected 'answer' action - proceeding to handleAnswerFromNotification")
             // Direct answer from notification - answer and launch main app
             handleAnswerFromNotification()
             return
@@ -266,11 +269,14 @@ class IncomingCallActivity : AppCompatActivity() {
     }
     
     private fun handleAnswerFromNotification() {
+        android.util.Log.d(TAG, "handleAnswerFromNotification: STARTED - Activity launched from notification answer action")
         // Mark as handled immediately to prevent any race conditions
         callHandled = true
         val sid = intent.getStringExtra(EXTRA_CALL_SID)
         // Try to get CallInvite from intent
         val invite: CallInvite? = intent.getParcelableExtra(EXTRA_CALL_INVITE)
+        
+        android.util.Log.d(TAG, "handleAnswerFromNotification: sid=$sid, hasCallInvite=${invite != null}")
         
         // Store invite for permission callback
         if (invite != null) {
@@ -300,6 +306,8 @@ class IncomingCallActivity : AppCompatActivity() {
             return
         }
         
+        android.util.Log.d(TAG, "handleAnswerFromNotification: RECORD_AUDIO permission GRANTED - proceeding to answer call")
+        
         if (sid != null) {
             android.util.Log.d(TAG, "handleAnswerFromNotification: Answering call with callSid: $sid, hasCallInvite: ${invite != null}")
             // Send answer intent to TVConnectionService - include CallInvite for terminated state recovery
@@ -311,14 +319,20 @@ class IncomingCallActivity : AppCompatActivity() {
                 }
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                android.util.Log.d(TAG, "handleAnswerFromNotification: Calling startForegroundService with ACTION_ANSWER (from Activity context)")
                 startForegroundService(answerIntent)
             } else {
+                android.util.Log.d(TAG, "handleAnswerFromNotification: Calling startService with ACTION_ANSWER")
                 startService(answerIntent)
             }
             
+            android.util.Log.d(TAG, "handleAnswerFromNotification: Launching main Flutter activity")
             // Launch the main Flutter activity
             launchMainActivity()
+        } else {
+            android.util.Log.e(TAG, "handleAnswerFromNotification: sid is NULL - cannot answer call!")
         }
+        android.util.Log.d(TAG, "handleAnswerFromNotification: COMPLETED - finishing activity")
         finishAndRemoveTask()
     }
 
@@ -423,9 +437,10 @@ class IncomingCallActivity : AppCompatActivity() {
     
     private fun proceedWithAnswer() {
         callHandled = true
-        android.util.Log.d(TAG, "proceedWithAnswer: Answering call with callSid: $callSid")
+        android.util.Log.d(TAG, "proceedWithAnswer: STARTED - Answering call with callSid: $callSid, hasCallInvite: ${callInvite != null}")
         releaseWakeLock()
         callSid?.let { sid ->
+            android.util.Log.d(TAG, "proceedWithAnswer: Creating ACTION_ANSWER intent for TVConnectionService")
             // Send answer intent to TVConnectionService - include CallInvite for terminated state recovery
             val answerIntent = Intent(this, TVConnectionService::class.java).apply {
                 action = TVConnectionService.ACTION_ANSWER
@@ -435,14 +450,20 @@ class IncomingCallActivity : AppCompatActivity() {
                 }
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                android.util.Log.d(TAG, "proceedWithAnswer: Calling startForegroundService with ACTION_ANSWER (from Activity context - should have microphone access)")
                 startForegroundService(answerIntent)
             } else {
+                android.util.Log.d(TAG, "proceedWithAnswer: Calling startService with ACTION_ANSWER")
                 startService(answerIntent)
             }
             
+            android.util.Log.d(TAG, "proceedWithAnswer: Launching main Flutter activity")
             // Launch the main Flutter activity
             launchMainActivity()
+        } ?: run {
+            android.util.Log.e(TAG, "proceedWithAnswer: callSid is null - cannot answer call!")
         }
+        android.util.Log.d(TAG, "proceedWithAnswer: Finishing IncomingCallActivity")
         finishAndRemoveTask()
     }
     
@@ -517,8 +538,27 @@ class IncomingCallActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
-        // Handle if a new call comes in while this activity is showing
+        android.util.Log.d(TAG, "onNewIntent called with action=${intent?.getStringExtra("action")}")
+        
+        // Update the intent
+        setIntent(intent)
+        
         intent?.let {
+            // Check if this is an answer action from notification
+            val action = it.getStringExtra("action")
+            if (action == "answer") {
+                android.util.Log.d(TAG, "onNewIntent: Handling answer action from notification")
+                // Update the stored values before handling
+                callInvite = it.getParcelableExtra(EXTRA_CALL_INVITE)
+                callSid = it.getStringExtra(EXTRA_CALL_SID)
+                callerName = it.getStringExtra(EXTRA_CALLER_NAME) ?: callerName
+                callerNumber = it.getStringExtra(EXTRA_CALLER_NUMBER) ?: callerNumber
+                myNumber = it.getStringExtra("extra_my_number") ?: myNumber
+                handleAnswerFromNotification()
+                return
+            }
+            
+            // Handle if a new call comes in while this activity is showing
             callInvite = it.getParcelableExtra(EXTRA_CALL_INVITE)
             callSid = it.getStringExtra(EXTRA_CALL_SID)
         }

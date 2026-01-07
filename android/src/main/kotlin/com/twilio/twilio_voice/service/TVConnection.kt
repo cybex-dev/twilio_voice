@@ -4,11 +4,14 @@ package com.twilio.twilio_voice.service
 import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
+import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.telecom.CallAudioState
 import android.telecom.Connection
 import android.telecom.DisconnectCause
@@ -116,6 +119,52 @@ open class TVCallConnection(
     private var audioManager: AudioManager? = null
     private var audioFocusRequest: AudioFocusRequest? = null
     private var hasAudioFocus = false
+    
+    // Handler for audio device callbacks
+    private val mainHandler = Handler(Looper.getMainLooper())
+    
+    // Track if audio device callback is registered
+    private var isAudioDeviceCallbackRegistered = false
+    
+    // Flag to track if we're currently on Bluetooth (to detect disconnect)
+    private var wasOnBluetooth = false
+    
+    // Audio device callback to detect Bluetooth connect/disconnect during calls
+    private val audioDeviceCallback = object : AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>?) {
+            Log.d(TAG, "onAudioDevicesAdded: ${addedDevices?.map { "type=${it.type}, name=${it.productName}" }}")
+            addedDevices?.forEach { device ->
+                if (isBluetoothDevice(device)) {
+                    Log.d(TAG, "onAudioDevicesAdded: Bluetooth device connected mid-call!")
+                    // Auto-route to the newly connected Bluetooth device
+                    mainHandler.postDelayed({
+                        autoRouteToBluetoothOnConnect()
+                    }, 500) // Small delay to let the device fully connect
+                }
+            }
+        }
+        
+        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>?) {
+            Log.d(TAG, "onAudioDevicesRemoved: ${removedDevices?.map { "type=${it.type}, name=${it.productName}" }}")
+            removedDevices?.forEach { device ->
+                if (isBluetoothDevice(device)) {
+                    Log.d(TAG, "onAudioDevicesRemoved: Bluetooth device disconnected mid-call!")
+                    // Auto-route to earpiece when Bluetooth disconnects
+                    mainHandler.postDelayed({
+                        autoRouteToEarpieceOnBluetoothDisconnect()
+                    }, 200)
+                }
+            }
+        }
+    }
+    
+    private fun isBluetoothDevice(device: AudioDeviceInfo): Boolean {
+        return device.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+               device.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+               device.type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
+               device.type == AudioDeviceInfo.TYPE_HEARING_AID ||
+               device.type == AudioDeviceInfo.TYPE_BLE_SPEAKER
+    }
 
     init {
         context = ctx
@@ -139,6 +188,9 @@ open class TVCallConnection(
         
         val am = audioManager ?: return
         Log.d(TAG, "requestAudioFocus: Requesting audio focus for voice call")
+        
+        // Register audio device callback to detect Bluetooth connect/disconnect during calls
+        registerAudioDeviceCallback()
         
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val audioAttributes = AudioAttributes.Builder()
@@ -189,11 +241,174 @@ open class TVCallConnection(
     }
     
     /**
+     * Register audio device callback to detect Bluetooth connect/disconnect during calls
+     */
+    private fun registerAudioDeviceCallback() {
+        if (isAudioDeviceCallbackRegistered) {
+            Log.d(TAG, "registerAudioDeviceCallback: Already registered")
+            return
+        }
+        
+        val am = audioManager ?: return
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Log.d(TAG, "registerAudioDeviceCallback: Registering audio device callback")
+            am.registerAudioDeviceCallback(audioDeviceCallback, mainHandler)
+            isAudioDeviceCallbackRegistered = true
+            
+            // Check current Bluetooth state
+            wasOnBluetooth = isCurrentlyOnBluetooth()
+            Log.d(TAG, "registerAudioDeviceCallback: Initial Bluetooth state=$wasOnBluetooth")
+        }
+    }
+    
+    /**
+     * Unregister audio device callback
+     */
+    private fun unregisterAudioDeviceCallback() {
+        if (!isAudioDeviceCallbackRegistered) return
+        
+        val am = audioManager ?: return
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Log.d(TAG, "unregisterAudioDeviceCallback: Unregistering audio device callback")
+            try {
+                am.unregisterAudioDeviceCallback(audioDeviceCallback)
+            } catch (e: Exception) {
+                Log.e(TAG, "unregisterAudioDeviceCallback: Error", e)
+            }
+            isAudioDeviceCallbackRegistered = false
+        }
+    }
+    
+    /**
+     * Check if currently on Bluetooth
+     */
+    private fun isCurrentlyOnBluetooth(): Boolean {
+        val am = audioManager ?: return false
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val commDevice = am.communicationDevice
+            if (commDevice != null && isBluetoothDevice(commDevice)) {
+                return true
+            }
+        }
+        
+        return am.isBluetoothScoOn
+    }
+    
+    /**
+     * Auto-route to Bluetooth when a Bluetooth device connects mid-call
+     */
+    private fun autoRouteToBluetoothOnConnect() {
+        Log.d(TAG, "=== autoRouteToBluetoothOnConnect START ===")
+        val am = audioManager ?: return
+        
+        // Check if we're in a call
+        if (twilioCall == null) {
+            Log.d(TAG, "autoRouteToBluetoothOnConnect: No active call, skipping")
+            return
+        }
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try {
+                val availableDevices = am.availableCommunicationDevices
+                Log.d(TAG, "autoRouteToBluetoothOnConnect: Available devices: ${availableDevices.map { "type=${it.type}" }}")
+                
+                val bluetoothDevice = availableDevices.firstOrNull { isBluetoothDevice(it) }
+                if (bluetoothDevice != null) {
+                    Log.d(TAG, "autoRouteToBluetoothOnConnect: Found Bluetooth device, auto-routing")
+                    val result = am.setCommunicationDevice(bluetoothDevice)
+                    Log.d(TAG, "autoRouteToBluetoothOnConnect: setCommunicationDevice result=$result")
+                    
+                    if (result) {
+                        wasOnBluetooth = true
+                        // Notify Flutter about Bluetooth connection
+                        Log.d(TAG, "autoRouteToBluetoothOnConnect: Broadcasting EVENT_BLUETOOTH with state=true")
+                        onEvent?.onChange(TVNativeCallEvents.EVENT_BLUETOOTH, Bundle().apply {
+                            putBoolean(TVBroadcastReceiver.EXTRA_CALL_BLUETOOTH_STATE, true)
+                            putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callParams?.callSid)
+                        })
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "autoRouteToBluetoothOnConnect: Error", e)
+            }
+        } else {
+            // Legacy: Try to start Bluetooth SCO
+            if (am.isBluetoothScoAvailableOffCall) {
+                Log.d(TAG, "autoRouteToBluetoothOnConnect: Using legacy startBluetoothSco()")
+                am.startBluetoothSco()
+                am.isBluetoothScoOn = true
+                wasOnBluetooth = true
+                
+                onEvent?.onChange(TVNativeCallEvents.EVENT_BLUETOOTH, Bundle().apply {
+                    putBoolean(TVBroadcastReceiver.EXTRA_CALL_BLUETOOTH_STATE, true)
+                    putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callParams?.callSid)
+                })
+            }
+        }
+        Log.d(TAG, "=== autoRouteToBluetoothOnConnect END ===")
+    }
+    
+    /**
+     * Auto-route to earpiece when Bluetooth disconnects mid-call
+     */
+    private fun autoRouteToEarpieceOnBluetoothDisconnect() {
+        Log.d(TAG, "=== autoRouteToEarpieceOnBluetoothDisconnect START ===")
+        Log.d(TAG, "autoRouteToEarpieceOnBluetoothDisconnect: wasOnBluetooth=$wasOnBluetooth")
+        val am = audioManager ?: return
+        
+        // Check if we're in a call
+        if (twilioCall == null) {
+            Log.d(TAG, "autoRouteToEarpieceOnBluetoothDisconnect: No active call, skipping")
+            return
+        }
+        
+        // Always route to earpiece when a Bluetooth device is removed during a call
+        // This ensures audio doesn't get stuck on a non-existent device
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try {
+                Log.d(TAG, "autoRouteToEarpieceOnBluetoothDisconnect: Clearing communication device")
+                am.clearCommunicationDevice()
+                
+                val availableDevices = am.availableCommunicationDevices
+                val earpieceDevice = availableDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE }
+                if (earpieceDevice != null) {
+                    val result = am.setCommunicationDevice(earpieceDevice)
+                    Log.d(TAG, "autoRouteToEarpieceOnBluetoothDisconnect: setCommunicationDevice to earpiece result=$result")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "autoRouteToEarpieceOnBluetoothDisconnect: Error", e)
+            }
+        } else {
+            // Legacy
+            am.stopBluetoothSco()
+            am.isBluetoothScoOn = false
+        }
+        
+        wasOnBluetooth = false
+        
+        // ALWAYS notify Flutter about Bluetooth disconnection when a BT device is removed
+        // This ensures UI is immediately updated
+        Log.d(TAG, "autoRouteToEarpieceOnBluetoothDisconnect: Broadcasting EVENT_BLUETOOTH with state=false")
+        onEvent?.onChange(TVNativeCallEvents.EVENT_BLUETOOTH, Bundle().apply {
+            putBoolean(TVBroadcastReceiver.EXTRA_CALL_BLUETOOTH_STATE, false)
+            putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callParams?.callSid)
+        })
+        Log.d(TAG, "=== autoRouteToEarpieceOnBluetoothDisconnect END ===")
+    }
+    
+    /**
      * Release audio focus when call ends
      */
     protected fun releaseAudioFocus() {
         val am = audioManager ?: return
         Log.d(TAG, "releaseAudioFocus: Releasing audio focus")
+        
+        // Unregister audio device callback
+        unregisterAudioDeviceCallback()
         
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             audioFocusRequest?.let {
@@ -205,6 +420,7 @@ open class TVCallConnection(
         }
         
         hasAudioFocus = false
+        wasOnBluetooth = false
         am.mode = AudioManager.MODE_NORMAL
         
         // Stop Bluetooth SCO if it was started
@@ -216,6 +432,7 @@ open class TVCallConnection(
     
     /**
      * Route audio to Bluetooth if a Bluetooth device is connected
+     * Only broadcasts EVENT_BLUETOOTH if routing actually succeeds
      */
     private fun routeAudioToBluetoothIfConnected() {
         Log.d(TAG, "=== routeAudioToBluetoothIfConnected START ===")
@@ -226,49 +443,61 @@ open class TVCallConnection(
         
         Log.d(TAG, "routeAudioToBluetoothIfConnected: Android SDK=${Build.VERSION.SDK_INT}, isBluetoothScoAvailableOffCall=${am.isBluetoothScoAvailableOffCall}, isBluetoothScoOn=${am.isBluetoothScoOn}")
         
+        var routedSuccessfully = false
+        
         // For Android 12+, check available communication devices
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             try {
                 val availableDevices = am.availableCommunicationDevices
-                Log.d(TAG, "routeAudioToBluetoothIfConnected: Available communication devices: ${availableDevices.map { "type=${it.type}" }}")
+                Log.d(TAG, "routeAudioToBluetoothIfConnected: Available communication devices: ${availableDevices.map { "type=${it.type}, name=${it.productName}" }}")
                 
-                val bluetoothDevice = availableDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
+                // Look for Bluetooth SCO device specifically (for voice calls)
+                // TYPE_BLUETOOTH_A2DP is for media streaming, not voice calls
+                val bluetoothDevice = availableDevices.firstOrNull { 
+                    it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                    it.type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
+                    it.type == AudioDeviceInfo.TYPE_HEARING_AID ||
+                    it.type == AudioDeviceInfo.TYPE_BLE_SPEAKER
+                }
                 if (bluetoothDevice != null) {
-                    Log.d(TAG, "routeAudioToBluetoothIfConnected: Found Bluetooth SCO device, routing via setCommunicationDevice")
+                    Log.d(TAG, "routeAudioToBluetoothIfConnected: Found Bluetooth device type=${bluetoothDevice.type}, routing via setCommunicationDevice")
                     val result = am.setCommunicationDevice(bluetoothDevice)
                     Log.d(TAG, "routeAudioToBluetoothIfConnected: setCommunicationDevice result=$result")
                     
-                    // Broadcast Bluetooth state to Flutter
-                    Log.d(TAG, "routeAudioToBluetoothIfConnected: Broadcasting EVENT_BLUETOOTH with state=true")
-                    onEvent?.onChange(TVNativeCallEvents.EVENT_BLUETOOTH, Bundle().apply {
-                        putBoolean(TVBroadcastReceiver.EXTRA_CALL_BLUETOOTH_STATE, true)
-                        putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callParams?.callSid)
-                    })
-                    Log.d(TAG, "=== routeAudioToBluetoothIfConnected END (via setCommunicationDevice) ===")
-                    return
+                    if (result) {
+                        wasOnBluetooth = true
+                        routedSuccessfully = true
+                    }
                 } else {
-                    Log.d(TAG, "routeAudioToBluetoothIfConnected: No Bluetooth SCO device in availableCommunicationDevices")
+                    Log.d(TAG, "routeAudioToBluetoothIfConnected: No Bluetooth SCO/BLE device in availableCommunicationDevices")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "routeAudioToBluetoothIfConnected: Failed to use setCommunicationDevice", e)
             }
+        } else {
+            // Fallback for older Android: Check if Bluetooth SCO is available
+            if (am.isBluetoothScoAvailableOffCall) {
+                Log.d(TAG, "routeAudioToBluetoothIfConnected: Bluetooth available via legacy check, routing audio to Bluetooth")
+                am.startBluetoothSco()
+                am.isBluetoothScoOn = true
+                wasOnBluetooth = true
+                routedSuccessfully = true
+            } else {
+                Log.d(TAG, "routeAudioToBluetoothIfConnected: No Bluetooth device connected (legacy check)")
+            }
         }
         
-        // Fallback: Check if Bluetooth SCO is available (indicates Bluetooth headset is connected)
-        if (am.isBluetoothScoAvailableOffCall || am.isBluetoothScoOn) {
-            Log.d(TAG, "routeAudioToBluetoothIfConnected: Bluetooth available via legacy check, routing audio to Bluetooth")
-            am.startBluetoothSco()
-            am.isBluetoothScoOn = true
-            
-            // Broadcast Bluetooth state to Flutter
-            Log.d(TAG, "routeAudioToBluetoothIfConnected: Broadcasting EVENT_BLUETOOTH with state=true (legacy)")
+        // Only broadcast EVENT_BLUETOOTH if routing actually succeeded
+        if (routedSuccessfully) {
+            Log.d(TAG, "routeAudioToBluetoothIfConnected: Routing succeeded, broadcasting EVENT_BLUETOOTH with state=true")
             onEvent?.onChange(TVNativeCallEvents.EVENT_BLUETOOTH, Bundle().apply {
                 putBoolean(TVBroadcastReceiver.EXTRA_CALL_BLUETOOTH_STATE, true)
                 putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callParams?.callSid)
             })
         } else {
-            Log.d(TAG, "routeAudioToBluetoothIfConnected: No Bluetooth device connected, audio will stay on default route")
+            Log.d(TAG, "routeAudioToBluetoothIfConnected: No Bluetooth routing, audio stays on default (earpiece)")
         }
+        
         Log.d(TAG, "=== routeAudioToBluetoothIfConnected END ===")
     }
 
@@ -788,29 +1017,43 @@ open class TVCallConnection(
                         val availableDevices = audioManager.availableCommunicationDevices
                         Log.d(TAG, "toggleBluetooth: Available devices: ${availableDevices.map { "type=${it.type}" }}")
                         
-                        val bluetoothDevice = availableDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
+                        // Look for any Bluetooth device type (SCO, BLE headset, hearing aid, BLE speaker)
+                        val bluetoothDevice = availableDevices.firstOrNull { 
+                            it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                            it.type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
+                            it.type == AudioDeviceInfo.TYPE_HEARING_AID ||
+                            it.type == AudioDeviceInfo.TYPE_BLE_SPEAKER
+                        }
                         if (bluetoothDevice != null) {
+                            Log.d(TAG, "toggleBluetooth: Found Bluetooth device type=${bluetoothDevice.type}")
                             val result = audioManager.setCommunicationDevice(bluetoothDevice)
                             Log.d(TAG, "toggleBluetooth: setCommunicationDevice to BLUETOOTH result=$result")
+                            if (result) {
+                                wasOnBluetooth = true
+                            }
                         } else {
-                            Log.w(TAG, "toggleBluetooth: No Bluetooth SCO device found in availableCommunicationDevices!")
+                            Log.w(TAG, "toggleBluetooth: No Bluetooth device found in availableCommunicationDevices!")
                             Log.d(TAG, "toggleBluetooth: Trying legacy startBluetoothSco()")
                             audioManager.startBluetoothSco()
                             audioManager.isBluetoothScoOn = true
+                            wasOnBluetooth = true
                         }
                     } catch (e: Exception) {
                         Log.e(TAG, "toggleBluetooth: Failed to set communication device, using legacy", e)
                         audioManager.startBluetoothSco()
                         audioManager.isBluetoothScoOn = true
+                        wasOnBluetooth = true
                     }
                 } else {
                     Log.d(TAG, "toggleBluetooth: Pre-Android 12, using legacy startBluetoothSco()")
                     audioManager.startBluetoothSco()
                     audioManager.isBluetoothScoOn = true
+                    wasOnBluetooth = true
                 }
             } else {
                 // Turning Bluetooth OFF - route to earpiece
                 Log.d(TAG, "toggleBluetooth: Turning Bluetooth OFF, routing to earpiece")
+                wasOnBluetooth = false
                 
                 // For Android 12+, clear then set earpiece
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
