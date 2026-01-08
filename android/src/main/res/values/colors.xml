@@ -13,4 +13,12 @@
     <color name="grayHeaderItem">#F1F2F3</color>
     <color name="colorGrayBlur">#8c939393</color>
 
+    <!-- Incoming Call Screen Colors -->
+    <color name="call_background">#1a1a1a</color>
+    <color name="text_primary">#FFFFFF</color>
+    <color name="text_secondary">#B0B0B0</color>
+    <color name="button_accept_bg">#4CAF50</color>
+    <color name="button_decline_bg">#FF5252</color>
+    <color name="button_overlay">#1b6cf7</color>
+
 </resources>

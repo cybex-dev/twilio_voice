@@ -1,0 +1,14 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Phone hangup icon -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M16.684,8.532c-0.857,-0.857 -2.242,-0.857 -3.099,0l-2.41,2.41c-0.857,0.857 -0.857,2.242 0,3.099l3.438,3.438c0.857,0.857 2.242,0.857 3.099,0l2.41,-2.41c0.857,-0.857 0.857,-2.242 0,-3.099L16.684,8.532z" />
+    <!-- X mark through phone -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M4,4l16,16M20,4l-16,16" />
+</vector>

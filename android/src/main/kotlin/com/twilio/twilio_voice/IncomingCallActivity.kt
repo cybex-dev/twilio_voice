@@ -19,7 +19,11 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.view.WindowManager
+import android.view.View
+import android.view.MotionEvent
 import android.widget.Button
+import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -128,7 +132,7 @@ class IncomingCallActivity : AppCompatActivity() {
             return
         }
         
-        setContentView(R.layout.activity_incoming_call)
+        setContentView(R.layout.activity_incoming_call_custom)
 
         // Get call info from intent
         callInvite = intent.getParcelableExtra(EXTRA_CALL_INVITE)
@@ -140,18 +144,67 @@ class IncomingCallActivity : AppCompatActivity() {
         myNumber = callInvite?.to ?: ""
 
         // Set caller info
-        findViewById<TextView>(R.id.tv_caller_name).text = callerName
-        findViewById<TextView>(R.id.tv_caller_number).text = callerNumber
+        findViewById<TextView>(R.id.callerName).text = callerName
+        findViewById<TextView>(R.id.callerNumber).text = formatPhoneNumber(callerNumber)
 
-        // Set up answer button
-        findViewById<Button>(R.id.btn_answer).setOnClickListener {
+        // Load Easify logo from Flutter assets using SvgPicture-like approach
+        // For now, keep the vector drawable but make it more visible
+        val easifyLogo = findViewById<ImageView>(R.id.easifyLogo)
+        easifyLogo.elevation = 8f
+
+        // Add animated avatar ring to container
+        val avatarContainer = findViewById<FrameLayout>(R.id.avatarContainer)
+        val animatedRing = com.twilio.twilio_voice.ui.AnimatedCallAvatarView(this)
+        avatarContainer.addView(animatedRing)
+
+        // Handle caller initials or person icon
+        val initialsView = findViewById<TextView>(R.id.callerInitials)
+        val personIconView = findViewById<ImageView>(R.id.personIcon)
+        
+        // Extract initials from caller name (skip phone numbers)
+        if (!callerName.isNullOrEmpty() && callerName != "Unknown" && !callerName!!.matches(Regex("^[+\\d\\s()-]*$"))) {
+            // This is a real name, not just a phone number
+            val initials = callerName!!.split(" ").take(2).map { it.firstOrNull()?.uppercaseChar() ?: "" }.joinToString("")
+            if (initials.isNotEmpty()) {
+                initialsView.text = initials
+                initialsView.visibility = android.view.View.VISIBLE
+                personIconView.visibility = android.view.View.GONE
+            } else {
+                // Show person icon for phone number or empty name
+                initialsView.visibility = android.view.View.GONE
+                personIconView.visibility = android.view.View.VISIBLE
+            }
+        } else {
+            // Show person icon for unknown caller or phone number
+            initialsView.visibility = android.view.View.GONE
+            personIconView.visibility = android.view.View.VISIBLE
+        }
+
+        // Set up answer button with swipe animation
+        val acceptButtonContainer = findViewById<FrameLayout>(R.id.acceptButton)
+        val acceptButtonBg = findViewById<View>(R.id.acceptButtonBg)
+        val acceptButtonCircle = findViewById<ImageView>(R.id.acceptButtonCircle)
+        
+        // Add elevation to buttons for more visibility
+        acceptButtonContainer.elevation = 12f
+        acceptButtonBg.elevation = 10f
+        
+        setupButtonSwipeAnimation(acceptButtonContainer, acceptButtonBg, acceptButtonCircle) {
             answerCall()
         }
 
-        // Set up decline button
-        val declineButton = findViewById<Button>(R.id.btn_decline)
-        declineButton.setOnClickListener {
-            declineButton.isEnabled = false // Prevent double tap
+        // Set up decline button with swipe animation
+        val declineButtonContainer = findViewById<FrameLayout>(R.id.declineButton)
+        val declineButtonBg = findViewById<View>(R.id.declineButtonBg)
+        val declineButtonCircle = findViewById<ImageView>(R.id.declineButtonCircle)
+        
+        // Add elevation to buttons for more visibility
+        declineButtonContainer.elevation = 12f
+        declineButtonBg.elevation = 10f
+        declineButtonCircle.elevation = 14f
+        acceptButtonCircle.elevation = 14f
+        
+        setupButtonSwipeAnimation(declineButtonContainer, declineButtonBg, declineButtonCircle) {
             declineCall()
         }
         
@@ -564,8 +617,222 @@ class IncomingCallActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Setup swipe animation for button gestures (swipe to accept/decline)
+     * Provides haptic feedback and visual scaling during drag with enhanced effects
+     */
+    private fun setupButtonSwipeAnimation(
+        buttonContainer: FrameLayout,
+        buttonBg: View,
+        buttonIcon: ImageView,
+        onSwipeComplete: () -> Unit
+    ) {
+        var startX = 0f
+        var startY = 0f
+        var isDragging = false
+        
+        buttonContainer.setOnTouchListener { _, event ->
+            when (event.action) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    startX = event.x
+                    startY = event.y
+                    isDragging = false
+                    
+                    // Start pulse animation on button with icon scale
+                    buttonContainer.animate()
+                        .scaleX(1.15f)
+                        .scaleY(1.15f)
+                        .setDuration(120)
+                        .start()
+                    
+                    buttonIcon.animate()
+                        .scaleX(1.2f)
+                        .scaleY(1.2f)
+                        .setDuration(120)
+                        .start()
+                    
+                    // Slight alpha change for depth
+                    buttonBg.animate()
+                        .alpha(0.9f)
+                        .setDuration(120)
+                        .start()
+                    
+                    true
+                }
+                
+                android.view.MotionEvent.ACTION_MOVE -> {
+                    val deltaX = kotlin.math.abs(event.x - startX)
+                    val deltaY = kotlin.math.abs(event.y - startY)
+                    val totalDelta = kotlin.math.sqrt((deltaX * deltaX + deltaY * deltaY).toDouble()).toFloat()
+                    
+                    // If moved more than 40dp in any direction, consider it a drag
+                    if (deltaX > 40 || deltaY > 40) {
+                        isDragging = true
+                        
+                        // Scale button during drag for visual feedback (limited to 1.3x max to prevent overflow)
+                        val scale = 1.15f + (totalDelta / 300f).coerceAtMost(0.15f)
+                        buttonContainer.scaleX = scale
+                        buttonContainer.scaleY = scale
+                        
+                        // Scale icon during drag
+                        val iconScale = 1.2f + (totalDelta / 300f).coerceAtMost(0.3f)
+                        buttonIcon.scaleX = iconScale
+                        buttonIcon.scaleY = iconScale
+                        
+                        // Increase alpha during drag for emphasis
+                        val alphaDrag = 0.9f + (totalDelta / 500f).coerceAtMost(0.1f)
+                        buttonBg.alpha = alphaDrag
+                        
+                        // If dragged more than 120dp, trigger action
+                        if (totalDelta > 120) {
+                            // Haptic feedback
+                            buttonContainer.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+                            buttonContainer.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                            
+                            // Animate back to normal with success effect
+                            buttonContainer.animate()
+                                .scaleX(0.9f)
+                                .scaleY(0.9f)
+                                .setDuration(80)
+                                .withEndAction {
+                                    buttonContainer.animate()
+                                        .scaleX(1.0f)
+                                        .scaleY(1.0f)
+                                        .setDuration(100)
+                                        .start()
+                                }
+                                .start()
+                            
+                            // Icon bounce animation
+                            buttonIcon.animate()
+                                .scaleX(0.95f)
+                                .scaleY(0.95f)
+                                .setDuration(80)
+                                .withEndAction {
+                                    buttonIcon.animate()
+                                        .scaleX(1.0f)
+                                        .scaleY(1.0f)
+                                        .setDuration(100)
+                                        .start()
+                                }
+                                .start()
+                            
+                            // Reset button background
+                            buttonBg.animate()
+                                .alpha(1.0f)
+                                .setDuration(200)
+                                .start()
+                            
+                            onSwipeComplete()
+                            isDragging = false
+                            return@setOnTouchListener true
+                        }
+                    }
+                    true
+                }
+                
+                android.view.MotionEvent.ACTION_UP,
+                android.view.MotionEvent.ACTION_CANCEL -> {
+                    if (!isDragging) {
+                        // Simple tap detected - immediate action
+                        buttonContainer.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
+                        
+                        // Bounce effect on tap
+                        buttonContainer.animate()
+                            .scaleX(0.95f)
+                            .scaleY(0.95f)
+                            .setDuration(100)
+                            .withEndAction {
+                                buttonContainer.animate()
+                                    .scaleX(1.0f)
+                                    .scaleY(1.0f)
+                                    .setDuration(100)
+                                    .start()
+                            }
+                            .start()
+                        
+                        onSwipeComplete()
+                    }
+                    
+                    // Reset button scales
+                    buttonContainer.animate()
+                        .scaleX(1f)
+                        .scaleY(1f)
+                        .setDuration(200)
+                        .start()
+                    
+                    buttonIcon.animate()
+                        .scaleX(1f)
+                        .scaleY(1f)
+                        .setDuration(200)
+                        .start()
+                    
+                    // Reset button background alpha
+                    buttonBg.animate()
+                        .alpha(1.0f)
+                        .setDuration(200)
+                        .start()
+                    
+                    true
+                }
+                
+                else -> false
+            }
+        }
+    }
+
     override fun onBackPressed() {
         // Prevent back button from dismissing the incoming call UI
         // User must answer or decline
+    }
+
+    /**
+     * Format phone number to a readable format
+     * Examples:
+     * +12034098827 -> +1 (203) 409-8827
+     * 2034098827 -> (203) 409-8827
+     * +1 203 409 8827 -> +1 (203) 409-8827
+     */
+    private fun formatPhoneNumber(phoneNumber: String?): String {
+        if (phoneNumber.isNullOrEmpty()) return ""
+        
+        // Remove all non-digit characters except leading +
+        val cleaned = phoneNumber.replace(Regex("[^\\d+]"), "")
+        
+        // Handle empty result
+        if (cleaned.isEmpty()) return phoneNumber
+        
+        // Check if it starts with +
+        val hasPlus = cleaned.startsWith("+")
+        
+        // Extract all content after + if exists
+        val allDigits = if (hasPlus) {
+            cleaned.substring(1)  // Remove the + sign
+        } else {
+            cleaned
+        }
+        
+        // Format based on pattern
+        return when {
+            // International format: starts with + and has 11+ digits (country code + 10 digits)
+            hasPlus && allDigits.length >= 11 -> {
+                // Extract country code (usually 1-3 digits) and remaining digits
+                // For +1 (US/Canada), it's 1 digit country code + 10 digit number
+                val countryCode = allDigits.substring(0, 1)  // First digit is country code
+                val areaCode = allDigits.substring(1, 4)
+                val exchange = allDigits.substring(4, 7)
+                val subscriber = allDigits.substring(7, 11)
+                "+$countryCode ($areaCode) $exchange-$subscriber"
+            }
+            // North American without +: 10 digits
+            !hasPlus && allDigits.length == 10 -> {
+                val areaCode = allDigits.substring(0, 3)
+                val exchange = allDigits.substring(3, 6)
+                val subscriber = allDigits.substring(6, 10)
+                "($areaCode) $exchange-$subscriber"
+            }
+            // Default: return original if format doesn't match
+            else -> phoneNumber
+        }
     }
 }

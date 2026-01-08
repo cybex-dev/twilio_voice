@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/call_background"
+    android:orientation="vertical"
+    android:paddingHorizontal="28dp">
+
+    <!-- Top Section: Easify Logo with Name (Center Top) -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="0.08"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:paddingTop="30dp">
+
+        <!-- Easify Logo with Text (Center, larger) -->
+        <ImageView
+            android:id="@+id/easifyLogo"
+            android:layout_width="90dp"
+            android:layout_height="21dp"
+            android:src="@drawable/ic_easify_logo_with_name"
+            android:contentDescription="Easify Logo"
+            android:scaleType="fitCenter" />
+
+    </LinearLayout>
+
+    <!-- Spacer - Reduced spacing between logo and caller info -->
+    <Space
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="0.01" />
+
+    <!-- Caller Information Section -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="0.15"
+        android:orientation="vertical"
+        android:gravity="center_horizontal">
+
+        <!-- "Call from" Label -->
+        <TextView
+            android:id="@+id/callFromLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Call from"
+            android:textSize="14sp"
+            android:textColor="@color/text_secondary"
+            android:textStyle="bold" />
+
+        <!-- Caller Name -->
+        <TextView
+            android:id="@+id/callerName"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Unknown"
+            android:textSize="28sp"
+            android:textColor="@color/text_primary"
+            android:textStyle="bold"
+            android:layout_marginTop="4dp" />
+
+        <!-- Caller Details (Mobile + Number) -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:layout_marginTop="4dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Mobile"
+                android:textSize="11sp"
+                android:textColor="@color/text_secondary" />
+
+            <TextView
+                android:id="@+id/callerNumber"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text=""
+                android:textSize="11sp"
+                android:textColor="@color/text_secondary"
+                android:layout_marginStart="4dp" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <!-- Spacer (Minimized between caller info and avatar) -->
+    <!-- <Space
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="0.001" /> -->
+
+    <!-- Avatar Section with Animated Ring and Initials/Icon -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="0.48"
+        android:gravity="center">
+
+        <!-- Avatar Container with Animated Ring -->
+        <FrameLayout
+            android:id="@+id/avatarContainer"
+            android:layout_width="150dp"
+            android:layout_height="150dp"
+            android:layout_gravity="center" />
+
+        <!-- Caller Initials/Person Icon (Center of ring) -->
+        <FrameLayout
+            android:layout_width="110dp"
+            android:layout_height="110dp"
+            android:layout_gravity="center"
+            android:background="@drawable/avatar_center_background">
+
+            <!-- Caller Initials (Initially Hidden, shown if name is known) -->
+            <TextView
+                android:id="@+id/callerInitials"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:text="BT"
+                android:textSize="40sp"
+                android:textStyle="bold"
+                android:textColor="@color/text_primary"
+                android:gravity="center"
+                android:visibility="visible" />
+
+            <!-- Person Icon (Shown if name is unknown) -->
+            <ImageView
+                android:id="@+id/personIcon"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:src="@drawable/ic_person"
+                android:scaleType="fitCenter"
+                android:padding="20dp"
+                android:contentDescription="Unknown Caller"
+                android:visibility="gone" />
+
+        </FrameLayout>
+
+    </FrameLayout>
+
+    <!-- Spacer -->
+    <Space
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="0.04" />
+
+    <!-- Action Buttons Section -->
+    <LinearLayout
+        android:id="@+id/buttonContainer"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="0.17"
+        android:orientation="horizontal"
+        android:gravity="center_horizontal|center_vertical"
+        android:layout_marginBottom="10dp"
+        android:clipChildren="false"
+        android:clipToPadding="false">
+
+        <!-- Accept Button (Left) - with swipe gesture -->
+        <FrameLayout
+            android:id="@+id/acceptButton"
+            android:layout_width="70dp"
+            android:layout_height="70dp"
+            android:layout_marginEnd="60dp"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="@drawable/button_accept_ripple">
+
+            <ImageView
+                android:id="@+id/acceptButtonCircle"
+                android:layout_width="30dp"
+                android:layout_height="30dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_phone_answer"
+                android:contentDescription="Accept Call"
+                android:scaleType="fitCenter"
+                android:tint="@color/text_primary" />
+
+            <View
+                android:layout_width="70dp"
+                android:layout_height="70dp"
+                android:id="@+id/acceptButtonBg"
+                android:visibility="gone" />
+
+        </FrameLayout>
+
+        <!-- Decline Button (Right) - with swipe gesture -->
+        <FrameLayout
+            android:id="@+id/declineButton"
+            android:layout_width="70dp"
+            android:layout_height="70dp"
+            android:layout_marginStart="60dp"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="@drawable/button_decline_ripple">
+
+            <ImageView
+                android:id="@+id/declineButtonCircle"
+                android:layout_width="30dp"
+                android:layout_height="30dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_phone_end"
+                android:contentDescription="Decline Call"
+                android:scaleType="fitCenter"
+                android:tint="@color/text_primary" />
+
+            <View
+                android:layout_width="70dp"
+                android:layout_height="70dp"
+                android:id="@+id/declineButtonBg"
+                android:visibility="gone" />
+
+        </FrameLayout>
+
+    </LinearLayout>
+
+</LinearLayout>
