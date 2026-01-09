@@ -14,6 +14,7 @@ enum CallEvent {
   speakerOff,
   bluetoothOn,
   bluetoothOff,
+  audioRouteChanged, // New event for audio route changes (e.g., BT disconnected mid-call)
   log,
   permission,
   declined,

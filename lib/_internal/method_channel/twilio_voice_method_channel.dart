@@ -12,18 +12,11 @@ import 'twilio_call_method_channel.dart';
 
 /// Implementation of [TwilioVoicePlatform] that uses method channels.
 class MethodChannelTwilioVoice extends TwilioVoicePlatform {
-  static TwilioVoicePlatform get instance => TwilioVoicePlatform.instance;
-
   late final TwilioCallPlatform _call = MethodChannelTwilioCall();
+  Stream<CallEvent>? _callEventsListener;
 
   @override
   TwilioCallPlatform get call => _call;
-
-  Stream<CallEvent>? _callEventsListener;
-
-  EventChannel get _eventChannel => eventChannel;
-
-  MethodChannel get _channel => sharedChannel;
 
   /// Sends call events
   @override
@@ -34,141 +27,12 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
     return _callEventsListener!;
   }
 
+  /// Checks if device has bluetooth permissions
+  /// Only available on Android
+  /// Defaults to false
   @override
-  void setOnDeviceTokenChanged(OnDeviceTokenChanged deviceTokenChanged) {
-    this.deviceTokenChanged = deviceTokenChanged;
-  }
-
-  /// register fcm token, and device token for android
-  ///
-  /// ios device token is obtained internally
-  @override
-  Future<bool?> setTokens({required String accessToken, String? deviceToken}) {
-    return _channel.invokeMethod('tokens', <String, dynamic>{
-      "accessToken": accessToken,
-      "deviceToken": deviceToken
-    });
-  }
-
-  /// Whether or not should the user receive a notification after a missed call, default to true.
-  ///
-  /// Setting is persisted across restarts until overridden
-  @override
-  set showMissedCallNotifications(bool value) {
-    _channel
-        .invokeMethod('show-notifications', <String, dynamic>{"show": value});
-  }
-
-  /// Unregisters from Twilio
-  ///
-  /// If no accessToken is provided, previously registered accessToken will be used
-  @override
-  Future<bool?> unregister({String? accessToken}) {
-    return _channel.invokeMethod(
-        'unregister', <String, dynamic>{"accessToken": accessToken});
-  }
-
-  /// Checks if device needs background permission
-  ///
-  /// Android only, xiamoi devices need special permission to show background call UI
-  @Deprecated('custom call UI not used anymore, has no effect')
-  @override
-  Future<bool> requiresBackgroundPermissions() {
-    return _channel.invokeMethod<bool?>('requiresBackgroundPermissions',
-        {}).then<bool>((bool? value) => value ?? false);
-  }
-
-  /// Requests background permission
-  ///
-  /// Android only, takes user to android settings to accept background permissions
-  @Deprecated('custom call UI not used anymore, has no effect')
-  @override
-  Future<bool?> requestBackgroundPermissions() {
-    return _channel.invokeMethod('requestBackgroundPermissions', {});
-  }
-
-  /// Checks if device has a registered phone account
-  ///
-  /// Android only
-  @override
-  Future<bool> hasRegisteredPhoneAccount() {
-    if (defaultTargetPlatform != TargetPlatform.android) {
-      return Future.value(true);
-    }
-    return _channel.invokeMethod<bool?>('hasRegisteredPhoneAccount',
-        {}).then<bool>((bool? value) => value ?? false);
-  }
-
-  /// Register phone account with TelecomManager
-  ///
-  /// Android only
-  @override
-  Future<bool> registerPhoneAccount() {
-    if (defaultTargetPlatform != TargetPlatform.android) {
-      return Future.value(true);
-    }
-    return _channel.invokeMethod<bool?>(
-        'registerPhoneAccount', {}).then<bool>((bool? value) => value ?? false);
-  }
-
-  /// Checks if App's phone account is enabled
-  ///
-  /// Android only
-  @override
-  Future<bool> isPhoneAccountEnabled() {
-    if (defaultTargetPlatform != TargetPlatform.android) {
-      return Future.value(true);
-    }
-    return _channel.invokeMethod<bool?>('isPhoneAccountEnabled', {}).then<bool>(
-        (bool? value) => value ?? false);
-  }
-
-  /// Open phone account settings
-  ///
-  /// Android only
-  @override
-  Future<bool> openPhoneAccountSettings() {
-    if (defaultTargetPlatform != TargetPlatform.android) {
-      return Future.value(true);
-    }
-    return _channel.invokeMethod<bool?>('openPhoneAccountSettings',
-        {}).then<bool>((bool? value) => value ?? false);
-  }
-
-  /// Checks if device has microphone permission
-  @override
-  Future<bool> hasMicAccess() {
-    return _channel.invokeMethod<bool?>(
-        'hasMicPermission', {}).then<bool>((bool? value) => value ?? false);
-  }
-
-  /// Request microphone permission
-  @override
-  Future<bool?> requestMicAccess() {
-    return _channel.invokeMethod('requestMicPermission', {});
-  }
-
-  /// Checks if device has read phone state permission
-  ///
-  /// Android only
-  @override
-  Future<bool> hasReadPhoneStatePermission() {
-    if (defaultTargetPlatform != TargetPlatform.android) {
-      return Future.value(true);
-    }
-    return _channel.invokeMethod<bool?>('hasReadPhoneStatePermission',
-        {}).then<bool>((bool? value) => value ?? false);
-  }
-
-  /// Request read phone state permission
-  ///
-  /// Android only
-  @override
-  Future<bool?> requestReadPhoneStatePermission() {
-    if (defaultTargetPlatform != TargetPlatform.android) {
-      return Future.value(true);
-    }
-    return _channel.invokeMethod('requestReadPhoneStatePermission', {});
+  Future<bool> hasBluetoothPermissions() {
+    return Future.value(false);
   }
 
   /// Checks if device has 'android.permission.CALL_PHONE' permission
@@ -183,17 +47,6 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
         {}).then<bool>((bool? value) => value ?? false);
   }
 
-  /// request 'android.permission.CALL_PHONE' permission
-  ///
-  /// Android only
-  @override
-  Future<bool?> requestCallPhonePermission() {
-    if (defaultTargetPlatform != TargetPlatform.android) {
-      return Future.value(true);
-    }
-    return _channel.invokeMethod('requestCallPhonePermission', {});
-  }
-
   /// Checks if device has permission to manage system calls
   ///
   /// Android only
@@ -206,15 +59,11 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
         {}).then<bool>((bool? value) => value ?? false);
   }
 
-  /// Requests system permission to manage calls
-  ///
-  /// Android only
+  /// Checks if device has microphone permission
   @override
-  Future<bool?> requestManageOwnCallsPermission() {
-    if (defaultTargetPlatform != TargetPlatform.android) {
-      return Future.value(true);
-    }
-    return _channel.invokeMethod('requestManageOwnCallsPermission', {});
+  Future<bool> hasMicAccess() {
+    return _channel.invokeMethod<bool?>(
+        'hasMicPermission', {}).then<bool>((bool? value) => value ?? false);
   }
 
   /// Checks if device has read phone numbers permission
@@ -229,56 +78,27 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
         {}).then<bool>((bool? value) => value ?? false);
   }
 
-  /// Request read phone numbers permission
+  /// Checks if device has read phone state permission
   ///
   /// Android only
   @override
-  Future<bool?> requestReadPhoneNumbersPermission() {
+  Future<bool> hasReadPhoneStatePermission() {
     if (defaultTargetPlatform != TargetPlatform.android) {
       return Future.value(true);
     }
-    return _channel.invokeMethod('requestReadPhoneNumbersPermission', {});
+    return _channel.invokeMethod<bool?>('hasReadPhoneStatePermission',
+        {}).then<bool>((bool? value) => value ?? false);
   }
 
-  /// Checks if device has bluetooth permissions
-  /// Only available on Android
-  /// Defaults to false
-  @override
-  Future<bool> hasBluetoothPermissions() {
-    return Future.value(false);
-  }
-
-  /// Request bluetooth permissions
-  /// Only available on Android
-  @override
-  Future<bool?> requestBluetoothPermissions() {
-    return Future.value(false);
-  }
-
-  /// Reject call when no `CALL_PHONE` permissions are granted nor Phone Account (via `isPhoneAccountEnabled`) is registered.
-  /// If set to true, the call is rejected immediately upon received. If set to false, the call is left until the timeout is reached / call is canceled.
-  /// Defaults to false.
+  /// Checks if device has a registered phone account
   ///
-  /// Only available on Android
+  /// Android only
   @override
-  Future<bool> rejectCallOnNoPermissions({bool shouldReject = false}) {
+  Future<bool> hasRegisteredPhoneAccount() {
     if (defaultTargetPlatform != TargetPlatform.android) {
       return Future.value(true);
     }
-    return _channel.invokeMethod<bool?>('rejectCallOnNoPermissions', {
-      "shouldReject": shouldReject
-    }).then<bool>((bool? value) => value ?? false);
-  }
-
-  /// Returns true if call is rejected when no `CALL_PHONE` permissions are granted nor Phone Account (via `isPhoneAccountEnabled`) is registered. Defaults to false.
-  ///
-  /// Only available on Android
-  @override
-  Future<bool> isRejectingCallOnNoPermissions() {
-    if (defaultTargetPlatform != TargetPlatform.android) {
-      return Future.value(false);
-    }
-    return _channel.invokeMethod<bool?>('isRejectingCallOnNoPermissions',
+    return _channel.invokeMethod<bool?>('hasRegisteredPhoneAccount',
         {}).then<bool>((bool? value) => value ?? false);
   }
 
@@ -295,16 +115,28 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
         'isBatteryOptimized', {}).then<bool>((bool? value) => value ?? false);
   }
 
-  /// Request to be excluded from battery optimization
-  /// Shows the system dialog asking user to allow ignoring battery optimizations
+  /// Checks if App's phone account is enabled
   ///
   /// Android only
   @override
-  Future<bool?> requestIgnoreBatteryOptimizations() {
+  Future<bool> isPhoneAccountEnabled() {
     if (defaultTargetPlatform != TargetPlatform.android) {
       return Future.value(true);
     }
-    return _channel.invokeMethod('requestIgnoreBatteryOptimizations', {});
+    return _channel.invokeMethod<bool?>('isPhoneAccountEnabled', {}).then<bool>(
+        (bool? value) => value ?? false);
+  }
+
+  /// Returns true if call is rejected when no `CALL_PHONE` permissions are granted nor Phone Account (via `isPhoneAccountEnabled`) is registered. Defaults to false.
+  ///
+  /// Only available on Android
+  @override
+  Future<bool> isRejectingCallOnNoPermissions() {
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      return Future.value(false);
+    }
+    return _channel.invokeMethod<bool?>('isRejectingCallOnNoPermissions',
+        {}).then<bool>((bool? value) => value ?? false);
   }
 
   /// Opens the app's battery settings page so user can manually disable battery optimization
@@ -319,54 +151,16 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
     return _channel.invokeMethod('openBatterySettings', {});
   }
 
-  /// Set iOS call kit icon
+  /// Open phone account settings
   ///
-  /// This allows for CallKit customization: setting the last button (bottom right) of the callkit.
-  ///
-  /// Ensure you have an icon registered in your XCode project (Runner > Assets)
-  ///
-  /// To do this:
-  /// - open XCode
-  /// - Create/Add your transparency / white mask image into Assets.xcassets (i.e. image uses Alpha channel only  (https://developer.apple.com/documentation/callkit/cxproviderconfiguration/2274376-icontemplateimagedata)
-  /// - Name of icon e.g. "TransparentIcon"
-  ///
-  /// Use `TwilioVoice.instance.updateCallKitIcon(icon: "TransparentIcon")`
+  /// Android only
   @override
-  Future<bool?> updateCallKitIcon({String? icon}) {
-    return _channel
-        .invokeMethod('updateCallKitIcon', <String, dynamic>{"icon": icon});
-  }
-
-  /// Register clientId for background calls
-  ///
-  /// Register the client name for incoming calls while calling using ids
-  @override
-  Future<bool?> registerClient(String clientId, String clientName) {
-    return _channel.invokeMethod('registerClient',
-        <String, dynamic>{"id": clientId, "name": clientName});
-  }
-
-  /// Unregister clientId for background calls
-  @override
-  Future<bool?> unregisterClient(String clientId) {
-    return _channel
-        .invokeMethod('unregisterClient', <String, dynamic>{"id": clientId});
-  }
-
-  /// Set default caller name for no registered clients
-  ///
-  /// This caller name will be shown for incoming calls
-  @override
-  Future<bool?> setDefaultCallerName(String callerName) {
-    return _channel.invokeMethod(
-        'defaultCaller', <String, dynamic>{"defaultCaller": callerName});
-  }
-
-  /// Android-only, shows background call UI
-  /// Deprecated, has no effect
-  @override
-  Future<bool?> showBackgroundCallUI() {
-    return Future.value(true);
+  Future<bool> openPhoneAccountSettings() {
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      return Future.value(true);
+    }
+    return _channel.invokeMethod<bool?>('openPhoneAccountSettings',
+        {}).then<bool>((bool? value) => value ?? false);
   }
 
   @override
@@ -377,6 +171,46 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
         deviceTokenChanged!(token);
       }
       return CallEvent.log;
+    } else if (state.startsWith("AudioRoute|")) {
+      // Audio route change message from iOS: "AudioRoute|<route>|bluetoothAvailable=<bool>"
+      // Parse the message to emit proper Bluetooth events
+      try {
+        var parts = state.split('|');
+        if (parts.length >= 3) {
+          var route = parts[1]; // 'bluetooth', 'receiver', or 'speaker'
+          var bluetoothAvailableStr = parts[2]; // 'bluetoothAvailable=true' or 'bluetoothAvailable=false'
+          var isBluetoothAvailable = bluetoothAvailableStr.contains('true');
+          
+          if (kDebugMode) {
+            printDebug('Audio route updated: route=$route, bluetoothAvailable=$isBluetoothAvailable');
+          }
+          
+          // Emit appropriate event based on current route and availability
+          if (route == 'bluetooth' && isBluetoothAvailable) {
+            return CallEvent.bluetoothOn;
+          } else if (route == 'speaker') {
+            return CallEvent.speakerOn;
+          } else if (route == 'receiver' || route == 'earpiece') {
+            // Bluetooth was disconnected or user switched to earpiece
+            // This includes the case when BT disconnects mid-call
+            if (!isBluetoothAvailable) {
+              // Bluetooth is no longer available - emit bluetoothOff to update UI
+              return CallEvent.bluetoothOff;
+            } else {
+              // Bluetooth still available but we're on earpiece (user switched)
+              // Emit audioRouteChanged to trigger UI refresh
+              return CallEvent.audioRouteChanged;
+            }
+          }
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          printDebug('Error parsing AudioRoute event: $e');
+        }
+      }
+      // Always return audioRouteChanged for any AudioRoute message not handled above
+      // This ensures the UI gets a chance to refresh its state
+      return CallEvent.audioRouteChanged;
     } else if (state.startsWith("LOG|PERMISSION|")) {
       List<String> tokens = state.split('|');
       if (kDebugMode) {
@@ -511,6 +345,205 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
     }
   }
 
+  /// Register clientId for background calls
+  ///
+  /// Register the client name for incoming calls while calling using ids
+  @override
+  Future<bool?> registerClient(String clientId, String clientName) {
+    return _channel.invokeMethod('registerClient',
+        <String, dynamic>{"id": clientId, "name": clientName});
+  }
+
+  /// Register phone account with TelecomManager
+  ///
+  /// Android only
+  @override
+  Future<bool> registerPhoneAccount() {
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      return Future.value(true);
+    }
+    return _channel.invokeMethod<bool?>(
+        'registerPhoneAccount', {}).then<bool>((bool? value) => value ?? false);
+  }
+
+  /// Reject call when no `CALL_PHONE` permissions are granted nor Phone Account (via `isPhoneAccountEnabled`) is registered.
+  /// If set to true, the call is rejected immediately upon received. If set to false, the call is left until the timeout is reached / call is canceled.
+  /// Defaults to false.
+  ///
+  /// Only available on Android
+  @override
+  Future<bool> rejectCallOnNoPermissions({bool shouldReject = false}) {
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      return Future.value(true);
+    }
+    return _channel.invokeMethod<bool?>('rejectCallOnNoPermissions', {
+      "shouldReject": shouldReject
+    }).then<bool>((bool? value) => value ?? false);
+  }
+
+  /// Requests background permission
+  ///
+  /// Android only, takes user to android settings to accept background permissions
+  @Deprecated('custom call UI not used anymore, has no effect')
+  @override
+  Future<bool?> requestBackgroundPermissions() {
+    return _channel.invokeMethod('requestBackgroundPermissions', {});
+  }
+
+  /// Request bluetooth permissions
+  /// Only available on Android
+  @override
+  Future<bool?> requestBluetoothPermissions() {
+    return Future.value(false);
+  }
+
+  /// request 'android.permission.CALL_PHONE' permission
+  ///
+  /// Android only
+  @override
+  Future<bool?> requestCallPhonePermission() {
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      return Future.value(true);
+    }
+    return _channel.invokeMethod('requestCallPhonePermission', {});
+  }
+
+  /// Request to be excluded from battery optimization
+  /// Shows the system dialog asking user to allow ignoring battery optimizations
+  ///
+  /// Android only
+  @override
+  Future<bool?> requestIgnoreBatteryOptimizations() {
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      return Future.value(true);
+    }
+    return _channel.invokeMethod('requestIgnoreBatteryOptimizations', {});
+  }
+
+  /// Requests system permission to manage calls
+  ///
+  /// Android only
+  @override
+  Future<bool?> requestManageOwnCallsPermission() {
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      return Future.value(true);
+    }
+    return _channel.invokeMethod('requestManageOwnCallsPermission', {});
+  }
+
+  /// Request microphone permission
+  @override
+  Future<bool?> requestMicAccess() {
+    return _channel.invokeMethod('requestMicPermission', {});
+  }
+
+  /// Request read phone numbers permission
+  ///
+  /// Android only
+  @override
+  Future<bool?> requestReadPhoneNumbersPermission() {
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      return Future.value(true);
+    }
+    return _channel.invokeMethod('requestReadPhoneNumbersPermission', {});
+  }
+
+  /// Request read phone state permission
+  ///
+  /// Android only
+  @override
+  Future<bool?> requestReadPhoneStatePermission() {
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      return Future.value(true);
+    }
+    return _channel.invokeMethod('requestReadPhoneStatePermission', {});
+  }
+
+  /// Checks if device needs background permission
+  ///
+  /// Android only, xiamoi devices need special permission to show background call UI
+  @Deprecated('custom call UI not used anymore, has no effect')
+  @override
+  Future<bool> requiresBackgroundPermissions() {
+    return _channel.invokeMethod<bool?>('requiresBackgroundPermissions',
+        {}).then<bool>((bool? value) => value ?? false);
+  }
+
+  /// Set default caller name for no registered clients
+  ///
+  /// This caller name will be shown for incoming calls
+  @override
+  Future<bool?> setDefaultCallerName(String callerName) {
+    return _channel.invokeMethod(
+        'defaultCaller', <String, dynamic>{"defaultCaller": callerName});
+  }
+
+  @override
+  void setOnDeviceTokenChanged(OnDeviceTokenChanged deviceTokenChanged) {
+    this.deviceTokenChanged = deviceTokenChanged;
+  }
+
+  /// register fcm token, and device token for android
+  ///
+  /// ios device token is obtained internally
+  @override
+  Future<bool?> setTokens({required String accessToken, String? deviceToken}) {
+    return _channel.invokeMethod('tokens', <String, dynamic>{
+      "accessToken": accessToken,
+      "deviceToken": deviceToken
+    });
+  }
+
+  /// Android-only, shows background call UI
+  /// Deprecated, has no effect
+  @override
+  Future<bool?> showBackgroundCallUI() {
+    return Future.value(true);
+  }
+
+  /// Whether or not should the user receive a notification after a missed call, default to true.
+  ///
+  /// Setting is persisted across restarts until overridden
+  @override
+  set showMissedCallNotifications(bool value) {
+    _channel
+        .invokeMethod('show-notifications', <String, dynamic>{"show": value});
+  }
+
+  /// Unregisters from Twilio
+  ///
+  /// If no accessToken is provided, previously registered accessToken will be used
+  @override
+  Future<bool?> unregister({String? accessToken}) {
+    return _channel.invokeMethod(
+        'unregister', <String, dynamic>{"accessToken": accessToken});
+  }
+
+  /// Unregister clientId for background calls
+  @override
+  Future<bool?> unregisterClient(String clientId) {
+    return _channel
+        .invokeMethod('unregisterClient', <String, dynamic>{"id": clientId});
+  }
+
+  /// Set iOS call kit icon
+  ///
+  /// This allows for CallKit customization: setting the last button (bottom right) of the callkit.
+  ///
+  /// Ensure you have an icon registered in your XCode project (Runner > Assets)
+  ///
+  /// To do this:
+  /// - open XCode
+  /// - Create/Add your transparency / white mask image into Assets.xcassets (i.e. image uses Alpha channel only  (https://developer.apple.com/documentation/callkit/cxproviderconfiguration/2274376-icontemplateimagedata)
+  /// - Name of icon e.g. "TransparentIcon"
+  ///
+  /// Use `TwilioVoice.instance.updateCallKitIcon(icon: "TransparentIcon")`
+  @override
+  Future<bool?> updateCallKitIcon({String? icon}) {
+    return _channel
+        .invokeMethod('updateCallKitIcon', <String, dynamic>{"icon": icon});
+  }
+
   @override
   Future<void> updateSound(SoundName soundName, String? url) {
     // TODO: implement updateSound
@@ -522,6 +555,12 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
     // TODO: implement updateSounds
     throw UnimplementedError();
   }
+
+  static TwilioVoicePlatform get instance => TwilioVoicePlatform.instance;
+
+  EventChannel get _eventChannel => eventChannel;
+
+  MethodChannel get _channel => sharedChannel;
 }
 
 ActiveCall createCallFromState(String state,
