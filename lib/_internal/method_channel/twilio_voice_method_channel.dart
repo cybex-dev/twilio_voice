@@ -178,13 +178,15 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
         var parts = state.split('|');
         if (parts.length >= 3) {
           var route = parts[1]; // 'bluetooth', 'receiver', or 'speaker'
-          var bluetoothAvailableStr = parts[2]; // 'bluetoothAvailable=true' or 'bluetoothAvailable=false'
+          var bluetoothAvailableStr = parts[
+              2]; // 'bluetoothAvailable=true' or 'bluetoothAvailable=false'
           var isBluetoothAvailable = bluetoothAvailableStr.contains('true');
-          
+
           if (kDebugMode) {
-            printDebug('Audio route updated: route=$route, bluetoothAvailable=$isBluetoothAvailable');
+            printDebug(
+                'Audio route updated: route=$route, bluetoothAvailable=$isBluetoothAvailable');
           }
-          
+
           // Emit appropriate event based on current route and availability
           if (route == 'bluetooth' && isBluetoothAvailable) {
             return CallEvent.bluetoothOn;
