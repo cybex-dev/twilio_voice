@@ -2385,17 +2385,32 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             TVNativeCallEvents.EVENT_DISCONNECTED_LOCAL -> {
                 logEvent("", "Call Ended")
                 callSid = null
+                // Reset audio states for next call
+                isSpeakerOn = false
+                isBluetoothOn = false
+                isMuted = false
+                Log.d(TAG, "handleBroadcastIntent: EVENT_DISCONNECTED_LOCAL - Reset audio states: isSpeakerOn=$isSpeakerOn, isBluetoothOn=$isBluetoothOn")
             }
 
             TVNativeCallEvents.EVENT_DISCONNECTED_REMOTE -> {
                 logEvent("", "Call Ended")
                 callSid = null
+                // Reset audio states for next call
+                isSpeakerOn = false
+                isBluetoothOn = false
+                isMuted = false
+                Log.d(TAG, "handleBroadcastIntent: EVENT_DISCONNECTED_REMOTE - Reset audio states: isSpeakerOn=$isSpeakerOn, isBluetoothOn=$isBluetoothOn")
             }
 
             TVNativeCallEvents.EVENT_MISSED -> {
                 logEvent("", "Missed Call")
                 logEvent("", "Call Ended")
                 callSid = null
+                // Reset audio states for next call
+                isSpeakerOn = false
+                isBluetoothOn = false
+                isMuted = false
+                Log.d(TAG, "handleBroadcastIntent: EVENT_MISSED - Reset audio states: isSpeakerOn=$isSpeakerOn, isBluetoothOn=$isBluetoothOn")
             }
 
             TVNativeCallEvents.EVENT_MUTE -> {

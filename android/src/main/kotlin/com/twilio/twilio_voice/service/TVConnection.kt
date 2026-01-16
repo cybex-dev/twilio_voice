@@ -236,7 +236,25 @@ open class TVCallConnection(
         // Set audio mode for voice call
         am.mode = AudioManager.MODE_IN_COMMUNICATION
         
-        // Route to Bluetooth if connected
+        // Ensure speaker is off by default for new calls
+        // This prevents inheriting speaker state from previous call
+        if (am.isSpeakerphoneOn) {
+            Log.d(TAG, "requestAudioFocus: Turning off speakerphone for new call")
+            am.isSpeakerphoneOn = false
+        }
+        
+        // For Android 12+, explicitly route to earpiece first, then check for Bluetooth
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try {
+                // Clear any previous communication device setting
+                am.clearCommunicationDevice()
+                Log.d(TAG, "requestAudioFocus: Cleared communication device")
+            } catch (e: Exception) {
+                Log.e(TAG, "requestAudioFocus: Failed to clear communication device", e)
+            }
+        }
+        
+        // Route to Bluetooth if connected, otherwise audio will go to earpiece by default
         routeAudioToBluetoothIfConnected()
     }
     
@@ -421,6 +439,24 @@ open class TVCallConnection(
         
         hasAudioFocus = false
         wasOnBluetooth = false
+        
+        // Reset speaker state to ensure next call starts on earpiece (unless Bluetooth is connected)
+        // This fixes the issue where ending a call on speaker causes the next call to start on speaker
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try {
+                Log.d(TAG, "releaseAudioFocus: Clearing communication device (Android 12+)")
+                am.clearCommunicationDevice()
+            } catch (e: Exception) {
+                Log.e(TAG, "releaseAudioFocus: Failed to clear communication device", e)
+            }
+        }
+        
+        // Explicitly turn off speaker to reset audio route for next call
+        if (am.isSpeakerphoneOn) {
+            Log.d(TAG, "releaseAudioFocus: Turning off speakerphone")
+            am.isSpeakerphoneOn = false
+        }
+        
         am.mode = AudioManager.MODE_NORMAL
         
         // Stop Bluetooth SCO if it was started
@@ -428,6 +464,8 @@ open class TVCallConnection(
             am.isBluetoothScoOn = false
             am.stopBluetoothSco()
         }
+        
+        Log.d(TAG, "releaseAudioFocus: Audio state reset complete - isSpeakerphoneOn=${am.isSpeakerphoneOn}, isBluetoothScoOn=${am.isBluetoothScoOn}")
     }
     
     /**

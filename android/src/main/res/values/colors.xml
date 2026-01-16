@@ -20,5 +20,8 @@
     <color name="button_accept_bg">#4CAF50</color>
     <color name="button_decline_bg">#FF5252</color>
     <color name="button_overlay">#1b6cf7</color>
+    <color name="button_gray_bg">#3D3D3D</color>
+    <color name="button_accept_icon">#4CAF50</color>
+    <color name="button_decline_icon">#FF5252</color>
 
 </resources>

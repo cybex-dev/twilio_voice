@@ -1,4 +1,30 @@
-<shape xmlns:android="http://schemas.android.com/apk/res/android"
-    android:shape="oval">
-    <solid android:color="#FF5252" />
-</shape>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Outer soft vector glow -->
+    <item android:drawable="@drawable/ellipse_128"/>
+    <!-- 76.02dp solid blue oval (matches provided View) -->
+    <item>
+        <shape android:shape="oval">
+            <size android:width="76.02dp" android:height="76.02dp"/>
+            <solid android:color="#346299"/>
+        </shape>
+    </item>
+    <!-- Center solid blue circle (matches provided View) -->
+    <item>
+        <shape android:shape="oval">
+            <size android:width="67.86dp" android:height="67.86dp"/>
+            <solid android:color="#346299"/>
+        </shape>
+    </item>
+    <!-- Optional: Center radial gradient overlay for soft glow -->
+    <item>
+        <shape android:shape="oval">
+            <size android:width="67.86dp" android:height="67.86dp"/>
+            <gradient
+                android:type="radial"
+                android:gradientRadius="33.93dp"
+                android:startColor="#5A8AC4"
+                android:centerColor="#346299"
+                android:endColor="#00000000"/>
+        </shape>
+    </item>
+</layer-list>

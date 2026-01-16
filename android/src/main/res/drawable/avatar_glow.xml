@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Soft outer glow - fades from center blue to transparent -->
+    <item>
+        <shape android:shape="oval">
+            <gradient
+                android:type="radial"
+                android:gradientRadius="50%p"
+                android:centerX="0.5"
+                android:centerY="0.5"
+                android:startColor="#404A7BAA"
+                android:centerColor="#203A6590"
+                android:endColor="#00000000" />
+        </shape>
+    </item>
+</layer-list>

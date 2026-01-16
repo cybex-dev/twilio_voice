@@ -145,7 +145,8 @@ class IncomingCallActivity : AppCompatActivity() {
 
         // Set caller info
         findViewById<TextView>(R.id.callerName).text = callerName
-        findViewById<TextView>(R.id.callerNumber).text = formatPhoneNumber(callerNumber)
+        val formattedNumber = formatPhoneNumber(callerNumber)
+        findViewById<TextView>(R.id.callerNumber).text = if (formattedNumber.isNotEmpty()) "Mobile  $formattedNumber" else "Mobile"
 
         // Load Easify logo from Flutter assets using SvgPicture-like approach
         // For now, keep the vector drawable but make it more visible

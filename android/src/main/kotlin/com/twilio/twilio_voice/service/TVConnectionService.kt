@@ -1029,6 +1029,55 @@ class TVConnectionService : ConnectionService() {
         return match?.groups?.get(1)?.value ?: input
     }
 
+    /**
+     * Formats a phone number to a readable format
+     * Examples:
+     * +12034098827 -> +1 (203) 409-8827
+     * +1 203 409 8827 -> +1 (203) 409-8827
+     */
+    private fun formatPhoneNumber(phoneNumber: String?): String {
+        if (phoneNumber.isNullOrEmpty()) return ""
+        
+        // Remove all non-digit characters except leading +
+        val cleaned = phoneNumber.replace(Regex("[^\\d+]"), "")
+        
+        // Handle empty result
+        if (cleaned.isEmpty()) return phoneNumber
+        
+        // Check if it starts with +
+        val hasPlus = cleaned.startsWith("+")
+        
+        // Extract all content after + if exists
+        val allDigits = if (hasPlus) {
+            cleaned.substring(1)  // Remove the + sign
+        } else {
+            cleaned
+        }
+        
+        // Format based on pattern
+        return when {
+            // International format: starts with + and has 11+ digits (country code + 10 digits)
+            hasPlus && allDigits.length >= 11 -> {
+                // Extract country code (usually 1-3 digits) and remaining digits
+                // For +1 (US/Canada), it's 1 digit country code + 10 digit number
+                val countryCode = allDigits.substring(0, 1)  // First digit is country code
+                val areaCode = allDigits.substring(1, 4)
+                val exchange = allDigits.substring(4, 7)
+                val subscriber = allDigits.substring(7, 11)
+                "+$countryCode ($areaCode) $exchange-$subscriber"
+            }
+            // North American without +: 10 digits
+            !hasPlus && allDigits.length == 10 -> {
+                val areaCode = allDigits.substring(0, 3)
+                val exchange = allDigits.substring(3, 6)
+                val subscriber = allDigits.substring(6, 10)
+                "($areaCode) $exchange-$subscriber"
+            }
+            // Default: return original if format doesn't match
+            else -> phoneNumber
+        }
+    }
+
 
     private fun sendBroadcastEvent(ctx: Context, event: String, callSid: String?, extras: Bundle? = null) {
         // Cancel ongoing call notification when call ends
@@ -1471,6 +1520,7 @@ class TVConnectionService : ConnectionService() {
         // Extract caller info
         val callerName = callInvite.customParameters["client_name"] ?: "Unknown Caller"
         val callerNumber = extractUserNumber(callInvite.from ?: "")
+        val formattedCallerNumber = formatPhoneNumber(callerNumber)
         val myNumber = callInvite.to ?: ""
         
         // Use unique request code based on callSid hash to avoid PendingIntent caching issues
@@ -1503,17 +1553,25 @@ class TVConnectionService : ConnectionService() {
         )
         
         // Use CallStyle for Android 12+ for native incoming call UI in notification
+        // Determine what to show: if caller has name, show name on top and number below
+        // If no name, show number on top only
+        val hasCallerName = callerName != "Unknown Caller" && callerName.isNotEmpty()
+        val displayName = if (hasCallerName) callerName else formattedCallerNumber.ifEmpty { "Unknown Number" }
+        val displaySubtext = if (hasCallerName && formattedCallerNumber.isNotEmpty()) formattedCallerNumber else null
+        
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             // Android 12+ - Use CallStyle for proper call notification
             val person = android.app.Person.Builder()
-                .setName(callerName)
+                .setName(displayName)
                 .setImportant(true)
                 .build()
             
             Notification.Builder(this, channel.id).apply {
                 setSmallIcon(R.drawable.ic_microphone)
                 setContentTitle("Incoming Call")
-                setContentText(callerName)
+                if (displaySubtext != null) {
+                    setContentText(displaySubtext)
+                }
                 setCategory(Notification.CATEGORY_CALL)
                 setVisibility(Notification.VISIBILITY_PUBLIC)
                 setOngoing(true)
@@ -1535,8 +1593,10 @@ class TVConnectionService : ConnectionService() {
             // Pre-Android 12 - Use regular notification with actions
             Notification.Builder(this, channel.id).apply {
                 setOngoing(true)
-                setContentTitle("Incoming Call")
-                setContentText(callerName)
+                setContentTitle(displayName)
+                if (displaySubtext != null) {
+                    setContentText(displaySubtext)
+                }
                 setCategory(Notification.CATEGORY_CALL)
                 setSmallIcon(R.drawable.ic_microphone)
                 setFullScreenIntent(fullScreenPendingIntent, true)

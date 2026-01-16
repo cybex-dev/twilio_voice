@@ -180,31 +180,38 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                     }
                 }
                 
-                // Update cached Bluetooth availability
+                // IMPORTANT: Force reset cached Bluetooth availability and check fresh
                 self.cachedBluetoothAvailable = false
-                let bluetoothAvailableNow = self.isBluetoothAvailable()
+                self.hasCheckedBluetoothOnCallStart = false
+                let bluetoothAvailableNow = self.checkBluetoothAvailableFresh()
                 
                 self.sendPhoneCallEvents(description: "LOG|oldDeviceUnavailable: wasBluetoothDisconnected=\(wasBluetoothDisconnected), btAvailableNow=\(bluetoothAvailableNow), desiredBT=\(self.desiredBluetoothState)", isError: false)
                 
-                // If Bluetooth was disconnected and we were using it
+                // If Bluetooth was disconnected OR we were using Bluetooth and it's no longer available
                 if wasBluetoothDisconnected || (self.desiredBluetoothState && !bluetoothAvailableNow) {
-                    self.sendPhoneCallEvents(description: "LOG|Bluetooth disconnected - updating state to earpiece", isError: false)
+                    self.sendPhoneCallEvents(description: "LOG|Bluetooth disconnected - forcing switch to earpiece", isError: false)
                     
                     // Update our state trackers to reflect reality
                     self.desiredBluetoothState = false
-                    self.desiredSpeakerState = false
-                    // Note: We don't set userExplicitlyChangedAudioRoute here because this was a system change
+                    // Don't change speaker state - keep it as-is
+                    // Reset user explicit flag so auto-connect can work when BT reconnects
+                    self.userExplicitlyChangedAudioRoute = false
                     
-                    // iOS already switched to earpiece, just notify Flutter of the new state
-                    let currentRoute = self.getAudioRoute()  // Will now return "receiver" since desiredBluetoothState is false
+                    // Force earpiece route to ensure audio continues
+                    if !self.desiredSpeakerState {
+                        self.forceEarpieceRoute()
+                    }
                     
-                    self.sendPhoneCallEvents(description: "LOG|Bluetooth disconnect handled. New route: \(currentRoute), btAvailable: \(bluetoothAvailableNow)", isError: false)
-                    
-                    // Notify Dart layer of the updated change
-                    self.sendPhoneCallEvents(
-                        description: "AudioRoute|\(currentRoute)|bluetoothAvailable=\(bluetoothAvailableNow)",
-                        isError: false
-                    )
+                    // Notify Dart layer with updated state
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        let currentRoute = self.getAudioRoute()
+                        self.sendPhoneCallEvents(description: "LOG|Bluetooth disconnect handled. New route: \(currentRoute), btAvailable: \(bluetoothAvailableNow)", isError: false)
+                        
+                        self.sendPhoneCallEvents(
+                            description: "AudioRoute|\(currentRoute)|bluetoothAvailable=\(bluetoothAvailableNow)",
+                            isError: false
+                        )
+                    }
                 } else {
                     // Some other device disconnected, just report current state
                     let currentRoute = self.getAudioRoute()
@@ -234,9 +241,13 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                 // Auto-switch to Bluetooth if:
                 // - Bluetooth is available
                 // - User hasn't explicitly chosen speaker
-                // - We're not already on Bluetooth
-                if isBluetoothAvailable && !self.desiredSpeakerState && !self.desiredBluetoothState {
+                // Note: We removed the check for !desiredBluetoothState to allow reconnection
+                // when Bluetooth reconnects after being disconnected
+                if isBluetoothAvailable && !self.desiredSpeakerState {
                     self.sendPhoneCallEvents(description: "LOG|newDeviceAvailable: Auto-switching to Bluetooth...", isError: false)
+                    
+                    // Reset user explicit flag to allow auto-switching
+                    self.userExplicitlyChangedAudioRoute = false
                     
                     // Auto-switch to Bluetooth
                     self.desiredBluetoothState = true
@@ -254,7 +265,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                         )
                     }
                 } else {
-                    self.sendPhoneCallEvents(description: "LOG|newDeviceAvailable: NOT auto-switching (user has preference or already on BT)", isError: false)
+                    self.sendPhoneCallEvents(description: "LOG|newDeviceAvailable: NOT auto-switching (user explicitly chose speaker)", isError: false)
                     
                     // Even if not auto-switching, ALWAYS notify Dart that Bluetooth is now available
                     // This ensures the Bluetooth option appears in the popup
@@ -271,45 +282,112 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             // Only report if there's a meaningful change
             self.sendPhoneCallEvents(description: "LOG|handleAudioRouteChange: categoryChange detected", isError: false)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                let isBluetoothAvailable = self.isBluetoothAvailable()
-                let currentRoute = self.getAudioRoute()
+                // Force fresh Bluetooth check
+                self.cachedBluetoothAvailable = false
+                self.hasCheckedBluetoothOnCallStart = false
+                let isBluetoothAvailable = self.checkBluetoothAvailableFresh()
                 let actualSystemRoute = self.getActualSystemAudioRoute()
                 
                 self.sendPhoneCallEvents(
-                    description: "LOG|handleAudioRouteChange categoryChange: desiredRoute=\(currentRoute), actualSystemRoute=\(actualSystemRoute), btAvailable=\(isBluetoothAvailable)",
+                    description: "LOG|handleAudioRouteChange categoryChange: desiredBT=\(self.desiredBluetoothState), actualSystemRoute=\(actualSystemRoute), btAvailable=\(isBluetoothAvailable)",
                     isError: false
                 )
                 
-                // Send the DESIRED route, not the system route
-                self.sendPhoneCallEvents(
-                    description: "AudioRoute|\(currentRoute)|bluetoothAvailable=\(isBluetoothAvailable)",
-                    isError: false
-                )
+                // CRITICAL: If we wanted Bluetooth but it's no longer available, switch to earpiece
+                if self.desiredBluetoothState && !isBluetoothAvailable {
+                    self.sendPhoneCallEvents(description: "LOG|categoryChange: Bluetooth was desired but no longer available - switching to earpiece", isError: false)
+                    self.desiredBluetoothState = false
+                    self.userExplicitlyChangedAudioRoute = false
+                    
+                    if !self.desiredSpeakerState {
+                        self.forceEarpieceRoute()
+                    }
+                    
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        let currentRoute = self.getAudioRoute()
+                        self.sendPhoneCallEvents(
+                            description: "AudioRoute|\(currentRoute)|bluetoothAvailable=false",
+                            isError: false
+                        )
+                    }
+                } else {
+                    let currentRoute = self.getAudioRoute()
+                    self.sendPhoneCallEvents(
+                        description: "AudioRoute|\(currentRoute)|bluetoothAvailable=\(isBluetoothAvailable)",
+                        isError: false
+                    )
+                }
             }
             
         case .override:
             // Override happened - log it but don't change our desired state
             self.sendPhoneCallEvents(description: "LOG|handleAudioRouteChange: override detected", isError: false)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                let isBluetoothAvailable = self.isBluetoothAvailable()
-                let currentRoute = self.getAudioRoute()
+                // Force fresh Bluetooth check
+                self.cachedBluetoothAvailable = false
+                self.hasCheckedBluetoothOnCallStart = false
+                let isBluetoothAvailable = self.checkBluetoothAvailableFresh()
                 let actualSystemRoute = self.getActualSystemAudioRoute()
                 
                 self.sendPhoneCallEvents(
-                    description: "LOG|handleAudioRouteChange override: desiredRoute=\(currentRoute), actualSystemRoute=\(actualSystemRoute), btAvailable=\(isBluetoothAvailable)",
+                    description: "LOG|handleAudioRouteChange override: desiredBT=\(self.desiredBluetoothState), actualSystemRoute=\(actualSystemRoute), btAvailable=\(isBluetoothAvailable)",
                     isError: false
                 )
                 
-                // Send the DESIRED route, not the system route
-                self.sendPhoneCallEvents(
-                    description: "AudioRoute|\(currentRoute)|bluetoothAvailable=\(isBluetoothAvailable)",
-                    isError: false
-                )
+                // CRITICAL: If we wanted Bluetooth but it's no longer available, switch to earpiece
+                if self.desiredBluetoothState && !isBluetoothAvailable {
+                    self.sendPhoneCallEvents(description: "LOG|override: Bluetooth was desired but no longer available - switching to earpiece", isError: false)
+                    self.desiredBluetoothState = false
+                    self.userExplicitlyChangedAudioRoute = false
+                    
+                    if !self.desiredSpeakerState {
+                        self.forceEarpieceRoute()
+                    }
+                    
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        let currentRoute = self.getAudioRoute()
+                        self.sendPhoneCallEvents(
+                            description: "AudioRoute|\(currentRoute)|bluetoothAvailable=false",
+                            isError: false
+                        )
+                    }
+                } else {
+                    let currentRoute = self.getAudioRoute()
+                    self.sendPhoneCallEvents(
+                        description: "AudioRoute|\(currentRoute)|bluetoothAvailable=\(isBluetoothAvailable)",
+                        isError: false
+                    )
+                }
             }
             
         default:
+            // Handle any other route change reason - still check if Bluetooth was lost
             self.sendPhoneCallEvents(description: "LOG|handleAudioRouteChange: unhandled reason \(reasonStr)", isError: false)
-            break
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                // Force fresh Bluetooth check for any unhandled route change
+                self.cachedBluetoothAvailable = false
+                self.hasCheckedBluetoothOnCallStart = false
+                let isBluetoothAvailable = self.checkBluetoothAvailableFresh()
+                
+                // If we wanted Bluetooth but it's no longer available, switch to earpiece
+                if self.desiredBluetoothState && !isBluetoothAvailable {
+                    self.sendPhoneCallEvents(description: "LOG|default handler: Bluetooth was desired but no longer available - switching to earpiece", isError: false)
+                    self.desiredBluetoothState = false
+                    self.userExplicitlyChangedAudioRoute = false
+                    
+                    if !self.desiredSpeakerState {
+                        self.forceEarpieceRoute()
+                    }
+                    
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        let currentRoute = self.getAudioRoute()
+                        self.sendPhoneCallEvents(
+                            description: "AudioRoute|\(currentRoute)|bluetoothAvailable=false",
+                            isError: false
+                        )
+                    }
+                }
+            }
         }
     }
     
