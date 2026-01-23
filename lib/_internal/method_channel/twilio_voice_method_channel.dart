@@ -160,8 +160,8 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
     if (defaultTargetPlatform != TargetPlatform.android) {
       return Future.value(true);
     }
-    return _channel.invokeMethod<bool?>('hasOverlayPermission', {})
-        .then<bool>((bool? value) => value ?? false);
+    return _channel.invokeMethod<bool?>(
+        'hasOverlayPermission', {}).then<bool>((bool? value) => value ?? false);
   }
 
   /// Request overlay/draw-over-apps permission
