@@ -124,6 +124,267 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     // Provides a mapping of permission to result handler for when the permission is granted or denied via the PluginRegistry, then responds via future to the Flutter side
     private val permissionResultHandler: MutableMap<Int, (Boolean) -> Unit> = mutableMapOf()
 
+    /**
+     * UNIFIED AUDIO STATE DETECTION
+     * Works across all Android devices (Samsung, MIUI/Xiaomi, Stock Android, etc.)
+     * by checking multiple sources in order of reliability.
+     * 
+     * Returns a data class with:
+     * - audioRoute: "bluetooth", "speaker", "wired_headset", or "earpiece"
+     * - isBluetoothConnected: whether a Bluetooth audio device is connected
+     * - isBluetoothActive: whether audio is actively routing through Bluetooth
+     */
+    data class AudioState(
+        val audioRoute: String,
+        val isBluetoothConnected: Boolean,
+        val isBluetoothActive: Boolean,
+        val isSpeakerActive: Boolean
+    )
+    
+    private fun detectAudioState(): AudioState {
+        Log.d(TAG, "=== detectAudioState START ===")
+        
+        var audioRoute = "earpiece"
+        var isBluetoothConnected = false
+        var isBluetoothActive = false
+        var isSpeakerActive = false
+        
+        val audioManager = context?.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+        
+        // CRITICAL: First check SCO state - this is the definitive source for voice call Bluetooth
+        val isBluetoothScoOn = audioManager?.isBluetoothScoOn == true
+        Log.d(TAG, "detectAudioState: [MASTER CHECK] isBluetoothScoOn=$isBluetoothScoOn")
+        
+        // ===== CHECK 1: Android 12+ communicationDevice =====
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && audioManager != null) {
+            try {
+                val commDevice = audioManager.communicationDevice
+                Log.d(TAG, "detectAudioState: [CHECK 1] communicationDevice type=${commDevice?.type}")
+                
+                if (commDevice != null) {
+                    when (commDevice.type) {
+                        AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+                        AudioDeviceInfo.TYPE_BLE_HEADSET,
+                        AudioDeviceInfo.TYPE_HEARING_AID,
+                        AudioDeviceInfo.TYPE_BLE_SPEAKER -> {
+                            // Only trust Bluetooth device if SCO is actually on
+                            if (isBluetoothScoOn) {
+                                audioRoute = "bluetooth"
+                                isBluetoothActive = true
+                                isBluetoothConnected = true
+                                Log.d(TAG, "detectAudioState: [CHECK 1] -> bluetooth (type=${commDevice.type}, SCO verified)")
+                            } else {
+                                audioRoute = "earpiece"
+                                Log.d(TAG, "detectAudioState: [CHECK 1] -> BT device but SCO OFF, using earpiece")
+                            }
+                        }
+                        AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> {
+                            audioRoute = "speaker"
+                            isSpeakerActive = true
+                            Log.d(TAG, "detectAudioState: [CHECK 1] -> speaker")
+                        }
+                        AudioDeviceInfo.TYPE_WIRED_HEADSET,
+                        AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+                        AudioDeviceInfo.TYPE_USB_HEADSET -> {
+                            audioRoute = "wired_headset"
+                            Log.d(TAG, "detectAudioState: [CHECK 1] -> wired_headset")
+                        }
+                        else -> {
+                            audioRoute = "earpiece"
+                            Log.d(TAG, "detectAudioState: [CHECK 1] -> earpiece (type=${commDevice.type})")
+                        }
+                    }
+                    
+                    // Update stored state and return early
+                    isBluetoothOn = isBluetoothActive
+                    isSpeakerOn = isSpeakerActive
+                    
+                    // CRITICAL: Check if Bluetooth device is available even if not currently active
+                    // This is needed for showing the Bluetooth option in the audio toggle popup
+                    if (!isBluetoothConnected) {
+                        isBluetoothConnected = checkBluetoothDeviceAvailable()
+                    }
+                    
+                    Log.d(TAG, "=== detectAudioState END (via communicationDevice) === route=$audioRoute, btConnected=$isBluetoothConnected, btActive=$isBluetoothActive")
+                    return AudioState(audioRoute, isBluetoothConnected, isBluetoothActive, isSpeakerActive)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "detectAudioState: [CHECK 1] Error checking communicationDevice", e)
+            }
+        }
+        
+        // ===== CHECK 2: Bluetooth SCO state (fallback for older Android) =====
+        if (audioManager != null) {
+            try {
+                Log.d(TAG, "detectAudioState: [CHECK 2] isBluetoothScoOn=$isBluetoothScoOn")
+                if (isBluetoothScoOn) {
+                    audioRoute = "bluetooth"
+                    isBluetoothActive = true
+                    isBluetoothConnected = true
+                }
+                
+                // Also check speaker
+                if (!isBluetoothActive) {
+                    isSpeakerActive = audioManager.isSpeakerphoneOn
+                    if (isSpeakerActive) {
+                        audioRoute = "speaker"
+                    }
+                    Log.d(TAG, "detectAudioState: [CHECK 2] isSpeakerphoneOn=$isSpeakerActive")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "detectAudioState: [CHECK 2] Error checking AudioManager", e)
+            }
+        }
+        
+        // ===== CHECK 3: Skip BluetoothAdapter check - unreliable for voice call Bluetooth =====
+        // BluetoothAdapter.getProfileConnectionState can show connected even when SCO is not available
+        // We only trust isBluetoothScoOn for voice call Bluetooth detection
+        
+        // ===== CHECK 4: TelecomManager CallAudioState (if available) =====
+        val activeCall = TVConnectionService.activeConnections.values.firstOrNull()
+        if (activeCall != null) {
+            val callAudioState = activeCall.callAudioState
+            if (callAudioState != null) {
+                Log.d(TAG, "detectAudioState: [CHECK 4] callAudioState.route=${CallAudioState.audioRouteToString(callAudioState.route)}")
+                
+                // Use CallAudioState as the source of truth for audio route
+                when (callAudioState.route) {
+                    CallAudioState.ROUTE_BLUETOOTH -> {
+                        // Only trust Bluetooth route if SCO is actually active
+                        if (isBluetoothScoOn) {
+                            audioRoute = "bluetooth"
+                            isBluetoothActive = true
+                            isBluetoothConnected = true
+                            Log.d(TAG, "detectAudioState: [CHECK 4] ROUTE_BLUETOOTH with SCO active -> bluetooth")
+                        } else {
+                            // TelecomManager says Bluetooth but SCO is not active - stale state on MIUI
+                            Log.d(TAG, "detectAudioState: [CHECK 4] ROUTE_BLUETOOTH but SCO NOT active, forcing earpiece")
+                            audioRoute = "earpiece"
+                            isBluetoothActive = false
+                            isBluetoothConnected = false
+                        }
+                    }
+                    CallAudioState.ROUTE_SPEAKER -> {
+                        audioRoute = "speaker"
+                        isSpeakerActive = true
+                        isBluetoothActive = false
+                    }
+                    CallAudioState.ROUTE_WIRED_HEADSET -> {
+                        audioRoute = "wired_headset"
+                        isBluetoothActive = false
+                    }
+                    CallAudioState.ROUTE_EARPIECE -> {
+                        audioRoute = "earpiece"
+                        isBluetoothActive = false
+                    }
+                }
+            }
+        }
+        
+        // FINAL CONSISTENCY CHECK: Ensure isBluetoothActive matches audioRoute
+        if (audioRoute != "bluetooth") {
+            isBluetoothActive = false
+            // NOTE: Do NOT reset isBluetoothConnected here!
+            // isBluetoothConnected means "BT device is available", not "audio is on BT"
+            // User might have switched to speaker but BT is still connected
+        }
+        if (audioRoute != "speaker") {
+            isSpeakerActive = false
+        }
+        
+        // Check if Bluetooth is available (device connected) even if not currently active
+        // This is needed for showing the Bluetooth option in the audio popup
+        if (!isBluetoothConnected) {
+            isBluetoothConnected = checkBluetoothDeviceAvailable()
+        }
+        
+        // Update stored state
+        isBluetoothOn = isBluetoothActive
+        isSpeakerOn = isSpeakerActive
+        
+        Log.d(TAG, "=== detectAudioState END === route=$audioRoute, btConnected=$isBluetoothConnected, btActive=$isBluetoothActive, spkActive=$isSpeakerActive")
+        return AudioState(audioRoute, isBluetoothConnected, isBluetoothActive, isSpeakerActive)
+    }
+    
+    /**
+     * Check if a Bluetooth audio device is connected and available for voice calls.
+     * This is separate from whether audio is currently routed to Bluetooth.
+     * 
+     * IMPORTANT: Must be strict to avoid showing Bluetooth option when no BT is connected.
+     */
+    private fun checkBluetoothDeviceAvailable(): Boolean {
+        val audioManager = context?.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return false
+        
+        // First check: Use getDevices() which shows ALL connected audio devices (not just active ones)
+        // This works on Android 6.0+ (API 23+) and doesn't require BLUETOOTH permission
+        var hasBluetoothDevice = false
+        try {
+            val outputDevices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+            hasBluetoothDevice = outputDevices.any { device ->
+                device.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                device.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && (
+                    device.type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
+                    device.type == AudioDeviceInfo.TYPE_BLE_SPEAKER
+                )) ||
+                (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && 
+                    device.type == AudioDeviceInfo.TYPE_HEARING_AID)
+            }
+            Log.d(TAG, "checkBluetoothDeviceAvailable: getDevices check - found ${outputDevices.size} devices, hasBluetoothDevice=$hasBluetoothDevice")
+            
+            if (hasBluetoothDevice) {
+                return true
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "checkBluetoothDeviceAvailable: Error checking output devices", e)
+        }
+        
+        // Second check for Android 12+: availableCommunicationDevices (more reliable for call audio)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try {
+                val availableDevices = audioManager.availableCommunicationDevices
+                val hasCommDevice = availableDevices.any { device ->
+                    device.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                    device.type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
+                    device.type == AudioDeviceInfo.TYPE_HEARING_AID ||
+                    device.type == AudioDeviceInfo.TYPE_BLE_SPEAKER
+                }
+                Log.d(TAG, "checkBluetoothDeviceAvailable: Android 12+ availableCommunicationDevices - hasCommDevice=$hasCommDevice")
+                if (hasCommDevice) {
+                    return true
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "checkBluetoothDeviceAvailable: Error checking available communication devices", e)
+            }
+        }
+        
+        // Third check: BluetoothAdapter profile connection state
+        // This is especially useful for Android 12+ devices (like Vivo) where getDevices() 
+        // may not show Bluetooth when audio is routed to speaker/earpiece
+        try {
+            val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
+            if (bluetoothAdapter != null && bluetoothAdapter.isEnabled) {
+                val headsetState = bluetoothAdapter.getProfileConnectionState(BluetoothProfile.HEADSET)
+                val a2dpState = bluetoothAdapter.getProfileConnectionState(BluetoothProfile.A2DP)
+                val btConnected = (headsetState == BluetoothProfile.STATE_CONNECTED) || 
+                                  (a2dpState == BluetoothProfile.STATE_CONNECTED)
+                Log.d(TAG, "checkBluetoothDeviceAvailable: BluetoothAdapter check - headsetState=$headsetState, a2dpState=$a2dpState, btConnected=$btConnected")
+                if (btConnected) {
+                    return true
+                }
+            }
+        } catch (e: Exception) {
+            // May fail due to BLUETOOTH permission on some devices - that's OK, we have other checks
+            Log.d(TAG, "checkBluetoothDeviceAvailable: BluetoothAdapter check failed (permission issue), continuing with other checks")
+        }
+        
+        // Fourth check: isBluetoothScoOn (audio is currently routed to Bluetooth)
+        val scoOn = audioManager.isBluetoothScoOn
+        Log.d(TAG, "checkBluetoothDeviceAvailable: scoOn=$scoOn, hasBluetoothDevice=$hasBluetoothDevice")
+        
+        return scoOn || hasBluetoothDevice
+    }
+
     private fun register(
         messenger: BinaryMessenger,
         plugin: TwilioVoicePlugin,
@@ -534,212 +795,54 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
 
             TVMethodChannels.IS_BLUETOOTH_ON -> {
                 Log.d(TAG, "isBluetoothOn invoked")
-                // Check actual CallAudioState from active connection
-                var actualBluetoothOn = isBluetoothOn
-                
-                // Try to get the actual route from active connection
-                val activeCall = TVConnectionService.activeConnections.values.firstOrNull()
-                Log.d(TAG, "isBluetoothOn: activeConnections count=${TVConnectionService.activeConnections.size}")
-                if (activeCall != null) {
-                    val audioState = activeCall.callAudioState
-                    if (audioState != null) {
-                        actualBluetoothOn = audioState.route == CallAudioState.ROUTE_BLUETOOTH
-                        Log.d(TAG, "isBluetoothOn: from CallAudioState route=${CallAudioState.audioRouteToString(audioState.route)}, isBluetooth=$actualBluetoothOn")
-                    } else {
-                        Log.d(TAG, "isBluetoothOn: callAudioState is null")
-                    }
-                } else {
-                    Log.d(TAG, "isBluetoothOn: no active connection found")
-                }
-                
-                // Fallback to AudioManager check
-                if (!actualBluetoothOn) {
-                    val audioManager = context?.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-                    val scoOn = audioManager?.isBluetoothScoOn == true
-                    Log.d(TAG, "isBluetoothOn: fallback AudioManager.isBluetoothScoOn=$scoOn")
-                    actualBluetoothOn = scoOn || isBluetoothOn
-                }
-                
-                Log.d(TAG, "isBluetoothOn: stored=$isBluetoothOn, returning=$actualBluetoothOn")
-                result.success(actualBluetoothOn)
+                // Use unified audio state detection
+                val audioState = detectAudioState()
+                Log.d(TAG, "isBluetoothOn: returning=${audioState.isBluetoothActive}")
+                result.success(audioState.isBluetoothActive)
             }
 
             TVMethodChannels.GET_AUDIO_ROUTE -> {
-                Log.d(TAG, "=== getAudioRoute START ===")
-                Log.d(TAG, "getAudioRoute: stored state BEFORE: isBluetoothOn=$isBluetoothOn, isSpeakerOn=$isSpeakerOn")
-                var audioRoute = "earpiece" // Default
-                var routeDetermined = false
+                Log.d(TAG, "getAudioRoute invoked")
+                val previousBluetoothState = isBluetoothOn
+                val previousSpeakerState = isSpeakerOn
                 
-                // For Android 12+, check the actual communication device FIRST - this is the most accurate
-                // and doesn't require BLUETOOTH_CONNECT permission
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    try {
-                        val audioManager = context?.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-                        val commDevice = audioManager?.communicationDevice
-                        Log.d(TAG, "getAudioRoute: Android 12+, communicationDevice type=${commDevice?.type}")
-                        if (commDevice != null) {
-                            val isBluetoothActiveDevice = commDevice.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
-                                                          commDevice.type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
-                                                          commDevice.type == AudioDeviceInfo.TYPE_HEARING_AID ||
-                                                          commDevice.type == AudioDeviceInfo.TYPE_BLE_SPEAKER
-                            val isSpeakerActiveDevice = commDevice.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
-                            
-                            // If communication device is Bluetooth, that's definitive proof it's active
-                            if (isBluetoothActiveDevice) {
-                                audioRoute = "bluetooth"
-                                isBluetoothOn = true
-                                isSpeakerOn = false
-                                routeDetermined = true
-                                Log.d(TAG, "getAudioRoute: From communicationDevice -> bluetooth")
-                            } else if (isSpeakerActiveDevice) {
-                                audioRoute = "speaker"
-                                isSpeakerOn = true
-                                isBluetoothOn = false
-                                routeDetermined = true
-                                Log.d(TAG, "getAudioRoute: From communicationDevice -> speaker")
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "getAudioRoute: Error checking communicationDevice", e)
-                    }
-                }
+                // Use unified audio state detection
+                val audioState = detectAudioState()
                 
-                // If not determined from communicationDevice, try other methods
-                if (!routeDetermined) {
-                    // Fallback: check if Bluetooth is actually connected using BluetoothAdapter (requires BLUETOOTH_CONNECT permission)
-                    var isBluetoothActuallyConnected = false
-                    try {
-                        val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
-                        if (bluetoothAdapter != null && bluetoothAdapter.isEnabled) {
-                            val a2dpConnected = bluetoothAdapter.getProfileConnectionState(BluetoothProfile.A2DP) == BluetoothProfile.STATE_CONNECTED
-                            val headsetConnected = bluetoothAdapter.getProfileConnectionState(BluetoothProfile.HEADSET) == BluetoothProfile.STATE_CONNECTED
-                            isBluetoothActuallyConnected = a2dpConnected || headsetConnected
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "getAudioRoute: Error checking BluetoothAdapter (may be permission issue)", e)
-                        // If we can't check via BluetoothAdapter, trust the stored state
-                        isBluetoothActuallyConnected = isBluetoothOn
-                    }
-                    Log.d(TAG, "getAudioRoute: isBluetoothActuallyConnected=$isBluetoothActuallyConnected")
-                    
-                    // If Bluetooth is not actually connected, reset the stored state
-                    if (!isBluetoothActuallyConnected && isBluetoothOn) {
-                        Log.d(TAG, "getAudioRoute: Bluetooth not connected but isBluetoothOn=true, resetting to false")
-                        isBluetoothOn = false
-                    }
-                    
-                    val activeCall = TVConnectionService.activeConnections.values.firstOrNull()
-                    Log.d(TAG, "getAudioRoute: activeConnections count=${TVConnectionService.activeConnections.size}")
-                    
-                    if (activeCall != null) {
-                        val audioState = activeCall.callAudioState
-                        Log.d(TAG, "getAudioRoute: callAudioState is ${if (audioState != null) "AVAILABLE" else "NULL"}")
-                        if (audioState != null) {
-                            // Trust TelecomManager's callAudioState when available
-                            audioRoute = when (audioState.route) {
-                                CallAudioState.ROUTE_BLUETOOTH -> {
-                                    if (isBluetoothActuallyConnected) "bluetooth" else "earpiece"
-                                }
-                                CallAudioState.ROUTE_SPEAKER -> "speaker"
-                                CallAudioState.ROUTE_WIRED_HEADSET -> "wired_headset"
-                                else -> "earpiece"
-                            }
-                            // Sync stored state with actual route
-                            isBluetoothOn = audioRoute == "bluetooth"
-                            isSpeakerOn = audioRoute == "speaker"
-                            Log.d(TAG, "getAudioRoute: from CallAudioState route=${CallAudioState.audioRouteToString(audioState.route)}, audioRoute=$audioRoute")
+                // Only emit events if there's an active call (to avoid false events during initialization)
+                val hasActiveCall = TVConnectionService.activeConnections.isNotEmpty()
+                if (hasActiveCall) {
+                    // Emit events if state changed (for UI sync on all devices)
+                    if (previousBluetoothState != audioState.isBluetoothActive) {
+                        Log.d(TAG, "getAudioRoute: Bluetooth state changed from $previousBluetoothState to ${audioState.isBluetoothActive}, emitting event")
+                        if (audioState.isBluetoothActive) {
+                            logEvent("", "Bluetooth On")
                         } else {
-                            // callAudioState is null - Use stored state
-                            Log.d(TAG, "getAudioRoute: callAudioState is NULL, using stored state")
-                            audioRoute = when {
-                                isBluetoothOn && isBluetoothActuallyConnected -> {
-                                    Log.d(TAG, "getAudioRoute: isBluetoothOn=true AND connected -> returning bluetooth")
-                                    "bluetooth"
-                                }
-                                isSpeakerOn -> {
-                                    Log.d(TAG, "getAudioRoute: isSpeakerOn=true -> returning speaker")
-                                    "speaker"
-                                }
-                                else -> {
-                                    Log.d(TAG, "getAudioRoute: default -> returning earpiece")
-                                    "earpiece"
-                                }
-                            }
-                        }
-                    } else {
-                        Log.d(TAG, "getAudioRoute: NO active connection, using stored state with validation")
-                        // Use stored state when no active call, but validate Bluetooth
-                        audioRoute = when {
-                            isBluetoothOn && isBluetoothActuallyConnected -> "bluetooth"
-                            isSpeakerOn -> "speaker"
-                            else -> "earpiece"
+                            logEvent("", "Bluetooth Off")
                         }
                     }
+                    if (previousSpeakerState != audioState.isSpeakerActive) {
+                        Log.d(TAG, "getAudioRoute: Speaker state changed from $previousSpeakerState to ${audioState.isSpeakerActive}, emitting event")
+                        if (audioState.isSpeakerActive) {
+                            logEvent("", "Speaker On")
+                        } else if (!audioState.isBluetoothActive) {
+                            logEvent("", "Speaker Off")
+                        }
+                    }
+                } else {
+                    Log.d(TAG, "getAudioRoute: No active call, skipping event emission")
                 }
                 
-                Log.d(TAG, "getAudioRoute: FINAL stored state: isBluetoothOn=$isBluetoothOn, isSpeakerOn=$isSpeakerOn")
-                Log.d(TAG, "=== getAudioRoute END === returning: $audioRoute")
-                result.success(audioRoute)
+                Log.d(TAG, "getAudioRoute: returning=${audioState.audioRoute}")
+                result.success(audioState.audioRoute)
             }
 
             TVMethodChannels.IS_BLUETOOTH_AVAILABLE -> {
                 Log.d(TAG, "isBluetoothAvailable invoked")
-                var bluetoothConnected = false
-                
-                val activeCall = TVConnectionService.activeConnections.values.firstOrNull()
-                Log.d(TAG, "isBluetoothAvailable: activeConnections count=${TVConnectionService.activeConnections.size}")
-                
-                if (activeCall != null) {
-                    val audioState = activeCall.callAudioState
-                    if (audioState != null) {
-                        // Check if Bluetooth is in the supported routes - this means a BT device is actually connected
-                        bluetoothConnected = (audioState.supportedRouteMask and CallAudioState.ROUTE_BLUETOOTH) != 0
-                        Log.d(TAG, "isBluetoothAvailable: supportedRouteMask=${audioState.supportedRouteMask}, bluetoothConnected=$bluetoothConnected")
-                    }
-                }
-                
-                // If not determined from CallAudioState, check AudioManager for Android 12+
-                if (!bluetoothConnected && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    try {
-                        val am = context?.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-                        if (am != null) {
-                            val availableDevices = am.availableCommunicationDevices
-                            Log.d(TAG, "isBluetoothAvailable: availableCommunicationDevices=${availableDevices.map { "type=${it.type}" }}")
-                            bluetoothConnected = availableDevices.any { 
-                                it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO || 
-                                it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
-                                it.type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
-                                it.type == AudioDeviceInfo.TYPE_BLE_SPEAKER
-                            }
-                            Log.d(TAG, "isBluetoothAvailable: AudioManager check - bluetoothConnected=$bluetoothConnected")
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "isBluetoothAvailable: Error checking AudioManager", e)
-                    }
-                }
-                
-                // Fallback: Check BluetoothAdapter for connected audio devices
-                if (!bluetoothConnected) {
-                    try {
-                        val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
-                        if (bluetoothAdapter != null && bluetoothAdapter.isEnabled) {
-                            // Check if any audio profile (A2DP, Headset, Hearing Aid) is connected
-                            // We use getProfileConnectionState which doesn't require BLUETOOTH_CONNECT permission
-                            val a2dpConnected = bluetoothAdapter.getProfileConnectionState(BluetoothProfile.A2DP) == BluetoothProfile.STATE_CONNECTED
-                            val headsetConnected = bluetoothAdapter.getProfileConnectionState(BluetoothProfile.HEADSET) == BluetoothProfile.STATE_CONNECTED
-                            
-                            bluetoothConnected = a2dpConnected || headsetConnected
-                            Log.d(TAG, "isBluetoothAvailable: BluetoothAdapter check - a2dpConnected=$a2dpConnected, headsetConnected=$headsetConnected, bluetoothConnected=$bluetoothConnected")
-                        } else {
-                            Log.d(TAG, "isBluetoothAvailable: BluetoothAdapter is null or disabled")
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "isBluetoothAvailable: Error checking BluetoothAdapter", e)
-                    }
-                }
-                
-                Log.d(TAG, "isBluetoothAvailable: returning=$bluetoothConnected")
-                result.success(bluetoothConnected)
+                // Use unified audio state detection
+                val audioState = detectAudioState()
+                Log.d(TAG, "isBluetoothAvailable: returning=${audioState.isBluetoothConnected}")
+                result.success(audioState.isBluetoothConnected)
             }
 
             TVMethodChannels.TOGGLE_MUTE -> {
@@ -1320,6 +1423,98 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                     }
                 } ?: run {
                     Log.e(TAG, "Context is null, cannot open battery settings")
+                    result.success(false)
+                }
+            }
+
+            TVMethodChannels.HAS_OVERLAY_PERMISSION -> {
+                context?.let { ctx ->
+                    val hasPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        Settings.canDrawOverlays(ctx)
+                    } else {
+                        true // Permission not needed on older versions
+                    }
+                    Log.d(TAG, "hasOverlayPermission: $hasPermission")
+                    result.success(hasPermission)
+                } ?: run {
+                    result.success(false)
+                }
+            }
+
+            TVMethodChannels.REQUEST_OVERLAY_PERMISSION -> {
+                context?.let { ctx ->
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(ctx)) {
+                        try {
+                            val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
+                                data = Uri.parse("package:${ctx.packageName}")
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            ctx.startActivity(intent)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed to request overlay permission", e)
+                            result.success(false)
+                        }
+                    } else {
+                        Log.d(TAG, "Already has overlay permission or not needed")
+                        result.success(true)
+                    }
+                } ?: run {
+                    result.success(false)
+                }
+            }
+
+            TVMethodChannels.OPEN_MIUI_PERMISSION_SETTINGS -> {
+                context?.let { ctx ->
+                    try {
+                        // Check if this is a MIUI device
+                        val isMiui = isMiuiDevice()
+                        Log.d(TAG, "openMiuiPermissionSettings: isMiui=$isMiui")
+                        
+                        if (isMiui) {
+                            // Try to open MIUI permission manager
+                            try {
+                                val miuiIntent = Intent("miui.intent.action.APP_PERM_EDITOR").apply {
+                                    setClassName("com.miui.securitycenter", 
+                                        "com.miui.permcenter.permissions.PermissionsEditorActivity")
+                                    putExtra("extra_pkgname", ctx.packageName)
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                ctx.startActivity(miuiIntent)
+                                result.success(true)
+                                return@onMethodCall
+                            } catch (e: Exception) {
+                                Log.d(TAG, "MIUI permission editor not found, trying alternative")
+                            }
+                            
+                            // Alternative: Open MIUI app info
+                            try {
+                                val miuiAltIntent = Intent("miui.intent.action.APP_PERM_EDITOR").apply {
+                                    setClassName("com.miui.securitycenter",
+                                        "com.miui.permcenter.permissions.AppPermissionsEditorActivity")
+                                    putExtra("extra_pkgname", ctx.packageName)
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                ctx.startActivity(miuiAltIntent)
+                                result.success(true)
+                                return@onMethodCall
+                            } catch (e: Exception) {
+                                Log.d(TAG, "MIUI alternative permission editor not found")
+                            }
+                        }
+                        
+                        // Fallback: Open general app settings
+                        val appInfoIntent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = Uri.parse("package:${ctx.packageName}")
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        ctx.startActivity(appInfoIntent)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to open MIUI permission settings", e)
+                        result.success(false)
+                    }
+                } ?: run {
                     result.success(false)
                 }
             }
@@ -2490,4 +2685,30 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
 //        logEvent("onDisconnected")
 //    }
     //endregion
+    
+    /**
+     * Check if the device is a MIUI (Xiaomi/Redmi/Poco) device.
+     * MIUI devices require special permissions for showing UI over lock screen.
+     */
+    private fun isMiuiDevice(): Boolean {
+        return try {
+            val prop = Class.forName("android.os.SystemProperties")
+            val get = prop.getMethod("get", String::class.java)
+            val miuiVersion = get.invoke(null, "ro.miui.ui.version.name") as? String
+            val brand = Build.BRAND.lowercase()
+            val manufacturer = Build.MANUFACTURER.lowercase()
+            
+            !miuiVersion.isNullOrEmpty() || 
+                brand.contains("xiaomi") || 
+                brand.contains("redmi") || 
+                brand.contains("poco") ||
+                manufacturer.contains("xiaomi") ||
+                manufacturer.contains("redmi")
+        } catch (e: Exception) {
+            val brand = Build.BRAND.lowercase()
+            val manufacturer = Build.MANUFACTURER.lowercase()
+            brand.contains("xiaomi") || brand.contains("redmi") || brand.contains("poco") ||
+            manufacturer.contains("xiaomi") || manufacturer.contains("redmi")
+        }
+    }
 }

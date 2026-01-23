@@ -172,6 +172,27 @@ abstract class TwilioVoicePlatform extends SharedPlatformInterface {
   /// Android only
   Future<bool?> openBatterySettings();
 
+  /// Check if the app has overlay/draw-over-apps permission
+  /// This is needed for showing incoming call UI over lock screen on some devices
+  ///
+  /// Android only
+  Future<bool> hasOverlayPermission();
+
+  /// Request overlay/draw-over-apps permission
+  /// Opens the system settings to allow user to grant the permission
+  /// This is needed for showing incoming call UI over lock screen on some devices
+  ///
+  /// Android only
+  Future<bool?> requestOverlayPermission();
+
+  /// Open MIUI/Xiaomi permission settings
+  /// This opens the MIUI-specific permission page where users can enable
+  /// "Display pop-up windows while running in the background" permission
+  /// Falls back to general app settings if MIUI settings not available
+  ///
+  /// Android only
+  Future<bool?> openMiuiPermissionSettings();
+
   /// Set iOS call kit icon
   ///
   /// This allows for CallKit customization: setting the last button (bottom right) of the callkit.

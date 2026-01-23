@@ -50,10 +50,18 @@ class IncomingCallActivity : AppCompatActivity() {
 
         fun createIntent(context: Context, callInvite: CallInvite): Intent {
             return Intent(context, IncomingCallActivity::class.java).apply {
-                // Minimal flags for lock screen incoming call - let manifest attributes handle the rest
+                // Aggressive flags for lock screen incoming call display
+                // FLAG_ACTIVITY_NO_USER_ACTION is critical for fullScreenIntent on lock screen
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or
                         Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                        Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
+                        Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                        Intent.FLAG_ACTIVITY_NO_USER_ACTION
+                
+                // Add action to ensure proper handling
+                action = "com.twilio.twilio_voice.INCOMING_CALL"
+                
                 putExtra(EXTRA_CALL_INVITE, callInvite)
                 putExtra(EXTRA_CALL_SID, callInvite.callSid)
                 
@@ -114,12 +122,25 @@ class IncomingCallActivity : AppCompatActivity() {
     @SuppressLint("WakelockTimeout")
     override fun onCreate(savedInstanceState: Bundle?) {
         android.util.Log.d(TAG, "onCreate: STARTED - IncomingCallActivity created")
-        // Set window flags before super.onCreate()
+        
+        // For MIUI devices, try to set overlay window type BEFORE super.onCreate()
+        if (isMiuiDevice() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                if (android.provider.Settings.canDrawOverlays(this)) {
+                    android.util.Log.d(TAG, "onCreate: MIUI - Setting TYPE_APPLICATION_OVERLAY before super.onCreate()")
+                    window.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+                }
+            } catch (e: Exception) {
+                android.util.Log.w(TAG, "onCreate: Failed to set overlay type: ${e.message}")
+            }
+        }
+        
+        // CRITICAL: Set window flags BEFORE super.onCreate() for lock screen display
         showOverLockScreen()
         
         super.onCreate(savedInstanceState)
         
-        // Wake up the screen after onCreate
+        // Wake up the screen immediately after onCreate
         wakeUpScreen()
         
         // Check if this is an answer action from notification
@@ -133,6 +154,19 @@ class IncomingCallActivity : AppCompatActivity() {
         }
         
         setContentView(R.layout.activity_incoming_call_custom)
+        
+        // Bring activity to foreground after setting content view
+        bringActivityToFront()
+        
+        // For MIUI - try an additional aggressive approach after content is set
+        if (isMiuiDevice()) {
+            window.decorView.postDelayed({
+                android.util.Log.d(TAG, "onCreate: MIUI delayed bringActivityToFront")
+                showOverLockScreen()
+                bringActivityToFront()
+                moveTaskToFront()
+            }, 300)
+        }
 
         // Get call info from intent
         callInvite = intent.getParcelableExtra(EXTRA_CALL_INVITE)
@@ -428,37 +462,212 @@ class IncomingCallActivity : AppCompatActivity() {
     private fun showOverLockScreen() {
         android.util.Log.d(TAG, "showOverLockScreen: Setting up window flags for lock screen display")
         
-        // For Android O_MR1+ (API 27+) use the newer API methods - these are REQUIRED on newer Android
+        // Check if this is a MIUI/Xiaomi device
+        val isMiui = isMiuiDevice()
+        android.util.Log.d(TAG, "showOverLockScreen: isMiuiDevice=$isMiui")
+        
+        // STEP 1: Add all window flags FIRST before anything else
+        @Suppress("DEPRECATION")
+        window.addFlags(
+            WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+            WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+            WindowManager.LayoutParams.FLAG_ALLOW_LOCK_WHILE_SCREEN_ON or
+            WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
+            WindowManager.LayoutParams.FLAG_FULLSCREEN
+        )
+        
+        // STEP 2: For Android O_MR1+ (API 27+) use the newer API methods
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true)
             setTurnScreenOn(true)
             android.util.Log.d(TAG, "showOverLockScreen: setShowWhenLocked and setTurnScreenOn called")
         }
         
-        // Add window flags for lock screen display
-        @Suppress("DEPRECATION")
-        window.addFlags(
-            WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
-            WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
-            WindowManager.LayoutParams.FLAG_ALLOW_LOCK_WHILE_SCREEN_ON
-        )
-        
-        // Handle display cutout for notched devices (Android P+)
+        // STEP 3: Handle display cutout for notched devices (Android P+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             window.attributes.layoutInDisplayCutoutMode = 
                 WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+        
+        // STEP 4: Disable the keyguard to show over lock screen
+        val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+        if (keyguardManager != null) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                // Request to dismiss the keyguard (important for MIUI/Xiaomi devices)
+                keyguardManager.requestDismissKeyguard(this, object : KeyguardManager.KeyguardDismissCallback() {
+                    override fun onDismissSucceeded() {
+                        android.util.Log.d(TAG, "showOverLockScreen: Keyguard dismissed successfully")
+                    }
+                    override fun onDismissCancelled() {
+                        android.util.Log.d(TAG, "showOverLockScreen: Keyguard dismiss cancelled")
+                    }
+                    override fun onDismissError() {
+                        android.util.Log.d(TAG, "showOverLockScreen: Keyguard dismiss error")
+                    }
+                })
+            } else {
+                // For older devices, use deprecated method
+                @Suppress("DEPRECATION")
+                keyguardManager.newKeyguardLock("IncomingCallActivity").disableKeyguard()
+            }
+        }
+        
+        // STEP 5: MIUI-specific handling - use system overlay window type
+        if (isMiuiDevice() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                // Check if we have overlay permission
+                if (android.provider.Settings.canDrawOverlays(this)) {
+                    android.util.Log.d(TAG, "showOverLockScreen: MIUI device - has overlay permission, setting window type")
+                    window.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+                } else {
+                    android.util.Log.w(TAG, "showOverLockScreen: MIUI device - NO overlay permission! User needs to grant this permission")
+                }
+            } catch (e: Exception) {
+                android.util.Log.w(TAG, "showOverLockScreen: Failed to set overlay window type: ${e.message}")
+            }
+        }
+        
+        // STEP 6: Additional MIUI fix - set layout params
+        try {
+            window.attributes = window.attributes.apply {
+                screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_FULL
+            }
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "showOverLockScreen: Failed to set brightness: ${e.message}")
+        }
+    }
+    
+    private fun isMiuiDevice(): Boolean {
+        return try {
+            val prop = Class.forName("android.os.SystemProperties")
+            val get = prop.getMethod("get", String::class.java)
+            val miuiVersion = get.invoke(null, "ro.miui.ui.version.name") as? String
+            val brand = Build.BRAND.lowercase()
+            val manufacturer = Build.MANUFACTURER.lowercase()
+            
+            val isMiui = !miuiVersion.isNullOrEmpty() || 
+                         brand.contains("xiaomi") || 
+                         brand.contains("redmi") || 
+                         brand.contains("poco") ||
+                         manufacturer.contains("xiaomi") ||
+                         manufacturer.contains("redmi")
+            
+            android.util.Log.d(TAG, "isMiuiDevice: miuiVersion=$miuiVersion, brand=$brand, manufacturer=$manufacturer, result=$isMiui")
+            isMiui
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "isMiuiDevice: Failed to detect MIUI: ${e.message}")
+            // Fallback to brand check
+            val brand = Build.BRAND.lowercase()
+            val manufacturer = Build.MANUFACTURER.lowercase()
+            brand.contains("xiaomi") || brand.contains("redmi") || brand.contains("poco") ||
+            manufacturer.contains("xiaomi") || manufacturer.contains("redmi")
+        }
+    }
+    
+    private fun moveTaskToFront() {
+        try {
+            val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+            activityManager.moveTaskToFront(taskId, android.app.ActivityManager.MOVE_TASK_WITH_HOME)
+            android.util.Log.d(TAG, "moveTaskToFront: Task moved to front")
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "moveTaskToFront: Failed to move task to front: ${e.message}")
+        }
+    }
+    
+    private fun bringActivityToFront() {
+        try {
+            // Use multiple approaches to bring activity to front on MIUI
+            val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+            
+            // Approach 1: Move task to front with HOME flag
+            activityManager.moveTaskToFront(taskId, android.app.ActivityManager.MOVE_TASK_WITH_HOME)
+            
+            // Approach 2: Request window focus
+            window.decorView.requestFocus()
+            
+            // Approach 3: For MIUI - try to dismiss keyguard again
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as android.app.KeyguardManager
+                keyguardManager.requestDismissKeyguard(this, object : android.app.KeyguardManager.KeyguardDismissCallback() {
+                    override fun onDismissSucceeded() {
+                        android.util.Log.d(TAG, "bringActivityToFront: Keyguard dismissed")
+                        runOnUiThread {
+                            moveTaskToFront()
+                        }
+                    }
+                    override fun onDismissCancelled() {
+                        android.util.Log.d(TAG, "bringActivityToFront: Keyguard dismiss cancelled")
+                    }
+                    override fun onDismissError() {
+                        android.util.Log.d(TAG, "bringActivityToFront: Keyguard dismiss error")
+                    }
+                })
+            }
+            
+            android.util.Log.d(TAG, "bringActivityToFront: Activity brought to front")
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "bringActivityToFront: Failed: ${e.message}")
         }
     }
     
     override fun onResume() {
         super.onResume()
         android.util.Log.d(TAG, "onResume: Activity resumed")
+        
+        // Aggressively try to show over lock screen on resume
+        showOverLockScreen()
+        
+        // Ensure we have focus on MIUI devices only
+        if (isMiuiDevice()) {
+            window.decorView.postDelayed({
+                bringActivityToFront()
+            }, 200)
+        }
+    }
+    
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        android.util.Log.d(TAG, "onAttachedToWindow: Window attached")
+        
+        // This is critical for MIUI - set flags again when window is attached
+        @Suppress("DEPRECATION")
+        window.addFlags(
+            WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+            WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+            WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
+        )
+        
+        // For MIUI, try to use a higher window priority
+        if (isMiuiDevice()) {
+            try {
+                // Use reflection to set higher priority for MIUI
+                val layoutParams = window.attributes
+                val priorityField = layoutParams.javaClass.getField("preferredDisplayModeId")
+                priorityField.isAccessible = true
+            } catch (e: Exception) {
+                // Ignore, this is just an extra attempt
+            }
+            
+            // Also try to bring to front again
+            window.decorView.postDelayed({
+                moveTaskToFront()
+                bringActivityToFront()
+            }, 100)
+        }
     }
     
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         android.util.Log.d(TAG, "onWindowFocusChanged: hasFocus=$hasFocus")
+        
+        // If we lose focus on MIUI, try to regain it (only for MIUI devices)
+        if (!hasFocus && isMiuiDevice()) {
+            window.decorView.postDelayed({
+                bringActivityToFront()
+            }, 300)
+        }
     }
 
     override fun onDestroy() {

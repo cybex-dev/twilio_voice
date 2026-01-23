@@ -15,5 +15,7 @@
         <item name="android:windowFullscreen">true</item>
         <item name="android:windowDisablePreview">true</item>
         <item name="android:windowActionBar">false</item>
+        <!-- For showing over lock screen -->
+    <!-- windowShowWhenLocked and windowTurnScreenOn are API 27+. Keep them in values-v27 only. -->
     </style>
 </resources>

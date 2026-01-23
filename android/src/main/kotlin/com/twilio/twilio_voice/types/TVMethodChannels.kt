@@ -54,6 +54,9 @@ enum class TVMethodChannels(val method: String) {
     IS_BATTERY_OPTIMIZED("isBatteryOptimized"),
     REQUEST_IGNORE_BATTERY_OPTIMIZATIONS("requestIgnoreBatteryOptimizations"),
     OPEN_BATTERY_SETTINGS("openBatterySettings"),
+    HAS_OVERLAY_PERMISSION("hasOverlayPermission"),
+    REQUEST_OVERLAY_PERMISSION("requestOverlayPermission"),
+    OPEN_MIUI_PERMISSION_SETTINGS("openMiuiPermissionSettings"),
     CONNECT("connect");
 
     companion object {

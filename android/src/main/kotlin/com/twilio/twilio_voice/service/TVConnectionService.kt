@@ -1453,16 +1453,19 @@ class TVConnectionService : ConnectionService() {
         val channel = getOrCreateIncomingCallChannel()
         
         // Create full-screen intent for incoming call activity
+        // Use unique request code to avoid PendingIntent caching
+        val fullScreenRequestCode = (callInvite.callSid.hashCode() and 0x7FFFFFFF) % 10000 + 1000
         val fullScreenIntent = IncomingCallActivity.createIntent(applicationContext, callInvite)
         val fullScreenPendingIntent = PendingIntent.getActivity(
             applicationContext,
-            0,
+            fullScreenRequestCode,
             fullScreenIntent,
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) 
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE 
             else 
                 PendingIntent.FLAG_UPDATE_CURRENT
         )
+        Log.d(TAG, "createIncomingCallNotification: fullScreenRequestCode=$fullScreenRequestCode")
 
         // Use unique request codes based on callSid hash to avoid PendingIntent caching issues
         val answerServiceRequestCode = (callInvite.callSid.hashCode() and 0x7FFFFFFF) % 10000 + 2000
@@ -1696,18 +1699,88 @@ class TVConnectionService : ConnectionService() {
         }
     }
     
+    private fun isMiuiDevice(): Boolean {
+        return try {
+            val prop = Class.forName("android.os.SystemProperties")
+            val get = prop.getMethod("get", String::class.java)
+            val miuiVersion = get.invoke(null, "ro.miui.ui.version.name") as? String
+            val brand = Build.BRAND.lowercase()
+            val manufacturer = Build.MANUFACTURER.lowercase()
+            
+            !miuiVersion.isNullOrEmpty() || 
+                brand.contains("xiaomi") || 
+                brand.contains("redmi") || 
+                brand.contains("poco") ||
+                manufacturer.contains("xiaomi") ||
+                manufacturer.contains("redmi")
+        } catch (e: Exception) {
+            val brand = Build.BRAND.lowercase()
+            val manufacturer = Build.MANUFACTURER.lowercase()
+            brand.contains("xiaomi") || brand.contains("redmi") || brand.contains("poco") ||
+            manufacturer.contains("xiaomi") || manufacturer.contains("redmi")
+        }
+    }
+    
     private fun launchIncomingCallActivity(callInvite: CallInvite) {
         try {
+            val isMiui = isMiuiDevice()
+            Log.d(TAG, "[VoiceConnectionService] launchIncomingCallActivity: isMiui=$isMiui")
+            
             // The activity is configured with showWhenLocked, turnScreenOn flags in theme and manifest
             val intent = IncomingCallActivity.createIntent(applicationContext, callInvite).apply {
                 addFlags(
                     Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_NO_USER_ACTION
+                    Intent.FLAG_ACTIVITY_NO_USER_ACTION or
+                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                    Intent.FLAG_ACTIVITY_BROUGHT_TO_FRONT or
+                    Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED or
+                    Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
                 )
+                
+                // For MIUI, also add CLEAR_TASK to ensure fresh start
+                if (isMiui) {
+                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                }
+            }
+            
+            // Try to wake up the screen first
+            val powerManager = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+            @Suppress("DEPRECATION")
+            val wakeLock = powerManager.newWakeLock(
+                android.os.PowerManager.FULL_WAKE_LOCK or
+                android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP or
+                android.os.PowerManager.ON_AFTER_RELEASE,
+                "twilio_voice:incoming_call_launch"
+            )
+            wakeLock.acquire(5000)  // Hold for 5 seconds (longer for MIUI)
+            
+            // For MIUI, try to dismiss keyguard first before starting activity
+            if (isMiui && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as? android.app.KeyguardManager
+                if (keyguardManager?.isKeyguardLocked == true) {
+                    Log.d(TAG, "[VoiceConnectionService] MIUI: Keyguard is locked, attempting to dismiss")
+                    // On MIUI, we need to start activity first, then it can request keyguard dismiss
+                }
             }
             
             startActivity(intent)
             Log.d(TAG, "[VoiceConnectionService] Started IncomingCallActivity")
+            
+            // Note: Removed MIUI retry that was causing duplicate activity instances.
+            // The activity uses singleInstance launchMode, so repeated starts should
+            // bring it to front rather than create new instances.
+            
+            // Release wake lock after a delay
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                try {
+                    if (wakeLock.isHeld) {
+                        wakeLock.release()
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "[VoiceConnectionService] Failed to release wake lock: $e")
+                }
+            }, 5000)
+            
         } catch (e: Exception) {
             Log.w(TAG, "[VoiceConnectionService] Failed to start IncomingCallActivity: $e")
         }
