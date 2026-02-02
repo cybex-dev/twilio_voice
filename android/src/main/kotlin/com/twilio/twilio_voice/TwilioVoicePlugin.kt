@@ -111,6 +111,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     private val REQUEST_CODE_READ_PHONE_STATE = 5
     private val REQUEST_CODE_MICROPHONE_FOREGROUND = 6
     private val REQUEST_CODE_MANAGE_CALLS = 7
+    private val REQUEST_CODE_SCHEDULE_EXACT_ALARM = 8
 
     private var isSpeakerOn: Boolean = false
     private var isBluetoothOn: Boolean = false
@@ -587,6 +588,14 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 Log.d(TAG, "Manage Calls permission not granted")
                 logEventPermission("Manage Calls", false)
             }
+        } else if (requestCode == REQUEST_CODE_SCHEDULE_EXACT_ALARM) {
+            if (permissions.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                Log.d(TAG, "Schedule Exact Alarm (Show on Lock Screen) permission granted")
+                logEventPermission("Show on Lock Screen", true)
+            } else {
+                Log.d(TAG, "Schedule Exact Alarm (Show on Lock Screen) permission not granted")
+                logEventPermission("Show on Lock Screen", false)
+            }
         }
         return true
     }
@@ -616,7 +625,8 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
 
     //region Flutter MethodCallHandler
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
-        if (call.arguments !is Map<*, *>) {
+        // Allow null or Map arguments
+        if (call.arguments != null && call.arguments !is Map<*, *>) {
             result.error(
                 FlutterErrorCodes.MALFORMED_ARGUMENTS,
                 "Arguments must be a Map<String, Object>",
@@ -1464,6 +1474,104 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 }
             }
 
+            TVMethodChannels.REQUEST_SHOW_ON_LOCK_SCREEN_PERMISSION -> {
+                // For Android 12+, this permission is not needed
+                // For Android 11 and below, we need to enable "Display on Lock Screen"
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    // Android 12+ doesn't need this permission
+                    Log.d(TAG, "Show on lock screen not needed for Android 12+")
+                    result.success(true)
+                } else {
+                    // Android 11 and below - open MIUI or standard app settings
+                    context?.let { ctx ->
+                        try {
+                            val isMiui = isMiuiDevice()
+                            Log.d(TAG, "requestShowOnLockScreenPermission: isMiui=$isMiui, SDK=${Build.VERSION.SDK_INT}")
+                            
+                            var settingsOpened = false
+                            
+                            if (isMiui) {
+                                // Try to open MIUI permission manager for lock screen display
+                                try {
+                                    val miuiIntent = Intent("miui.intent.action.APP_PERM_EDITOR").apply {
+                                        setClassName("com.miui.securitycenter", 
+                                            "com.miui.permcenter.permissions.PermissionsEditorActivity")
+                                        putExtra("extra_pkgname", ctx.packageName)
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    ctx.startActivity(miuiIntent)
+                                    settingsOpened = true
+                                } catch (e: Exception) {
+                                    Log.d(TAG, "MIUI permission editor not found, trying alternative")
+                                }
+                                
+                                // Alternative: Open MIUI app info
+                                if (!settingsOpened) {
+                                    try {
+                                        val miuiAltIntent = Intent("miui.intent.action.APP_PERM_EDITOR").apply {
+                                            setClassName("com.miui.securitycenter",
+                                                "com.miui.permcenter.permissions.AppPermissionsEditorActivity")
+                                            putExtra("extra_pkgname", ctx.packageName)
+                                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        }
+                                        ctx.startActivity(miuiAltIntent)
+                                        settingsOpened = true
+                                    } catch (e: Exception) {
+                                        Log.d(TAG, "MIUI alternative permission editor not found")
+                                    }
+                                }
+                            }
+                            
+                            // Fallback: Open app notification settings
+                            if (!settingsOpened) {
+                                try {
+                                    val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                        putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName)
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    ctx.startActivity(intent)
+                                    settingsOpened = true
+                                } catch (e: Exception) {
+                                    // Final fallback to app settings
+                                    val settingsIntent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                        data = Uri.parse("package:${ctx.packageName}")
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    ctx.startActivity(settingsIntent)
+                                    settingsOpened = true
+                                }
+                            }
+                            
+                            // Mark that user has visited settings (assume they granted permission)
+                            if (settingsOpened) {
+                                markShowOnLockScreenSettingsVisited(ctx)
+                                Log.d(TAG, "requestShowOnLockScreenPermission: Settings opened, marked as visited")
+                            }
+                            
+                            result.success(settingsOpened)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed to request show on lock screen permission", e)
+                            result.success(false)
+                        }
+                    } ?: run {
+                        result.success(false)
+                    }
+                }
+            }
+
+            TVMethodChannels.HAS_SHOW_ON_LOCK_SCREEN_PERMISSION -> {
+                // For Android 12+, always return true (not needed)
+                // For Android 11 and below, check SCHEDULE_EXACT_ALARM permission
+                context?.let { ctx ->
+                    val isGranted = checkShowOnLockScreenPermission(ctx)
+                    Log.d(TAG, "HAS_SHOW_ON_LOCK_SCREEN_PERMISSION: isGranted=$isGranted, SDK=${Build.VERSION.SDK_INT}")
+                    result.success(isGranted)
+                } ?: run {
+                    Log.e(TAG, "Context is null, cannot check show on lock screen permission")
+                    result.success(false)
+                }
+            }
+
             TVMethodChannels.OPEN_MIUI_PERMISSION_SETTINGS -> {
                 context?.let { ctx ->
                     try {
@@ -2149,6 +2257,65 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
 
         // Extract the matched part (user_number:+11230123)
         return match?.groups?.get(1)?.value ?: input
+    }
+
+    /**
+     * Check if the "Display on Lock Screen" permission is granted.
+     * 
+     * For Android 12+: Not needed, always returns true
+     * For Android 11 and below: Checks SCHEDULE_EXACT_ALARM permission
+     * 
+     * Note: On MIUI devices, this may not be 100% reliable as MIUI has custom permission handling,
+     * but it's the best we can do without direct access to MIUI's permission database.
+     */
+    private fun checkShowOnLockScreenPermission(context: Context): Boolean {
+        // Android 12+ doesn't need this permission  
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            Log.d(TAG, "checkShowOnLockScreenPermission: Android 12+, returning true")
+            return true
+        }
+        
+        // Android 11 and below on MIUI devices:
+        // The "Display on Lock Screen" permission is a MIUI-specific permission
+        // that CANNOT be detected programmatically via any Android API.
+        //
+        // Options:
+        // 1. Check overlay permission (canDrawOverlays) as a proxy - but this is different permission
+        // 2. Store in SharedPreferences when user visits settings and assume granted
+        // 3. Always return true and let actual functionality fail if not granted
+        //
+        // We'll use option 2: Check SharedPreferences for a flag set when user opens settings
+        
+        return try {
+            val isMiui = isMiuiDevice()
+            Log.d(TAG, "checkShowOnLockScreenPermission: SDK=${Build.VERSION.SDK_INT}, isMiui=$isMiui")
+            
+            // Check SharedPreferences for the flag
+            val prefs = context.getSharedPreferences("twilio_voice_prefs", Context.MODE_PRIVATE)
+            val hasVisitedSettings = prefs.getBoolean("show_on_lock_screen_settings_visited", false)
+            
+            if (hasVisitedSettings) {
+                Log.d(TAG, "checkShowOnLockScreenPermission: User has visited settings, assuming granted")
+                return true
+            }
+            
+            // If user hasn't visited settings yet, return false
+            Log.d(TAG, "checkShowOnLockScreenPermission: User hasn't visited settings yet, returning false")
+            false
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking show on lock screen permission: ${e.message}", e)
+            false
+        }
+    }
+    
+    private fun markShowOnLockScreenSettingsVisited(context: Context) {
+        try {
+            val prefs = context.getSharedPreferences("twilio_voice_prefs", Context.MODE_PRIVATE)
+            prefs.edit().putBoolean("show_on_lock_screen_settings_visited", true).apply()
+            Log.d(TAG, "markShowOnLockScreenSettingsVisited: Flag set to true")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting show on lock screen flag: ${e.message}", e)
+        }
     }
 
     private fun requestPermissionForPhoneState(onPermissionResult: (Boolean) -> Unit) {

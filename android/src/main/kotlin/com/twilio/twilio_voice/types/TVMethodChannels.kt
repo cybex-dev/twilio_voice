@@ -57,6 +57,8 @@ enum class TVMethodChannels(val method: String) {
     HAS_OVERLAY_PERMISSION("hasOverlayPermission"),
     REQUEST_OVERLAY_PERMISSION("requestOverlayPermission"),
     OPEN_MIUI_PERMISSION_SETTINGS("openMiuiPermissionSettings"),
+    REQUEST_SHOW_ON_LOCK_SCREEN_PERMISSION("requestShowOnLockScreenPermission"),
+    HAS_SHOW_ON_LOCK_SCREEN_PERMISSION("hasShowOnLockScreenPermission"),
     CONNECT("connect");
 
     companion object {
