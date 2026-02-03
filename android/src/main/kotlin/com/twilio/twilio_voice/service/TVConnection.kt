@@ -1179,6 +1179,17 @@ open class TVCallConnection(
      */
     fun toggleSpeaker(newState: Boolean) {
         Log.d(TAG, "=== toggleSpeaker START === newState=$newState")
+        
+        // Update ringback audio route if playing
+        try {
+            val ringbackManager = RingbackManager.getInstance(context)
+            if (ringbackManager.isRingbackPlaying()) {
+                ringbackManager.updateAudioRoute(newState)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to update ringback audio route: ${e.message}")
+        }
+        
         // First try using TelecomManager's audio route
         if (callAudioState != null) {
             Log.d(TAG, "toggleSpeaker: Using TelecomManager route, newState=$newState")
