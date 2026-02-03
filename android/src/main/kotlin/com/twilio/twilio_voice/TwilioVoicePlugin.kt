@@ -3,13 +3,21 @@ package com.twilio.twilio_voice
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothProfile
 import android.content.Context
 import android.content.DialogInterface
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import android.telecom.CallAudioState
 import android.telecom.PhoneAccountHandle
 import android.telecom.TelecomManager
@@ -40,6 +48,7 @@ import com.twilio.twilio_voice.types.TVNativeCallEvents
 import com.twilio.twilio_voice.types.TelecomManagerExtension.canReadPhoneNumbers
 import com.twilio.twilio_voice.types.TelecomManagerExtension.getPhoneAccountHandle
 import com.twilio.twilio_voice.types.TelecomManagerExtension.hasCallCapableAccount
+import com.twilio.twilio_voice.types.TelecomManagerExtension.hasCallCapableAccountSafe
 import com.twilio.twilio_voice.types.TelecomManagerExtension.openPhoneAccountSettings
 import com.twilio.twilio_voice.types.TelecomManagerExtension.registerPhoneAccount
 import com.twilio.voice.Call
@@ -87,6 +96,9 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     private var methodChannel: MethodChannel? = null
     private var eventChannel: EventChannel? = null
     private var eventSink: EventSink? = null
+    
+    // Event queue for events that arrive before Flutter is ready
+    private val pendingEvents = mutableListOf<String>()
 
     // member instance functions
     private var callListener = callListener()
@@ -99,6 +111,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     private val REQUEST_CODE_READ_PHONE_STATE = 5
     private val REQUEST_CODE_MICROPHONE_FOREGROUND = 6
     private val REQUEST_CODE_MANAGE_CALLS = 7
+    private val REQUEST_CODE_SCHEDULE_EXACT_ALARM = 8
 
     private var isSpeakerOn: Boolean = false
     private var isBluetoothOn: Boolean = false
@@ -111,6 +124,267 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
 
     // Provides a mapping of permission to result handler for when the permission is granted or denied via the PluginRegistry, then responds via future to the Flutter side
     private val permissionResultHandler: MutableMap<Int, (Boolean) -> Unit> = mutableMapOf()
+
+    /**
+     * UNIFIED AUDIO STATE DETECTION
+     * Works across all Android devices (Samsung, MIUI/Xiaomi, Stock Android, etc.)
+     * by checking multiple sources in order of reliability.
+     * 
+     * Returns a data class with:
+     * - audioRoute: "bluetooth", "speaker", "wired_headset", or "earpiece"
+     * - isBluetoothConnected: whether a Bluetooth audio device is connected
+     * - isBluetoothActive: whether audio is actively routing through Bluetooth
+     */
+    data class AudioState(
+        val audioRoute: String,
+        val isBluetoothConnected: Boolean,
+        val isBluetoothActive: Boolean,
+        val isSpeakerActive: Boolean
+    )
+    
+    private fun detectAudioState(): AudioState {
+        Log.d(TAG, "=== detectAudioState START ===")
+        
+        var audioRoute = "earpiece"
+        var isBluetoothConnected = false
+        var isBluetoothActive = false
+        var isSpeakerActive = false
+        
+        val audioManager = context?.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+        
+        // CRITICAL: First check SCO state - this is the definitive source for voice call Bluetooth
+        val isBluetoothScoOn = audioManager?.isBluetoothScoOn == true
+        Log.d(TAG, "detectAudioState: [MASTER CHECK] isBluetoothScoOn=$isBluetoothScoOn")
+        
+        // ===== CHECK 1: Android 12+ communicationDevice =====
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && audioManager != null) {
+            try {
+                val commDevice = audioManager.communicationDevice
+                Log.d(TAG, "detectAudioState: [CHECK 1] communicationDevice type=${commDevice?.type}")
+                
+                if (commDevice != null) {
+                    when (commDevice.type) {
+                        AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+                        AudioDeviceInfo.TYPE_BLE_HEADSET,
+                        AudioDeviceInfo.TYPE_HEARING_AID,
+                        AudioDeviceInfo.TYPE_BLE_SPEAKER -> {
+                            // Only trust Bluetooth device if SCO is actually on
+                            if (isBluetoothScoOn) {
+                                audioRoute = "bluetooth"
+                                isBluetoothActive = true
+                                isBluetoothConnected = true
+                                Log.d(TAG, "detectAudioState: [CHECK 1] -> bluetooth (type=${commDevice.type}, SCO verified)")
+                            } else {
+                                audioRoute = "earpiece"
+                                Log.d(TAG, "detectAudioState: [CHECK 1] -> BT device but SCO OFF, using earpiece")
+                            }
+                        }
+                        AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> {
+                            audioRoute = "speaker"
+                            isSpeakerActive = true
+                            Log.d(TAG, "detectAudioState: [CHECK 1] -> speaker")
+                        }
+                        AudioDeviceInfo.TYPE_WIRED_HEADSET,
+                        AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+                        AudioDeviceInfo.TYPE_USB_HEADSET -> {
+                            audioRoute = "wired_headset"
+                            Log.d(TAG, "detectAudioState: [CHECK 1] -> wired_headset")
+                        }
+                        else -> {
+                            audioRoute = "earpiece"
+                            Log.d(TAG, "detectAudioState: [CHECK 1] -> earpiece (type=${commDevice.type})")
+                        }
+                    }
+                    
+                    // Update stored state and return early
+                    isBluetoothOn = isBluetoothActive
+                    isSpeakerOn = isSpeakerActive
+                    
+                    // CRITICAL: Check if Bluetooth device is available even if not currently active
+                    // This is needed for showing the Bluetooth option in the audio toggle popup
+                    if (!isBluetoothConnected) {
+                        isBluetoothConnected = checkBluetoothDeviceAvailable()
+                    }
+                    
+                    Log.d(TAG, "=== detectAudioState END (via communicationDevice) === route=$audioRoute, btConnected=$isBluetoothConnected, btActive=$isBluetoothActive")
+                    return AudioState(audioRoute, isBluetoothConnected, isBluetoothActive, isSpeakerActive)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "detectAudioState: [CHECK 1] Error checking communicationDevice", e)
+            }
+        }
+        
+        // ===== CHECK 2: Bluetooth SCO state (fallback for older Android) =====
+        if (audioManager != null) {
+            try {
+                Log.d(TAG, "detectAudioState: [CHECK 2] isBluetoothScoOn=$isBluetoothScoOn")
+                if (isBluetoothScoOn) {
+                    audioRoute = "bluetooth"
+                    isBluetoothActive = true
+                    isBluetoothConnected = true
+                }
+                
+                // Also check speaker
+                if (!isBluetoothActive) {
+                    isSpeakerActive = audioManager.isSpeakerphoneOn
+                    if (isSpeakerActive) {
+                        audioRoute = "speaker"
+                    }
+                    Log.d(TAG, "detectAudioState: [CHECK 2] isSpeakerphoneOn=$isSpeakerActive")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "detectAudioState: [CHECK 2] Error checking AudioManager", e)
+            }
+        }
+        
+        // ===== CHECK 3: Skip BluetoothAdapter check - unreliable for voice call Bluetooth =====
+        // BluetoothAdapter.getProfileConnectionState can show connected even when SCO is not available
+        // We only trust isBluetoothScoOn for voice call Bluetooth detection
+        
+        // ===== CHECK 4: TelecomManager CallAudioState (if available) =====
+        val activeCall = TVConnectionService.activeConnections.values.firstOrNull()
+        if (activeCall != null) {
+            val callAudioState = activeCall.callAudioState
+            if (callAudioState != null) {
+                Log.d(TAG, "detectAudioState: [CHECK 4] callAudioState.route=${CallAudioState.audioRouteToString(callAudioState.route)}")
+                
+                // Use CallAudioState as the source of truth for audio route
+                when (callAudioState.route) {
+                    CallAudioState.ROUTE_BLUETOOTH -> {
+                        // Only trust Bluetooth route if SCO is actually active
+                        if (isBluetoothScoOn) {
+                            audioRoute = "bluetooth"
+                            isBluetoothActive = true
+                            isBluetoothConnected = true
+                            Log.d(TAG, "detectAudioState: [CHECK 4] ROUTE_BLUETOOTH with SCO active -> bluetooth")
+                        } else {
+                            // TelecomManager says Bluetooth but SCO is not active - stale state on MIUI
+                            Log.d(TAG, "detectAudioState: [CHECK 4] ROUTE_BLUETOOTH but SCO NOT active, forcing earpiece")
+                            audioRoute = "earpiece"
+                            isBluetoothActive = false
+                            isBluetoothConnected = false
+                        }
+                    }
+                    CallAudioState.ROUTE_SPEAKER -> {
+                        audioRoute = "speaker"
+                        isSpeakerActive = true
+                        isBluetoothActive = false
+                    }
+                    CallAudioState.ROUTE_WIRED_HEADSET -> {
+                        audioRoute = "wired_headset"
+                        isBluetoothActive = false
+                    }
+                    CallAudioState.ROUTE_EARPIECE -> {
+                        audioRoute = "earpiece"
+                        isBluetoothActive = false
+                    }
+                }
+            }
+        }
+        
+        // FINAL CONSISTENCY CHECK: Ensure isBluetoothActive matches audioRoute
+        if (audioRoute != "bluetooth") {
+            isBluetoothActive = false
+            // NOTE: Do NOT reset isBluetoothConnected here!
+            // isBluetoothConnected means "BT device is available", not "audio is on BT"
+            // User might have switched to speaker but BT is still connected
+        }
+        if (audioRoute != "speaker") {
+            isSpeakerActive = false
+        }
+        
+        // Check if Bluetooth is available (device connected) even if not currently active
+        // This is needed for showing the Bluetooth option in the audio popup
+        if (!isBluetoothConnected) {
+            isBluetoothConnected = checkBluetoothDeviceAvailable()
+        }
+        
+        // Update stored state
+        isBluetoothOn = isBluetoothActive
+        isSpeakerOn = isSpeakerActive
+        
+        Log.d(TAG, "=== detectAudioState END === route=$audioRoute, btConnected=$isBluetoothConnected, btActive=$isBluetoothActive, spkActive=$isSpeakerActive")
+        return AudioState(audioRoute, isBluetoothConnected, isBluetoothActive, isSpeakerActive)
+    }
+    
+    /**
+     * Check if a Bluetooth audio device is connected and available for voice calls.
+     * This is separate from whether audio is currently routed to Bluetooth.
+     * 
+     * IMPORTANT: Must be strict to avoid showing Bluetooth option when no BT is connected.
+     */
+    private fun checkBluetoothDeviceAvailable(): Boolean {
+        val audioManager = context?.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return false
+        
+        // First check: Use getDevices() which shows ALL connected audio devices (not just active ones)
+        // This works on Android 6.0+ (API 23+) and doesn't require BLUETOOTH permission
+        var hasBluetoothDevice = false
+        try {
+            val outputDevices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+            hasBluetoothDevice = outputDevices.any { device ->
+                device.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                device.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && (
+                    device.type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
+                    device.type == AudioDeviceInfo.TYPE_BLE_SPEAKER
+                )) ||
+                (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && 
+                    device.type == AudioDeviceInfo.TYPE_HEARING_AID)
+            }
+            Log.d(TAG, "checkBluetoothDeviceAvailable: getDevices check - found ${outputDevices.size} devices, hasBluetoothDevice=$hasBluetoothDevice")
+            
+            if (hasBluetoothDevice) {
+                return true
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "checkBluetoothDeviceAvailable: Error checking output devices", e)
+        }
+        
+        // Second check for Android 12+: availableCommunicationDevices (more reliable for call audio)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try {
+                val availableDevices = audioManager.availableCommunicationDevices
+                val hasCommDevice = availableDevices.any { device ->
+                    device.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                    device.type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
+                    device.type == AudioDeviceInfo.TYPE_HEARING_AID ||
+                    device.type == AudioDeviceInfo.TYPE_BLE_SPEAKER
+                }
+                Log.d(TAG, "checkBluetoothDeviceAvailable: Android 12+ availableCommunicationDevices - hasCommDevice=$hasCommDevice")
+                if (hasCommDevice) {
+                    return true
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "checkBluetoothDeviceAvailable: Error checking available communication devices", e)
+            }
+        }
+        
+        // Third check: BluetoothAdapter profile connection state
+        // This is especially useful for Android 12+ devices (like Vivo) where getDevices() 
+        // may not show Bluetooth when audio is routed to speaker/earpiece
+        try {
+            val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
+            if (bluetoothAdapter != null && bluetoothAdapter.isEnabled) {
+                val headsetState = bluetoothAdapter.getProfileConnectionState(BluetoothProfile.HEADSET)
+                val a2dpState = bluetoothAdapter.getProfileConnectionState(BluetoothProfile.A2DP)
+                val btConnected = (headsetState == BluetoothProfile.STATE_CONNECTED) || 
+                                  (a2dpState == BluetoothProfile.STATE_CONNECTED)
+                Log.d(TAG, "checkBluetoothDeviceAvailable: BluetoothAdapter check - headsetState=$headsetState, a2dpState=$a2dpState, btConnected=$btConnected")
+                if (btConnected) {
+                    return true
+                }
+            }
+        } catch (e: Exception) {
+            // May fail due to BLUETOOTH permission on some devices - that's OK, we have other checks
+            Log.d(TAG, "checkBluetoothDeviceAvailable: BluetoothAdapter check failed (permission issue), continuing with other checks")
+        }
+        
+        // Fourth check: isBluetoothScoOn (audio is currently routed to Bluetooth)
+        val scoOn = audioManager.isBluetoothScoOn
+        Log.d(TAG, "checkBluetoothDeviceAvailable: scoOn=$scoOn, hasBluetoothDevice=$hasBluetoothDevice")
+        
+        return scoOn || hasBluetoothDevice
+    }
 
     private fun register(
         messenger: BinaryMessenger,
@@ -314,6 +588,14 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 Log.d(TAG, "Manage Calls permission not granted")
                 logEventPermission("Manage Calls", false)
             }
+        } else if (requestCode == REQUEST_CODE_SCHEDULE_EXACT_ALARM) {
+            if (permissions.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                Log.d(TAG, "Schedule Exact Alarm (Show on Lock Screen) permission granted")
+                logEventPermission("Show on Lock Screen", true)
+            } else {
+                Log.d(TAG, "Schedule Exact Alarm (Show on Lock Screen) permission not granted")
+                logEventPermission("Show on Lock Screen", false)
+            }
         }
         return true
     }
@@ -323,6 +605,16 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     override fun onListen(arguments: Any?, events: EventSink?) {
         Log.i(TAG, "Setting event sink")
         this.eventSink = events
+        
+        // Flush any pending events that arrived before Flutter was ready
+        if (events != null && pendingEvents.isNotEmpty()) {
+            Log.d(TAG, "Flushing ${pendingEvents.size} pending events to Flutter")
+            for (event in pendingEvents) {
+                Log.d(TAG, "Sending queued event: $event")
+                events.success(event)
+            }
+            pendingEvents.clear()
+        }
     }
 
     override fun onCancel(arguments: Any?) {
@@ -333,7 +625,8 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
 
     //region Flutter MethodCallHandler
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
-        if (call.arguments !is Map<*, *>) {
+        // Allow null or Map arguments
+        if (call.arguments != null && call.arguments !is Map<*, *>) {
             result.error(
                 FlutterErrorCodes.MALFORMED_ARGUMENTS,
                 "Arguments must be a Map<String, Object>",
@@ -447,7 +740,25 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
 
             TVMethodChannels.IS_ON_SPEAKER -> {
                 Log.d(TAG, "isSpeakerOn invoked")
-                result.success(isSpeakerOn)
+                var actualSpeakerOn = isSpeakerOn
+                
+                // Try to get the actual route from active connection
+                val activeCall = TVConnectionService.activeConnections.values.firstOrNull()
+                Log.d(TAG, "isSpeakerOn: activeConnections count=${TVConnectionService.activeConnections.size}")
+                if (activeCall != null) {
+                    val audioState = activeCall.callAudioState
+                    if (audioState != null) {
+                        actualSpeakerOn = audioState.route == CallAudioState.ROUTE_SPEAKER
+                        Log.d(TAG, "isSpeakerOn: from CallAudioState route=${CallAudioState.audioRouteToString(audioState.route)}, isSpeaker=$actualSpeakerOn")
+                    } else {
+                        Log.d(TAG, "isSpeakerOn: callAudioState is null")
+                    }
+                } else {
+                    Log.d(TAG, "isSpeakerOn: no active connection found")
+                }
+                
+                Log.d(TAG, "isSpeakerOn: stored=$isSpeakerOn, returning=$actualSpeakerOn")
+                result.success(actualSpeakerOn)
             }
 
             TVMethodChannels.TOGGLE_BLUETOOTH -> {
@@ -494,7 +805,54 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
 
             TVMethodChannels.IS_BLUETOOTH_ON -> {
                 Log.d(TAG, "isBluetoothOn invoked")
-                result.success(isBluetoothOn)
+                // Use unified audio state detection
+                val audioState = detectAudioState()
+                Log.d(TAG, "isBluetoothOn: returning=${audioState.isBluetoothActive}")
+                result.success(audioState.isBluetoothActive)
+            }
+
+            TVMethodChannels.GET_AUDIO_ROUTE -> {
+                Log.d(TAG, "getAudioRoute invoked")
+                val previousBluetoothState = isBluetoothOn
+                val previousSpeakerState = isSpeakerOn
+                
+                // Use unified audio state detection
+                val audioState = detectAudioState()
+                
+                // Only emit events if there's an active call (to avoid false events during initialization)
+                val hasActiveCall = TVConnectionService.activeConnections.isNotEmpty()
+                if (hasActiveCall) {
+                    // Emit events if state changed (for UI sync on all devices)
+                    if (previousBluetoothState != audioState.isBluetoothActive) {
+                        Log.d(TAG, "getAudioRoute: Bluetooth state changed from $previousBluetoothState to ${audioState.isBluetoothActive}, emitting event")
+                        if (audioState.isBluetoothActive) {
+                            logEvent("", "Bluetooth On")
+                        } else {
+                            logEvent("", "Bluetooth Off")
+                        }
+                    }
+                    if (previousSpeakerState != audioState.isSpeakerActive) {
+                        Log.d(TAG, "getAudioRoute: Speaker state changed from $previousSpeakerState to ${audioState.isSpeakerActive}, emitting event")
+                        if (audioState.isSpeakerActive) {
+                            logEvent("", "Speaker On")
+                        } else if (!audioState.isBluetoothActive) {
+                            logEvent("", "Speaker Off")
+                        }
+                    }
+                } else {
+                    Log.d(TAG, "getAudioRoute: No active call, skipping event emission")
+                }
+                
+                Log.d(TAG, "getAudioRoute: returning=${audioState.audioRoute}")
+                result.success(audioState.audioRoute)
+            }
+
+            TVMethodChannels.IS_BLUETOOTH_AVAILABLE -> {
+                Log.d(TAG, "isBluetoothAvailable invoked")
+                // Use unified audio state detection
+                val audioState = detectAudioState()
+                Log.d(TAG, "isBluetoothAvailable: returning=${audioState.isBluetoothConnected}")
+                result.success(audioState.isBluetoothConnected)
             }
 
             TVMethodChannels.TOGGLE_MUTE -> {
@@ -865,18 +1223,14 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             }
 
             TVMethodChannels.HAS_READ_PHONE_STATE_PERMISSION -> {
-                result.success(checkReadPhoneStatePermission())
+                // No longer required - always return true
+                result.success(true)
             }
 
             TVMethodChannels.REQUEST_READ_PHONE_STATE_PERMISSION -> {
-                logEvent("requestingReadPhoneStatePermission")
-                if (!checkReadPhoneStatePermission()) {
-                    requestPermissionForPhoneState() { granted ->
-                        result.success(granted)
-                    }
-                } else {
-                    result.success(true)
-                }
+                // No longer required - skip and return success
+                logEvent("requestingReadPhoneStatePermission - skipped, not required")
+                result.success(true)
             }
 
             TVMethodChannels.HAS_CALL_PHONE_PERMISSION -> {
@@ -1011,6 +1365,268 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 }
             }
 
+            TVMethodChannels.IS_BATTERY_OPTIMIZED -> {
+                context?.let { ctx ->
+                    val powerManager = ctx.getSystemService(Context.POWER_SERVICE) as PowerManager
+                    val isIgnoringBatteryOptimizations = powerManager.isIgnoringBatteryOptimizations(ctx.packageName)
+                    Log.d(TAG, "isBatteryOptimized: ${!isIgnoringBatteryOptimizations}")
+                    result.success(!isIgnoringBatteryOptimizations)
+                } ?: run {
+                    Log.e(TAG, "Context is null, cannot check battery optimization")
+                    result.success(true)
+                }
+            }
+
+            TVMethodChannels.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS -> {
+                context?.let { ctx ->
+                    val powerManager = ctx.getSystemService(Context.POWER_SERVICE) as PowerManager
+                    if (!powerManager.isIgnoringBatteryOptimizations(ctx.packageName)) {
+                        val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                            data = Uri.parse("package:${ctx.packageName}")
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        try {
+                            ctx.startActivity(intent)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed to request ignore battery optimizations", e)
+                            result.success(false)
+                        }
+                    } else {
+                        Log.d(TAG, "Already ignoring battery optimizations")
+                        result.success(true)
+                    }
+                } ?: run {
+                    Log.e(TAG, "Context is null, cannot request battery optimization")
+                    result.success(false)
+                }
+            }
+
+            TVMethodChannels.OPEN_BATTERY_SETTINGS -> {
+                context?.let { ctx ->
+                    try {
+                        // Try Samsung-specific settings first
+                        val samsungIntent = Intent().apply {
+                            component = android.content.ComponentName(
+                                "com.samsung.android.lool",
+                                "com.samsung.android.sm.battery.ui.BatteryActivity"
+                            )
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        
+                        if (samsungIntent.resolveActivity(ctx.packageManager) != null) {
+                            ctx.startActivity(samsungIntent)
+                            result.success(true)
+                            return@onMethodCall
+                        }
+                        
+                        // Try general app info settings
+                        val appInfoIntent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = Uri.parse("package:${ctx.packageName}")
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        ctx.startActivity(appInfoIntent)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to open battery settings", e)
+                        result.success(false)
+                    }
+                } ?: run {
+                    Log.e(TAG, "Context is null, cannot open battery settings")
+                    result.success(false)
+                }
+            }
+
+            TVMethodChannels.HAS_OVERLAY_PERMISSION -> {
+                context?.let { ctx ->
+                    val hasPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        Settings.canDrawOverlays(ctx)
+                    } else {
+                        true // Permission not needed on older versions
+                    }
+                    Log.d(TAG, "hasOverlayPermission: $hasPermission")
+                    result.success(hasPermission)
+                } ?: run {
+                    result.success(false)
+                }
+            }
+
+            TVMethodChannels.REQUEST_OVERLAY_PERMISSION -> {
+                context?.let { ctx ->
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(ctx)) {
+                        try {
+                            val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
+                                data = Uri.parse("package:${ctx.packageName}")
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            ctx.startActivity(intent)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed to request overlay permission", e)
+                            result.success(false)
+                        }
+                    } else {
+                        Log.d(TAG, "Already has overlay permission or not needed")
+                        result.success(true)
+                    }
+                } ?: run {
+                    result.success(false)
+                }
+            }
+
+            TVMethodChannels.REQUEST_SHOW_ON_LOCK_SCREEN_PERMISSION -> {
+                // For Android 12+, this permission is not needed
+                // For Android 11 and below, we need to enable "Display on Lock Screen"
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    // Android 12+ doesn't need this permission
+                    Log.d(TAG, "Show on lock screen not needed for Android 12+")
+                    result.success(true)
+                } else {
+                    // Android 11 and below - open MIUI or standard app settings
+                    context?.let { ctx ->
+                        try {
+                            val isMiui = isMiuiDevice()
+                            Log.d(TAG, "requestShowOnLockScreenPermission: isMiui=$isMiui, SDK=${Build.VERSION.SDK_INT}")
+                            
+                            var settingsOpened = false
+                            
+                            if (isMiui) {
+                                // Try to open MIUI permission manager for lock screen display
+                                try {
+                                    val miuiIntent = Intent("miui.intent.action.APP_PERM_EDITOR").apply {
+                                        setClassName("com.miui.securitycenter", 
+                                            "com.miui.permcenter.permissions.PermissionsEditorActivity")
+                                        putExtra("extra_pkgname", ctx.packageName)
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    ctx.startActivity(miuiIntent)
+                                    settingsOpened = true
+                                } catch (e: Exception) {
+                                    Log.d(TAG, "MIUI permission editor not found, trying alternative")
+                                }
+                                
+                                // Alternative: Open MIUI app info
+                                if (!settingsOpened) {
+                                    try {
+                                        val miuiAltIntent = Intent("miui.intent.action.APP_PERM_EDITOR").apply {
+                                            setClassName("com.miui.securitycenter",
+                                                "com.miui.permcenter.permissions.AppPermissionsEditorActivity")
+                                            putExtra("extra_pkgname", ctx.packageName)
+                                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        }
+                                        ctx.startActivity(miuiAltIntent)
+                                        settingsOpened = true
+                                    } catch (e: Exception) {
+                                        Log.d(TAG, "MIUI alternative permission editor not found")
+                                    }
+                                }
+                            }
+                            
+                            // Fallback: Open app notification settings
+                            if (!settingsOpened) {
+                                try {
+                                    val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                        putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName)
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    ctx.startActivity(intent)
+                                    settingsOpened = true
+                                } catch (e: Exception) {
+                                    // Final fallback to app settings
+                                    val settingsIntent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                        data = Uri.parse("package:${ctx.packageName}")
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    ctx.startActivity(settingsIntent)
+                                    settingsOpened = true
+                                }
+                            }
+                            
+                            // Mark that user has visited settings (assume they granted permission)
+                            if (settingsOpened) {
+                                markShowOnLockScreenSettingsVisited(ctx)
+                                Log.d(TAG, "requestShowOnLockScreenPermission: Settings opened, marked as visited")
+                            }
+                            
+                            result.success(settingsOpened)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed to request show on lock screen permission", e)
+                            result.success(false)
+                        }
+                    } ?: run {
+                        result.success(false)
+                    }
+                }
+            }
+
+            TVMethodChannels.HAS_SHOW_ON_LOCK_SCREEN_PERMISSION -> {
+                // For Android 12+, always return true (not needed)
+                // For Android 11 and below, check SCHEDULE_EXACT_ALARM permission
+                context?.let { ctx ->
+                    val isGranted = checkShowOnLockScreenPermission(ctx)
+                    Log.d(TAG, "HAS_SHOW_ON_LOCK_SCREEN_PERMISSION: isGranted=$isGranted, SDK=${Build.VERSION.SDK_INT}")
+                    result.success(isGranted)
+                } ?: run {
+                    Log.e(TAG, "Context is null, cannot check show on lock screen permission")
+                    result.success(false)
+                }
+            }
+
+            TVMethodChannels.OPEN_MIUI_PERMISSION_SETTINGS -> {
+                context?.let { ctx ->
+                    try {
+                        // Check if this is a MIUI device
+                        val isMiui = isMiuiDevice()
+                        Log.d(TAG, "openMiuiPermissionSettings: isMiui=$isMiui")
+                        
+                        if (isMiui) {
+                            // Try to open MIUI permission manager
+                            try {
+                                val miuiIntent = Intent("miui.intent.action.APP_PERM_EDITOR").apply {
+                                    setClassName("com.miui.securitycenter", 
+                                        "com.miui.permcenter.permissions.PermissionsEditorActivity")
+                                    putExtra("extra_pkgname", ctx.packageName)
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                ctx.startActivity(miuiIntent)
+                                result.success(true)
+                                return@onMethodCall
+                            } catch (e: Exception) {
+                                Log.d(TAG, "MIUI permission editor not found, trying alternative")
+                            }
+                            
+                            // Alternative: Open MIUI app info
+                            try {
+                                val miuiAltIntent = Intent("miui.intent.action.APP_PERM_EDITOR").apply {
+                                    setClassName("com.miui.securitycenter",
+                                        "com.miui.permcenter.permissions.AppPermissionsEditorActivity")
+                                    putExtra("extra_pkgname", ctx.packageName)
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                ctx.startActivity(miuiAltIntent)
+                                result.success(true)
+                                return@onMethodCall
+                            } catch (e: Exception) {
+                                Log.d(TAG, "MIUI alternative permission editor not found")
+                            }
+                        }
+                        
+                        // Fallback: Open general app settings
+                        val appInfoIntent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = Uri.parse("package:${ctx.packageName}")
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        ctx.startActivity(appInfoIntent)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to open MIUI permission settings", e)
+                        result.success(false)
+                    }
+                } ?: run {
+                    result.success(false)
+                }
+            }
+
             else -> {
                 result.notImplemented()
             }
@@ -1024,9 +1640,13 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     private fun sendDigits(digits: String): Boolean {
         // Send to active call via Intent
         context?.let { ctx ->
+            // Use callSid if available, otherwise get from active connections
+            val handle = callSid ?: TVConnectionService.getActiveCallHandle()
+            Log.d(TAG, "sendDigits: digits=$digits, callSid=$callSid, handle=$handle")
+            
             Intent(ctx, TVConnectionService::class.java).apply {
                 action = TVConnectionService.ACTION_SEND_DIGITS
-                putExtra(TVConnectionService.EXTRA_CALL_HANDLE, callSid)
+                putExtra(TVConnectionService.EXTRA_CALL_HANDLE, handle)
                 // Corrected line: Use EXTRA_DIGITS as the key for the digits extra
                 putExtra(TVConnectionService.EXTRA_DIGITS, digits)
                 ctx.startService(this)
@@ -1053,9 +1673,13 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
 
     private fun hangup() {
         context?.let { ctx ->
+            // Use callSid if available, otherwise get from active connections
+            val handle = callSid ?: TVConnectionService.getActiveCallHandle()
+            Log.d(TAG, "hangup: callSid=$callSid, handle=$handle")
+            
             Intent(ctx, TVConnectionService::class.java).apply {
                 action = TVConnectionService.ACTION_HANGUP
-                putExtra(TVConnectionService.EXTRA_CALL_HANDLE, callSid)
+                putExtra(TVConnectionService.EXTRA_CALL_HANDLE, handle)
                 ctx.startService(this)
             }
         } ?: run {
@@ -1079,37 +1703,53 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     }
 
     private fun toggleSpeaker(ctx: Context, speakerIsOn: Boolean) {
+        // Use callSid if available, otherwise get from active connections
+        val handle = callSid ?: TVConnectionService.getActiveCallHandle()
+        Log.d(TAG, "toggleSpeaker: speakerIsOn=$speakerIsOn, callSid=$callSid, handle=$handle")
+        
         Intent(ctx, TVConnectionService::class.java).apply {
             action = TVConnectionService.ACTION_TOGGLE_SPEAKER
             putExtra(TVConnectionService.EXTRA_SPEAKER_STATE, speakerIsOn)
-            putExtra(TVConnectionService.EXTRA_CALL_HANDLE, callSid)
+            putExtra(TVConnectionService.EXTRA_CALL_HANDLE, handle)
             ctx.startService(this)
         }
     }
 
     private fun toggleMute(ctx: Context, mute: Boolean) {
+        // Use callSid if available, otherwise get from active connections
+        val handle = callSid ?: TVConnectionService.getActiveCallHandle()
+        Log.d(TAG, "toggleMute: mute=$mute, callSid=$callSid, handle=$handle")
+        
         Intent(ctx, TVConnectionService::class.java).apply {
             action = TVConnectionService.ACTION_TOGGLE_MUTE
             putExtra(TVConnectionService.EXTRA_MUTE_STATE, mute)
-            putExtra(TVConnectionService.EXTRA_CALL_HANDLE, callSid)
+            putExtra(TVConnectionService.EXTRA_CALL_HANDLE, handle)
             ctx.startService(this)
         }
     }
 
     private fun toggleBluetooth(ctx: Context, bluetoothOn: Boolean) {
+        // Use callSid if available, otherwise get from active connections
+        val handle = callSid ?: TVConnectionService.getActiveCallHandle()
+        Log.d(TAG, "toggleBluetooth: bluetoothOn=$bluetoothOn, callSid=$callSid, handle=$handle")
+        
         Intent(ctx, TVConnectionService::class.java).apply {
             action = TVConnectionService.ACTION_TOGGLE_BLUETOOTH
             putExtra(TVConnectionService.EXTRA_BLUETOOTH_STATE, bluetoothOn)
-            putExtra(TVConnectionService.EXTRA_CALL_HANDLE, callSid)
+            putExtra(TVConnectionService.EXTRA_CALL_HANDLE, handle)
             ctx.startService(this)
         }
     }
 
     private fun toggleHold(ctx: Context, shouldHold: Boolean) {
+        // Use callSid if available, otherwise get from active connections
+        val handle = callSid ?: TVConnectionService.getActiveCallHandle()
+        Log.d(TAG, "toggleHold: shouldHold=$shouldHold, callSid=$callSid, handle=$handle")
+        
         Intent(ctx, TVConnectionService::class.java).apply {
             action = TVConnectionService.ACTION_TOGGLE_HOLD
             putExtra(TVConnectionService.EXTRA_HOLD_STATE, shouldHold)
-            putExtra(TVConnectionService.EXTRA_CALL_HANDLE, callSid)
+            putExtra(TVConnectionService.EXTRA_CALL_HANDLE, handle)
             ctx.startService(this)
         }
     }
@@ -1117,11 +1757,9 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     /**
      * Attempts to place a call using the [TVConnectionService].
      * Requires permissions:
-     * - [Manifest.permission.READ_PHONE_STATE]: for checking call capable accounts
-     * - [Manifest.permission.READ_PHONE_NUMBERS]: for getting the phone account via the handle.
      * - [Manifest.permission.RECORD_AUDIO]: for placing the call and capturing microphone audio.
      */
-    @RequiresPermission(allOf = [Manifest.permission.READ_PHONE_STATE, Manifest.permission.READ_PHONE_NUMBERS, Manifest.permission.RECORD_AUDIO])
+    @RequiresPermission(Manifest.permission.RECORD_AUDIO)
     private fun placeCall(
         ctx: Context,
         accessToken: String,
@@ -1135,60 +1773,46 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         assert(!connect && (to == null || to.isNotEmpty())) { "To cannot be empty" }
         assert(!connect && (from == null || from.isNotEmpty())) { "From cannot be empty" }
 
-        telecomManager?.let { tm ->
-            if (!tm.hasCallCapableAccount(ctx, TVConnectionService::class.java.name)) {
-                Log.e(TAG, "No registered phone account, call `registerPhoneAccount()` first")
-                return false
-            }
-            if (!checkMicrophonePermission()) {
-                Log.e(TAG, "No microphone permission, call `requestMicrophonePermission()` first")
-                return false
-            }
-            if (!checkReadPhoneNumbersPermission()) {
-                Log.e(TAG, "No read phone state permission, call `requestReadPhoneStatePermission()` first")
-                return false
-            }
-            if (!checkCallPhonePermission()) {
-                Log.e(TAG, "No call phone permission, call `requestCallPhonePermission()` first")
-                return false
-            }
-            if (!checkManageOwnCallsPermission()) {
-                Log.e(TAG, "No manage own calls permission, call `requestManageOwnCallsPermission()` first")
-                return false
-            }
-
-            val callParams = HashMap<String, String>(params)
-            if (params[Constants.PARAM_TO] == null) {
-                Log.w(TAG, "Call parameters must include '${Constants.PARAM_TO}', removing...")
-                callParams.remove(Constants.PARAM_TO)
-            }
-            if (params[Constants.PARAM_FROM] == null) {
-                Log.w(TAG, "Call parameters must include '${Constants.PARAM_FROM}', removing...")
-                callParams.remove(Constants.PARAM_FROM)
-            }
-
-            Intent(ctx, TVConnectionService::class.java).apply {
-                action = TVConnectionService.ACTION_PLACE_OUTGOING_CALL
-                putExtra(TVConnectionService.EXTRA_TOKEN, accessToken)
-                if(connect) {
-                    putExtra(TVConnectionService.EXTRA_CONNECT_RAW, true)
-                }
-                putExtra(TVConnectionService.EXTRA_TO, to)
-                putExtra(TVConnectionService.EXTRA_FROM, from)
-                putExtra(TVConnectionService.EXTRA_CALLER_NAME, callerName)
-                putExtra(TVConnectionService.EXTRA_OUTGOING_PARAMS, Bundle().apply {
-                    for ((key, value) in params) {
-                        putString(key, value)
-                    }
-                })
-                ctx.startService(this)
-            }
-
-            return true
-        } ?: run {
-            Log.e(TAG, "TelecomManager is null, cannot place call")
+        // Only microphone permission is required for direct Twilio Voice calls
+        if (!checkMicrophonePermission()) {
+            Log.e(TAG, "No microphone permission, call `requestMicrophonePermission()` first")
             return false
         }
+
+        // Reset audio states for new outgoing call
+        isSpeakerOn = false
+        isBluetoothOn = false
+        isMuted = false
+        Log.d(TAG, "placeCall: Reset audio states: isSpeakerOn=$isSpeakerOn, isBluetoothOn=$isBluetoothOn")
+
+        val callParams = HashMap<String, String>(params)
+        if (params[Constants.PARAM_TO] == null) {
+            Log.w(TAG, "Call parameters must include '${Constants.PARAM_TO}', removing...")
+            callParams.remove(Constants.PARAM_TO)
+        }
+        if (params[Constants.PARAM_FROM] == null) {
+            Log.w(TAG, "Call parameters must include '${Constants.PARAM_FROM}', removing...")
+            callParams.remove(Constants.PARAM_FROM)
+        }
+
+        Intent(ctx, TVConnectionService::class.java).apply {
+            action = TVConnectionService.ACTION_PLACE_OUTGOING_CALL
+            putExtra(TVConnectionService.EXTRA_TOKEN, accessToken)
+            if(connect) {
+                putExtra(TVConnectionService.EXTRA_CONNECT_RAW, true)
+            }
+            putExtra(TVConnectionService.EXTRA_TO, to)
+            putExtra(TVConnectionService.EXTRA_FROM, from)
+            putExtra(TVConnectionService.EXTRA_CALLER_NAME, callerName)
+            putExtra(TVConnectionService.EXTRA_OUTGOING_PARAMS, Bundle().apply {
+                for ((key, value) in params) {
+                    putString(key, value)
+                }
+            })
+            ctx.startService(this)
+        }
+
+        return true
     }
 
     private fun formatCustomParams(
@@ -1203,21 +1827,8 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     }
 
     private fun checkAccountConnection(context: Context): Boolean {
-        var isConnected = false
-        val permissionResult =
-            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE)
-        if (permissionResult == PackageManager.PERMISSION_GRANTED) {
-            telecomManager?.let {
-                val enabledAccounts: List<PhoneAccountHandle> = it.callCapablePhoneAccounts
-                for (account in enabledAccounts) {
-                    if (account.componentName.className == TVConnectionService::class.java.name) {
-                        isConnected = true
-                        break
-                    }
-                }
-            }
-        }
-        return isConnected
+        // Simply check if we have active connections instead of querying TelecomManager
+        return TVConnectionService.hasActiveCalls()
     }
 
     /**
@@ -1260,7 +1871,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
 //                    return false
 //                }
 
-                if (tm.hasCallCapableAccount(ctx, phoneAccountHandle.componentName.className)) {
+                if (tm.hasCallCapableAccountSafe(ctx, phoneAccountHandle.componentName.className)) {
                     Log.w(TAG, "registerPhoneAccount: Phone account already registered, re-registering anyway")
 //                    return true
                 }
@@ -1414,6 +2025,9 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 addAction(TVNativeCallEvents.EVENT_DISCONNECTED_LOCAL)
                 addAction(TVNativeCallEvents.EVENT_DISCONNECTED_REMOTE)
                 addAction(TVNativeCallEvents.EVENT_MISSED)
+                addAction(TVNativeCallEvents.EVENT_MUTE)
+                addAction(TVNativeCallEvents.EVENT_SPEAKER)
+                addAction(TVNativeCallEvents.EVENT_BLUETOOTH)
             }
             LocalBroadcastManager.getInstance(context!!)
                 .registerReceiver(broadcastReceiver!!, intentFilter)
@@ -1493,13 +2107,25 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         description: String,
         isError: Boolean = false
     ) {
+        val message = if (prefix.isEmpty()) description else "$prefix$separator$description"
+        
         if (eventSink == null) {
+            // Queue important call events for when Flutter is ready
+            // Only queue call state events, not general logs
+            if (message.contains("Connected|") || message.contains("Ringing|") || 
+                message.contains("Answer|") || message.contains("Call Ended") ||
+                message.contains("Incoming|") || message.contains("Reconnecting") ||
+                message.contains("Reconnected")) {
+                Log.d(TAG, "logEvent: eventSink is null, queuing event: $message")
+                pendingEvents.add(message)
+            } else {
+                Log.d(TAG, "logEvent: eventSink is null, dropping non-critical event: $message")
+            }
             return
         }
         if (isError) {
             eventSink!!.error(FlutterErrorCodes.UNAVAILABLE_ERROR, description, null)
         } else {
-            val message = if (prefix.isEmpty()) description else "$prefix$separator$description"
             Log.d(TAG, "logEvent: $message")
             eventSink!!.success(message)
         }
@@ -1633,6 +2259,65 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         return match?.groups?.get(1)?.value ?: input
     }
 
+    /**
+     * Check if the "Display on Lock Screen" permission is granted.
+     * 
+     * For Android 12+: Not needed, always returns true
+     * For Android 11 and below: Checks SCHEDULE_EXACT_ALARM permission
+     * 
+     * Note: On MIUI devices, this may not be 100% reliable as MIUI has custom permission handling,
+     * but it's the best we can do without direct access to MIUI's permission database.
+     */
+    private fun checkShowOnLockScreenPermission(context: Context): Boolean {
+        // Android 12+ doesn't need this permission  
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            Log.d(TAG, "checkShowOnLockScreenPermission: Android 12+, returning true")
+            return true
+        }
+        
+        // Android 11 and below on MIUI devices:
+        // The "Display on Lock Screen" permission is a MIUI-specific permission
+        // that CANNOT be detected programmatically via any Android API.
+        //
+        // Options:
+        // 1. Check overlay permission (canDrawOverlays) as a proxy - but this is different permission
+        // 2. Store in SharedPreferences when user visits settings and assume granted
+        // 3. Always return true and let actual functionality fail if not granted
+        //
+        // We'll use option 2: Check SharedPreferences for a flag set when user opens settings
+        
+        return try {
+            val isMiui = isMiuiDevice()
+            Log.d(TAG, "checkShowOnLockScreenPermission: SDK=${Build.VERSION.SDK_INT}, isMiui=$isMiui")
+            
+            // Check SharedPreferences for the flag
+            val prefs = context.getSharedPreferences("twilio_voice_prefs", Context.MODE_PRIVATE)
+            val hasVisitedSettings = prefs.getBoolean("show_on_lock_screen_settings_visited", false)
+            
+            if (hasVisitedSettings) {
+                Log.d(TAG, "checkShowOnLockScreenPermission: User has visited settings, assuming granted")
+                return true
+            }
+            
+            // If user hasn't visited settings yet, return false
+            Log.d(TAG, "checkShowOnLockScreenPermission: User hasn't visited settings yet, returning false")
+            false
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking show on lock screen permission: ${e.message}", e)
+            false
+        }
+    }
+    
+    private fun markShowOnLockScreenSettingsVisited(context: Context) {
+        try {
+            val prefs = context.getSharedPreferences("twilio_voice_prefs", Context.MODE_PRIVATE)
+            prefs.edit().putBoolean("show_on_lock_screen_settings_visited", true).apply()
+            Log.d(TAG, "markShowOnLockScreenSettingsVisited: Flag set to true")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting show on lock screen flag: ${e.message}", e)
+        }
+    }
+
     private fun requestPermissionForPhoneState(onPermissionResult: (Boolean) -> Unit) {
         return requestPermissionOrShowRationale(
             "Read Phone State",
@@ -1719,25 +2404,74 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                         return
                     }
 
+                // Handle mute state change
                 isMuted =
                     if (isMuted == callAudioState.isMuted) isMuted else callAudioState.isMuted.also {
                         logEvent("", if (it) "Mute" else "Unmute")
                     }
-                val speakerRouteSelected = callAudioState.route == CallAudioState.ROUTE_SPEAKER
-                isSpeakerOn =
-                    if (isSpeakerOn == speakerRouteSelected) isSpeakerOn else speakerRouteSelected.also {
-                        logEvent("", if (it) "Speaker On" else "Speaker Off")
+                
+                // Determine the new audio route state
+                val newRoute = callAudioState.route
+                val newSpeakerState = newRoute == CallAudioState.ROUTE_SPEAKER
+                val newBluetoothState = newRoute == CallAudioState.ROUTE_BLUETOOTH
+                
+                Log.d(TAG, "handleBroadcastIntent: Audio route changed - current speaker=$isSpeakerOn, bluetooth=$isBluetoothOn, new route=${CallAudioState.audioRouteToString(newRoute)}")
+                
+                // Only emit ONE event based on what actually changed
+                // Priority: emit event for the route we're transitioning TO (if turning on)
+                // or the route we're transitioning FROM (if turning off)
+                when {
+                    // Turning speaker ON (wasn't speaker, now is speaker)
+                    !isSpeakerOn && newSpeakerState -> {
+                        isSpeakerOn = true
+                        isBluetoothOn = false
+                        logEvent("", "Speaker On")
                     }
-                val bluetoothRouteSelected = callAudioState.route == CallAudioState.ROUTE_BLUETOOTH
-                isBluetoothOn =
-                    if (isBluetoothOn == bluetoothRouteSelected) isBluetoothOn else bluetoothRouteSelected.also {
-                        logEvent("", if (it) "Bluetooth On" else "Bluetooth Off")
+                    // Turning bluetooth ON (wasn't bluetooth, now is bluetooth)
+                    !isBluetoothOn && newBluetoothState -> {
+                        isBluetoothOn = true
+                        isSpeakerOn = false
+                        logEvent("", "Bluetooth On")
                     }
+                    // Turning speaker OFF (was speaker, now not speaker)
+                    isSpeakerOn && !newSpeakerState -> {
+                        isSpeakerOn = false
+                        // Only emit "Speaker Off" if we're not switching to bluetooth
+                        if (!newBluetoothState) {
+                            logEvent("", "Speaker Off")
+                        }
+                        // If switching to bluetooth, the bluetooth event will be emitted by the next state change
+                        if (newBluetoothState) {
+                            isBluetoothOn = true
+                            logEvent("", "Bluetooth On")
+                        }
+                    }
+                    // Turning bluetooth OFF (was bluetooth, now not bluetooth)
+                    isBluetoothOn && !newBluetoothState -> {
+                        isBluetoothOn = false
+                        // Only emit "Bluetooth Off" if we're not switching to speaker
+                        if (!newSpeakerState) {
+                            logEvent("", "Bluetooth Off")
+                        }
+                        // If switching to speaker, emit speaker event
+                        if (newSpeakerState) {
+                            isSpeakerOn = true
+                            logEvent("", "Speaker On")
+                        }
+                    }
+                    // No state change - route is same or transitioning to earpiece from earpiece
+                    else -> {
+                        // Update states without emitting events
+                        isSpeakerOn = newSpeakerState
+                        isBluetoothOn = newBluetoothState
+                    }
+                }
+                
                 Log.d(
                     TAG,
                     "handleBroadcastIntent: Audio state changed to ${
                         CallAudioState.audioRouteToString(callAudioState.route)
-                    }"
+                    }, isSpeakerOn=$isSpeakerOn, isBluetoothOn=$isBluetoothOn"
                 )
             }
 
@@ -1746,7 +2480,12 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             }
 
             TVBroadcastReceiver.ACTION_INCOMING_CALL -> {
-                // TODO
+                // Reset audio states for new incoming call
+                isSpeakerOn = false
+                isBluetoothOn = false
+                isMuted = false
+                Log.d(TAG, "handleBroadcastIntent: ACTION_INCOMING_CALL - Reset audio states: isSpeakerOn=$isSpeakerOn, isBluetoothOn=$isBluetoothOn")
+                
                 val callHandle =
                     intent.getStringExtra(TVBroadcastReceiver.EXTRA_CALL_HANDLE) ?: run {
                         Log.e(
@@ -1814,7 +2553,13 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             }
 
             TVNativeCallActions.ACTION_ANSWERED -> {
-                // TODO
+                // Reset audio states when call is answered to ensure clean state
+                // Audio routing will happen after the call connects
+                isSpeakerOn = false
+                isBluetoothOn = false
+                isMuted = false
+                Log.d(TAG, "handleBroadcastIntent: ACTION_ANSWERED - Reset audio states: isSpeakerOn=$isSpeakerOn, isBluetoothOn=$isBluetoothOn")
+                
                 val callHandle =
                     intent.getStringExtra(TVBroadcastReceiver.EXTRA_CALL_HANDLE) ?: run {
                         Log.e(
@@ -1930,6 +2675,47 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 val direction = intent.getIntExtra(TVBroadcastReceiver.EXTRA_CALL_DIRECTION, -1)
                 val callDirection = CallDirection.fromId(direction)!!.label
                 callSid = callHandle
+                
+                // Initialize audio state when call connects
+                val activeCall = TVConnectionService.activeConnections.values.firstOrNull()
+                if (activeCall != null) {
+                    val audioState = activeCall.callAudioState
+                    if (audioState != null) {
+                        // Get the current audio route from TelecomManager
+                        val route = when (audioState.route) {
+                            CallAudioState.ROUTE_BLUETOOTH -> "bluetooth"
+                            CallAudioState.ROUTE_SPEAKER -> "speaker"
+                            else -> "earpiece"
+                        }
+                        isBluetoothOn = route == "bluetooth"
+                        isSpeakerOn = route == "speaker"
+                        Log.d(TAG, "EVENT_CONNECTED: Initialized audio state from TelecomManager - route=$route, isBluetoothOn=$isBluetoothOn, isSpeakerOn=$isSpeakerOn")
+                    } else {
+                        // callAudioState is null, check AudioManager for actual routing
+                        Log.d(TAG, "EVENT_CONNECTED: callAudioState is null, checking AudioManager")
+                        context?.let { ctx ->
+                            val audioManager = ctx.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                            if (audioManager != null) {
+                                // Check if Bluetooth SCO is on - this is the most reliable indicator for voice calls
+                                val bluetoothScoOn = audioManager.isBluetoothScoOn
+                                val speakerOn = audioManager.isSpeakerphoneOn
+                                
+                                // Also check via communication device on Android 12+
+                                var bluetoothCommDevice = false
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                    val commDevice = audioManager.communicationDevice
+                                    bluetoothCommDevice = commDevice?.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+                                    Log.d(TAG, "EVENT_CONNECTED: communicationDevice type=${commDevice?.type}")
+                                }
+                                
+                                isBluetoothOn = bluetoothScoOn || bluetoothCommDevice
+                                isSpeakerOn = speakerOn && !isBluetoothOn
+                                Log.d(TAG, "EVENT_CONNECTED: Initialized from AudioManager - bluetoothScoOn=$bluetoothScoOn, bluetoothCommDevice=$bluetoothCommDevice, speakerOn=$speakerOn, final isBluetoothOn=$isBluetoothOn, isSpeakerOn=$isSpeakerOn")
+                            }
+                        }
+                    }
+                }
+                
                 logEvents("", arrayOf("Connected", from, to, callDirection))
             }
 
@@ -1961,17 +2747,73 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             TVNativeCallEvents.EVENT_DISCONNECTED_LOCAL -> {
                 logEvent("", "Call Ended")
                 callSid = null
+                // Reset audio states for next call
+                isSpeakerOn = false
+                isBluetoothOn = false
+                isMuted = false
+                Log.d(TAG, "handleBroadcastIntent: EVENT_DISCONNECTED_LOCAL - Reset audio states: isSpeakerOn=$isSpeakerOn, isBluetoothOn=$isBluetoothOn")
             }
 
             TVNativeCallEvents.EVENT_DISCONNECTED_REMOTE -> {
                 logEvent("", "Call Ended")
                 callSid = null
+                // Reset audio states for next call
+                isSpeakerOn = false
+                isBluetoothOn = false
+                isMuted = false
+                Log.d(TAG, "handleBroadcastIntent: EVENT_DISCONNECTED_REMOTE - Reset audio states: isSpeakerOn=$isSpeakerOn, isBluetoothOn=$isBluetoothOn")
             }
 
             TVNativeCallEvents.EVENT_MISSED -> {
                 logEvent("", "Missed Call")
                 logEvent("", "Call Ended")
                 callSid = null
+                // Reset audio states for next call
+                isSpeakerOn = false
+                isBluetoothOn = false
+                isMuted = false
+                Log.d(TAG, "handleBroadcastIntent: EVENT_MISSED - Reset audio states: isSpeakerOn=$isSpeakerOn, isBluetoothOn=$isBluetoothOn")
+            }
+
+            TVNativeCallEvents.EVENT_MUTE -> {
+                val muteState = intent.getBooleanExtra(TVBroadcastReceiver.EXTRA_CALL_MUTE_STATE, false)
+                isMuted = muteState
+                logEvent("", if (muteState) "Mute" else "Unmute")
+                Log.d(TAG, "handleBroadcastIntent: Mute state changed to $muteState")
+            }
+
+            TVNativeCallEvents.EVENT_SPEAKER -> {
+                Log.d(TAG, "=== EVENT_SPEAKER RECEIVED ===")
+                val speakerState = intent.getBooleanExtra(TVBroadcastReceiver.EXTRA_CALL_SPEAKER_STATE, false)
+                Log.d(TAG, "EVENT_SPEAKER: speakerState from intent = $speakerState")
+                Log.d(TAG, "EVENT_SPEAKER: BEFORE - isSpeakerOn=$isSpeakerOn, isBluetoothOn=$isBluetoothOn")
+                
+                isSpeakerOn = speakerState
+                // Speaker ON means Bluetooth should be OFF (mutual exclusion)
+                if (speakerState) {
+                    Log.d(TAG, "EVENT_SPEAKER: Speaker is ON, setting isBluetoothOn=false (mutual exclusion)")
+                    isBluetoothOn = false
+                }
+                
+                Log.d(TAG, "EVENT_SPEAKER: AFTER - isSpeakerOn=$isSpeakerOn, isBluetoothOn=$isBluetoothOn")
+                logEvent("", if (speakerState) "Speaker On" else "Speaker Off")
+            }
+
+            TVNativeCallEvents.EVENT_BLUETOOTH -> {
+                Log.d(TAG, "=== EVENT_BLUETOOTH RECEIVED ===")
+                val bluetoothState = intent.getBooleanExtra(TVBroadcastReceiver.EXTRA_CALL_BLUETOOTH_STATE, false)
+                Log.d(TAG, "EVENT_BLUETOOTH: bluetoothState from intent = $bluetoothState")
+                Log.d(TAG, "EVENT_BLUETOOTH: BEFORE - isSpeakerOn=$isSpeakerOn, isBluetoothOn=$isBluetoothOn")
+                
+                isBluetoothOn = bluetoothState
+                // Bluetooth ON means Speaker should be OFF (mutual exclusion)
+                if (bluetoothState) {
+                    Log.d(TAG, "EVENT_BLUETOOTH: Bluetooth is ON, setting isSpeakerOn=false (mutual exclusion)")
+                    isSpeakerOn = false
+                }
+                
+                Log.d(TAG, "EVENT_BLUETOOTH: AFTER - isSpeakerOn=$isSpeakerOn, isBluetoothOn=$isBluetoothOn")
+                logEvent("", if (bluetoothState) "Bluetooth On" else "Bluetooth Off")
             }
 
             else -> {
@@ -2010,4 +2852,30 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
 //        logEvent("onDisconnected")
 //    }
     //endregion
+    
+    /**
+     * Check if the device is a MIUI (Xiaomi/Redmi/Poco) device.
+     * MIUI devices require special permissions for showing UI over lock screen.
+     */
+    private fun isMiuiDevice(): Boolean {
+        return try {
+            val prop = Class.forName("android.os.SystemProperties")
+            val get = prop.getMethod("get", String::class.java)
+            val miuiVersion = get.invoke(null, "ro.miui.ui.version.name") as? String
+            val brand = Build.BRAND.lowercase()
+            val manufacturer = Build.MANUFACTURER.lowercase()
+            
+            !miuiVersion.isNullOrEmpty() || 
+                brand.contains("xiaomi") || 
+                brand.contains("redmi") || 
+                brand.contains("poco") ||
+                manufacturer.contains("xiaomi") ||
+                manufacturer.contains("redmi")
+        } catch (e: Exception) {
+            val brand = Build.BRAND.lowercase()
+            val manufacturer = Build.MANUFACTURER.lowercase()
+            brand.contains("xiaomi") || brand.contains("redmi") || brand.contains("poco") ||
+            manufacturer.contains("xiaomi") || manufacturer.contains("redmi")
+        }
+    }
 }

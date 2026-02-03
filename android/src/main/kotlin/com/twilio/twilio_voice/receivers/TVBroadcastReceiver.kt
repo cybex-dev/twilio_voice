@@ -84,6 +84,21 @@ class TVBroadcastReceiver(private val plugin: TwilioVoicePlugin) : BroadcastRece
         const val EXTRA_MUTE_STATE: String = "EXTRA_MUTE_STATE"
 
         /**
+         * Extra used with mute event providing call mute state.
+         */
+        const val EXTRA_CALL_MUTE_STATE: String = "EXTRA_CALL_MUTE_STATE"
+
+        /**
+         * Extra used with speaker event providing call speaker state.
+         */
+        const val EXTRA_CALL_SPEAKER_STATE: String = "EXTRA_CALL_SPEAKER_STATE"
+
+        /**
+         * Extra used with bluetooth event providing call bluetooth state.
+         */
+        const val EXTRA_CALL_BLUETOOTH_STATE: String = "EXTRA_CALL_BLUETOOTH_STATE"
+
+        /**
          * Extra used with [ACTION_INCOMING_CALL_IGNORED] providing call mute state.
          */
         const val EXTRA_INCOMING_CALL_IGNORED_REASON: String = "EXTRA_INCOMING_CALL_IGNORED_REASON"

@@ -56,6 +56,26 @@ object TVNativeCallEvents {
      * The event name for when a call is missed
      */
     val EVENT_MISSED: String = "com.twilio.EVENT_MISSED"
+
+    /**
+     * The event name for when mute state changes
+     */
+    val EVENT_MUTE: String = "com.twilio.EVENT_MUTE"
+
+    /**
+     * The event name for when speaker state changes
+     */
+    val EVENT_SPEAKER: String = "com.twilio.EVENT_SPEAKER"
+
+    /**
+     * The event name for when bluetooth state changes
+     */
+    val EVENT_BLUETOOTH: String = "com.twilio.EVENT_BLUETOOTH"
+
+    /**
+     * The event name for when a permission is required to complete an action
+     */
+    val EVENT_PERMISSION_REQUIRED: String = "com.twilio.EVENT_PERMISSION_REQUIRED"
 }
 
 /**

@@ -1,32 +1,27 @@
 package com.twilio.twilio_voice.fcm
 
-import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import android.telecom.*
+import android.os.PowerManager
 import android.util.Log
-import androidx.annotation.RequiresPermission
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.twilio.twilio_voice.receivers.TVBroadcastReceiver
 import com.twilio.twilio_voice.service.TVConnectionService
-import com.twilio.twilio_voice.storage.StorageImpl
-import com.twilio.twilio_voice.types.TelecomManagerExtension.canReadPhoneNumbers
 import com.twilio.voice.CallException
 import com.twilio.voice.CallInvite
 import com.twilio.voice.CancelledCallInvite
 import com.twilio.voice.MessageListener
 import com.twilio.voice.Voice
-import com.twilio.twilio_voice.types.TelecomManagerExtension.canReadPhoneState
-import com.twilio.twilio_voice.types.TelecomManagerExtension.hasCallCapableAccount
 
 class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageListener {
 
     companion object {
         private const val TAG = "VoiceFirebaseMessagingService"
+        private const val WAKELOCK_TAG = "twilio_voice:incoming_call_wakelock"
 
         /**
          * Action used with [EXTRA_TOKEN] to send the FCM token to the TwilioVoicePlugin
@@ -58,23 +53,53 @@ class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageListene
      * @param remoteMessage Object representing the message received from Firebase Cloud Messaging.
      */
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
+        Log.d(TAG, "========== onMessageReceived START ==========")
         Log.d(TAG, "Received onMessageReceived()")
         Log.d(TAG, "Bundle data: " + remoteMessage.data)
         Log.d(TAG, "From: " + remoteMessage.from)
-        // If application is running in the foreground use local broadcast to handle message.
-        // Otherwise use the background isolate to handle message.
+        Log.d(TAG, "Priority: " + remoteMessage.priority)
+        Log.d(TAG, "Original Priority: " + remoteMessage.originalPriority)
+        Log.d(TAG, "TTL: " + remoteMessage.ttl)
+        Log.d(TAG, "Sent Time: " + remoteMessage.sentTime)
+        
+        // Check if this is a Twilio Voice message
         if (remoteMessage.data.isNotEmpty()) {
+            Log.d(TAG, "Data payload is not empty, checking if Twilio message...")
             val valid = Voice.handleMessage(this, remoteMessage.data, this)
+            Log.d(TAG, "Voice.handleMessage returned: $valid")
             if (!valid) {
-                Log.d(TAG, "onMessageReceived: The message was not a valid Twilio Voice SDK payload, continuing...")
+                Log.d(TAG, "onMessageReceived: The message was not a valid Twilio Voice SDK payload, forwarding to Flutter...")
+                // Forward non-Twilio messages to Flutter firebase_messaging plugin
+                forwardToFlutterFirebaseMessaging(remoteMessage)
+            } else {
+                Log.d(TAG, "Twilio Voice message handled successfully - waiting for onCallInvite callback")
             }
+        } else {
+            Log.d(TAG, "Data payload is empty, forwarding to Flutter")
+            // If there's no data payload, forward to Flutter
+            forwardToFlutterFirebaseMessaging(remoteMessage)
+        }
+        Log.d(TAG, "========== onMessageReceived END ==========")
+    }
+    
+    /**
+     * Forward the message to the Flutter firebase_messaging plugin for handling
+     */
+    private fun forwardToFlutterFirebaseMessaging(remoteMessage: RemoteMessage) {
+        try {
+            // Use reflection to call the Flutter firebase_messaging service
+            val flutterServiceClass = Class.forName("io.flutter.plugins.firebase.messaging.FlutterFirebaseMessagingService")
+            val method = flutterServiceClass.getMethod("onMessageReceived", android.content.Context::class.java, RemoteMessage::class.java)
+            method.invoke(null, applicationContext, remoteMessage)
+        } catch (e: Exception) {
+            Log.d(TAG, "Could not forward message to Flutter firebase_messaging: ${e.message}")
         }
     }
 
     //region MessageListener
-    @RequiresPermission(allOf = [Manifest.permission.RECORD_AUDIO, Manifest.permission.READ_PHONE_STATE, Manifest.permission.READ_PHONE_NUMBERS])
     @SuppressLint("MissingPermission")
     override fun onCallInvite(callInvite: CallInvite) {
+        Log.d(TAG, "========== onCallInvite START ==========")
         Log.d(
             TAG,
             "onCallInvite: {\n\t" +
@@ -84,78 +109,58 @@ class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageListene
                     "Parameters: ${callInvite.customParameters.entries.joinToString { "${it.key}:${it.value}" }},\n\t" +
                     "}"
         )
-        // Get TelecomManager instance
-        val tm = applicationContext.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
 
-        val shouldRejectOnNoPermissions: Boolean = StorageImpl(applicationContext).rejectOnNoPermissions
-        var missingPermissions: Array<String> = emptyArray()
+        // Acquire a partial wake lock to ensure the CPU stays awake long enough
+        // to start the foreground service and show the incoming call UI
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        val wakeLock = powerManager.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
+            WAKELOCK_TAG
+        )
+        wakeLock.acquire(10 * 1000L) // 10 seconds max
+        Log.d(TAG, "onCallInvite: Wake lock acquired")
 
-        // Check permission READ_PHONE_STATE
-        if (!tm.canReadPhoneState(applicationContext)) {
-            missingPermissions += "No `READ_PHONE_STATE` permission, cannot check if phone account is registered. Request this with `requestReadPhoneStatePermission()`"
-        }
-
-        // Check permission READ_PHONE_NUMBERS
-        if (!tm.canReadPhoneNumbers(applicationContext)) {
-            missingPermissions += "No `READ_PHONE_NUMBERS` permission, cannot communicate with ConnectionService if not granted. Request this with `requestReadPhoneNumbersPermission()`"
-        }
-
-        // NOTE(cybex-dev): Foreground services requiring privacy permission e.g. microphone or
-        // camera are required to be started in the foreground. Since we're using the Telecom's
-        // PhoneAccount, we don't directly require microphone access. Further, microphone access
-        // is always denied if the app requiring microphone access via a Foreground service
-        // is in the background (by design).
-//        // Check permission RECORD_AUDIO
-//        if (!applicationContext.hasMicrophoneAccess()) {
-//            shouldRejectCall = true
-//            requiredPermissions += "No `RECORD_AUDIO` permission, VoiceSDK requires this permission. Request this with `requestMicPermission()`"
-//        }
-
-        if(!tm.hasCallCapableAccount(applicationContext, TVConnectionService::class.java.name)) {
-            missingPermissions += "No call capable phone account registered. Request this with `registerPhoneAccount()`"
-        }
-
-        // If we have missingPermissions, then we cannot proceed with answering the call.
-        if (missingPermissions.isNotEmpty()) {
-            missingPermissions.forEach { Log.e(TAG, it) }
-
-            // If we're not rejecting on no permissions, and can't answer because we don't have the required permissions / phone account, we let it ring.
-            // This details a use-case where multiple instances of a user is logged in, and can accept the call on another device.
-            if(!shouldRejectOnNoPermissions) {
-                return
+        try {
+            // Start the TVConnectionService to handle the incoming call
+            // The service will show a notification with full-screen intent that works in terminated state
+            Log.d(TAG, "onCallInvite: Starting TVConnectionService with ACTION_INCOMING_CALL")
+            Intent(applicationContext, TVConnectionService::class.java).apply {
+                action = TVConnectionService.ACTION_INCOMING_CALL
+                putExtra(TVConnectionService.EXTRA_INCOMING_CALL_INVITE, callInvite)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    Log.d(TAG, "onCallInvite: Using startForegroundService for Android O+")
+                    applicationContext.startForegroundService(this)
+                } else {
+                    Log.d(TAG, "onCallInvite: Using startService for pre-Android O")
+                    applicationContext.startService(this)
+                }
             }
-            
-            Log.e(TAG, "onCallInvite: Rejecting incoming call\nSID: ${callInvite.callSid}")
+            Log.d(TAG, "onCallInvite: TVConnectionService started successfully")
 
-            // send broadcast to TVBroadcastReceiver, we notify Flutter about incoming call
+            // Send broadcast to TVBroadcastReceiver for Flutter (if app is in foreground)
+            Log.d(TAG, "onCallInvite: Sending broadcast to TVBroadcastReceiver")
             Intent(applicationContext, TVBroadcastReceiver::class.java).apply {
-                action = TVBroadcastReceiver.ACTION_INCOMING_CALL_IGNORED
-                putExtra(TVBroadcastReceiver.EXTRA_INCOMING_CALL_IGNORED_REASON, missingPermissions)
+                action = TVBroadcastReceiver.ACTION_INCOMING_CALL
+                putExtra(TVBroadcastReceiver.EXTRA_CALL_INVITE, callInvite)
                 putExtra(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callInvite.callSid)
                 LocalBroadcastManager.getInstance(applicationContext).sendBroadcast(this)
             }
-
-            // Reject incoming call
-            Log.d(TAG, "onCallInvite: Rejecting incoming call")
-            callInvite.reject(applicationContext)
-
-            return
+            Log.d(TAG, "onCallInvite: Broadcast sent")
+        } catch (e: Exception) {
+            Log.e(TAG, "onCallInvite: EXCEPTION while starting service: ${e.message}", e)
+        } finally {
+            // Release wake lock after starting service (service will manage its own wake state)
+            if (wakeLock.isHeld) {
+                wakeLock.release()
+                Log.d(TAG, "onCallInvite: Wake lock released")
+            }
         }
-
-        // send broadcast to TVConnectionService, we notify the TelecomManager about incoming call
-        Intent(applicationContext, TVConnectionService::class.java).apply {
-            action = TVConnectionService.ACTION_INCOMING_CALL
-            putExtra(TVConnectionService.EXTRA_INCOMING_CALL_INVITE, callInvite)
-            applicationContext.startService(this)
-        }
-
-        // send broadcast to TVBroadcastReceiver, we notify Flutter about incoming call
-        Intent(applicationContext, TVBroadcastReceiver::class.java).apply {
-            action = TVBroadcastReceiver.ACTION_INCOMING_CALL
-            putExtra(TVBroadcastReceiver.EXTRA_CALL_INVITE , callInvite)
-            putExtra(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callInvite.callSid)
-            LocalBroadcastManager.getInstance(applicationContext).sendBroadcast(this)
-        }
+        Log.d(TAG, "========== onCallInvite END ==========")
+        
+        // Note: We don't directly start IncomingCallActivity here because:
+        // 1. On Android 10+, background activity starts are restricted
+        // 2. The foreground service's notification with full-screen intent handles this properly
+        // 3. The full-screen intent will show IncomingCallActivity even in terminated state
     }
 
     override fun onCancelledCallInvite(cancelledCallInvite: CancelledCallInvite, callException: CallException?) {
@@ -163,12 +168,9 @@ class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageListene
         Intent(applicationContext, TVConnectionService::class.java).apply {
             action = TVConnectionService.ACTION_CANCEL_CALL_INVITE
             putExtra(TVConnectionService.EXTRA_CANCEL_CALL_INVITE, cancelledCallInvite)
-//            applicationContext.startService(this)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                applicationContext.startForegroundService(this) // Ensure it's started as a foreground service
-            } else {
-                applicationContext.startService(this)
-            }
+            // Use regular startService for cancel - foreground service is already running
+            // or will be stopped shortly. No need to start a new foreground service.
+            applicationContext.startService(this)
         }
     }
     //endregion

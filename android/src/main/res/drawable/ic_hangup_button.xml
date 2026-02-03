@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Red circular background -->
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="#FF3B30"/>
+            <size android:width="40dp" android:height="40dp"/>
+        </shape>
+    </item>
+    <!-- Phone hangup icon centered -->
+    <item
+        android:drawable="@drawable/ic_call_end"
+        android:gravity="center"
+        android:width="20dp"
+        android:height="20dp"/>
+</layer-list>

@@ -199,6 +199,49 @@ object TelecomManagerExtension {
     }
 
     /**
+     * Check if phone account is registered without requiring READ_PHONE_STATE
+     * This is a best-effort check that may return false positives when permission is not available
+     * @param ctx application context
+     * @param componentClassName The name of the componentName Class (i.e. ConnectionService)
+     * @return Boolean True if the account is registered, or true if we can't check (assumes registered)
+     */
+    fun TelecomManager.hasCallCapableAccountSafe(ctx: Context, componentClassName: String): Boolean {
+        return try {
+            if (ctx.hasReadPhoneStatePermission()) {
+                callCapablePhoneAccounts.any { it.componentName.className == componentClassName }
+            } else {
+                // Assume account is registered if we can't check
+                // The actual call will fail if it's not
+                Log.w("TelecomManagerExtension", "Cannot check call capable accounts without READ_PHONE_STATE permission, assuming registered")
+                true
+            }
+        } catch (e: SecurityException) {
+            Log.w("TelecomManagerExtension", "Cannot check call capable accounts: ${e.message}")
+            true
+        }
+    }
+
+    /**
+     * Check if currently on a call without requiring READ_PHONE_STATE
+     * Falls back to checking TVConnectionService for active calls
+     * @param ctx application context
+     * @return Boolean True if on a call
+     */
+    fun TelecomManager.isOnCallSafe(ctx: Context): Boolean {
+        return try {
+            if (ctx.hasReadPhoneStatePermission()) {
+                if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.O) isInCall else isInManagedCall
+            } else {
+                // Fall back to checking our own connection service
+                TVConnectionService.hasActiveCalls()
+            }
+        } catch (e: SecurityException) {
+            Log.w("TelecomManagerExtension", "Cannot check if on call: ${e.message}")
+            TVConnectionService.hasActiveCalls()
+        }
+    }
+
+    /**
      * Get the [PhoneAccountHandle] for the app
      * @param ctx application context
      * @return PhoneAccountHandle The phone account handle for the app

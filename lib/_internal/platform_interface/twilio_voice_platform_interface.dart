@@ -154,6 +154,45 @@ abstract class TwilioVoicePlatform extends SharedPlatformInterface {
   /// Only available on Android
   Future<bool> isRejectingCallOnNoPermissions();
 
+  /// Checks if the app is being battery optimized (which can prevent background FCM delivery)
+  /// Returns true if the app is being battery optimized
+  ///
+  /// Android only
+  Future<bool> isBatteryOptimized();
+
+  /// Request to be excluded from battery optimization
+  /// Shows the system dialog asking user to allow ignoring battery optimizations
+  ///
+  /// Android only
+  Future<bool?> requestIgnoreBatteryOptimizations();
+
+  /// Opens the app's battery settings page so user can manually disable battery optimization
+  /// This is needed for Samsung and other OEMs with aggressive battery optimization
+  ///
+  /// Android only
+  Future<bool?> openBatterySettings();
+
+  /// Check if the app has overlay/draw-over-apps permission
+  /// This is needed for showing incoming call UI over lock screen on some devices
+  ///
+  /// Android only
+  Future<bool> hasOverlayPermission();
+
+  /// Request overlay/draw-over-apps permission
+  /// Opens the system settings to allow user to grant the permission
+  /// This is needed for showing incoming call UI over lock screen on some devices
+  ///
+  /// Android only
+  Future<bool?> requestOverlayPermission();
+
+  /// Open MIUI/Xiaomi permission settings
+  /// This opens the MIUI-specific permission page where users can enable
+  /// "Display pop-up windows while running in the background" permission
+  /// Falls back to general app settings if MIUI settings not available
+  ///
+  /// Android only
+  Future<bool?> openMiuiPermissionSettings();
+
   /// Set iOS call kit icon
   ///
   /// This allows for CallKit customization: setting the last button (bottom right) of the callkit.

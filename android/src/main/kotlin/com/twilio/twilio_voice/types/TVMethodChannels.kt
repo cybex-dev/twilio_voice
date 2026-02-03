@@ -8,6 +8,8 @@ enum class TVMethodChannels(val method: String) {
     IS_ON_SPEAKER("isOnSpeaker"),
     TOGGLE_BLUETOOTH("toggleBluetooth"),
     IS_BLUETOOTH_ON("isBluetoothOn"),
+    IS_BLUETOOTH_AVAILABLE("isBluetoothAvailable"),
+    GET_AUDIO_ROUTE("getAudioRoute"),
     TOGGLE_MUTE("toggleMute"),
     IS_MUTED("isMuted"),
     CALL_SID("call-sid"),
@@ -49,6 +51,14 @@ enum class TVMethodChannels(val method: String) {
     IS_REJECTING_CALL_ON_NO_PERMISSIONS("isRejectingCallOnNoPermissions"),
     GetActiveCallOnResumeFromTerminatedState("getActiveCallOnResumeFromTerminatedState"),
     UPDATE_CALLKIT_ICON("updateCallKitIcon"),
+    IS_BATTERY_OPTIMIZED("isBatteryOptimized"),
+    REQUEST_IGNORE_BATTERY_OPTIMIZATIONS("requestIgnoreBatteryOptimizations"),
+    OPEN_BATTERY_SETTINGS("openBatterySettings"),
+    HAS_OVERLAY_PERMISSION("hasOverlayPermission"),
+    REQUEST_OVERLAY_PERMISSION("requestOverlayPermission"),
+    OPEN_MIUI_PERMISSION_SETTINGS("openMiuiPermissionSettings"),
+    REQUEST_SHOW_ON_LOCK_SCREEN_PERMISSION("requestShowOnLockScreenPermission"),
+    HAS_SHOW_ON_LOCK_SCREEN_PERMISSION("hasShowOnLockScreenPermission"),
     CONNECT("connect");
 
     companion object {

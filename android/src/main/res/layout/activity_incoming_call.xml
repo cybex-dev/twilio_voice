@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#1A1A2E"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:padding="32dp">
+
+    <!-- Incoming call label -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="24dp"
+        android:text="Incoming Call"
+        android:textColor="#888888"
+        android:textSize="16sp" />
+
+    <!-- Caller avatar placeholder -->
+    <ImageView
+        android:layout_width="120dp"
+        android:layout_height="120dp"
+        android:layout_marginBottom="24dp"
+        android:background="@drawable/bg_full_rounded"
+        android:backgroundTint="#4A4A6A"
+        android:padding="30dp"
+        android:src="@drawable/ic_microphone" />
+
+    <!-- Caller name -->
+    <TextView
+        android:id="@+id/tv_caller_name"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp"
+        android:text="Unknown Caller"
+        android:textColor="#FFFFFF"
+        android:textSize="28sp"
+        android:textStyle="bold" />
+
+    <!-- Caller number -->
+    <TextView
+        android:id="@+id/tv_caller_number"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="80dp"
+        android:text=""
+        android:textColor="#AAAAAA"
+        android:textSize="18sp" />
+
+    <!-- Button container -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:orientation="horizontal">
+
+        <!-- Decline button -->
+        <Button
+            android:id="@+id/btn_decline"
+            android:layout_width="80dp"
+            android:layout_height="80dp"
+            android:layout_marginEnd="40dp"
+            android:background="@drawable/bg_full_rounded"
+            android:backgroundTint="#E74C3C"
+            android:text="✕"
+            android:textColor="#FFFFFF"
+            android:textSize="32sp" />
+
+        <!-- Answer button -->
+        <Button
+            android:id="@+id/btn_answer"
+            android:layout_width="80dp"
+            android:layout_height="80dp"
+            android:layout_marginStart="40dp"
+            android:background="@drawable/bg_full_rounded"
+            android:backgroundTint="#27AE60"
+            android:text="✓"
+            android:textColor="#FFFFFF"
+            android:textSize="32sp" />
+
+    </LinearLayout>
+
+</LinearLayout>
