@@ -168,9 +168,14 @@ class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageListene
         Intent(applicationContext, TVConnectionService::class.java).apply {
             action = TVConnectionService.ACTION_CANCEL_CALL_INVITE
             putExtra(TVConnectionService.EXTRA_CANCEL_CALL_INVITE, cancelledCallInvite)
-            // Use regular startService for cancel - foreground service is already running
-            // or will be stopped shortly. No need to start a new foreground service.
-            applicationContext.startService(this)
+            // IMPORTANT: Must use startForegroundService on Android O+ to avoid crash
+            // The service MUST call startForeground() immediately in onStartCommand
+            // This fixes: "Context.startForegroundService() did not then call Service.startForeground()"
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                applicationContext.startForegroundService(this)
+            } else {
+                applicationContext.startService(this)
+            }
         }
     }
     //endregion

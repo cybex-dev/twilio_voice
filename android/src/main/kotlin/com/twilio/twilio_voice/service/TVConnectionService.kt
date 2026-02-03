@@ -316,11 +316,38 @@ class TVConnectionService : ConnectionService() {
                 }
 
                 ACTION_CANCEL_CALL_INVITE -> {
+                    // CRITICAL: Start foreground IMMEDIATELY to avoid crash on Android O+
+                    // "Context.startForegroundService() did not then call Service.startForeground()"
+                    // This must happen within 5 seconds of startForegroundService() being called
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        try {
+                            val channel = getOrCreateIncomingCallChannel()
+                            val notification = Notification.Builder(this, channel.id).apply {
+                                setSmallIcon(R.drawable.ic_microphone)
+                                setContentTitle("Call Cancelled")
+                                setContentText("The call was cancelled")
+                                setCategory(Notification.CATEGORY_CALL)
+                                setAutoCancel(true)
+                            }.build()
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                startForeground(INCOMING_CALL_NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
+                            } else {
+                                startForeground(INCOMING_CALL_NOTIFICATION_ID, notification)
+                            }
+                            Log.d(TAG, "ACTION_CANCEL_CALL_INVITE: Started foreground to avoid ANR")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "ACTION_CANCEL_CALL_INVITE: Failed to start foreground: ${e.message}", e)
+                        }
+                    }
+                    
                     // Load CancelledCallInvite class loader
                     // See: https://github.com/twilio/voice-quickstart-android/issues/561#issuecomment-1678613170
                     it.setExtrasClassLoader(CallInvite::class.java.classLoader)
                     val cancelledCallInvite = it.getParcelableExtraSafe<CancelledCallInvite>(EXTRA_CANCEL_CALL_INVITE) ?: run {
                         Log.e(TAG, "onStartCommand: ACTION_CANCEL_CALL_INVITE is missing parcelable EXTRA_CANCEL_CALL_INVITE")
+                        // Still stop foreground and self even if we can't get the invite
+                        stopForegroundService()
+                        stopSelfSafe()
                         return@let
                     }
 
