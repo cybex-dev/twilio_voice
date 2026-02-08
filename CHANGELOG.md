@@ -17,6 +17,7 @@
 * Fix: [Web] Await Twilio Device `register()` and `unregister()` method calls.
 * Fix: [Web] Prevent duplicate `TwilioVoiceWeb` instances.
 * Feat: [iOS] Add support for call logging via `enableCallLogging(bool)` to record call in recents. No other platform currently supports this, see [NOTES.md](NOTES.md#limitations) for more details.
+* Fix: `showMissedCallNotifications` method call not working due to incorrect method channel name. 
 * Feat: update example.
 * Docs: update CHANGELOG
 
