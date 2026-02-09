@@ -148,7 +148,7 @@ class _AppState extends State<App> {
     printDebug("voip-registering access token");
 
     String? androidToken;
-    if(!kIsWeb && Platform.isAndroid) {
+    if (!kIsWeb && Platform.isAndroid) {
       // Get device token for Android only
       androidToken = await FirebaseMessaging.instance.getToken();
       printDebug("androidToken is ${androidToken!}");
@@ -339,8 +339,7 @@ class _AppState extends State<App> {
         showDialog(
           // ignore: use_build_context_synchronously
           context: context,
-          builder: (context) =>
-          const AlertDialog(
+          builder: (context) => const AlertDialog(
             title: Text("Error"),
             content: Text("Failed to register for calls"),
           ),
@@ -358,10 +357,11 @@ class _AppState extends State<App> {
     return Scaffold(
       appBar: AppBar(
         title: const Text("Plugin example app"),
+        actionsPadding: const EdgeInsets.symmetric(horizontal: 8),
         actions: [
-          if(twilioInit) ...[
-            const SizedBox(width: 8),
+          if (twilioInit) ...[
             const _UpdateTokenAction(),
+            const SizedBox(width: 8),
           ],
           _LogoutAction(
             onSuccess: () {
@@ -463,15 +463,19 @@ class _LogoutAction extends StatelessWidget {
             onSuccess?.call();
           } else {
             onFailure?.call("Failed to unregister");
-          }
-        },
-        label: const Text("Logout", style: TextStyle(color: Colors.white)),
-        icon: const Icon(Icons.logout, color: Colors.white));
+        }
+      },
+      label: const Text("Logout", style: TextStyle(color: Colors.white)),
+      icon: const Icon(Icons.logout, color: Colors.white),
+      style: const ButtonStyle(
+        backgroundColor: WidgetStatePropertyAll(Colors.red),
+      ),
+    );
   }
 }
 
 class _UpdateTokenAction extends StatelessWidget {
-  const _UpdateTokenAction({Key? key}): super(key: key);
+  const _UpdateTokenAction({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -494,6 +498,9 @@ class _UpdateTokenAction extends StatelessWidget {
       },
       label: const Text("Update Token", style: TextStyle(color: Colors.white)),
       icon: const Icon(Icons.refresh, color: Colors.white),
+      style: const ButtonStyle(
+        backgroundColor: WidgetStatePropertyAll(Colors.blue),
+      ),
     );
   }
 }
