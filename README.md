@@ -19,11 +19,11 @@ Any and all [Feature Requests](https://github.com/cybex-dev/twilio_voice/issues/
 
 ## Features
 
-- Receive and place calls from iOS devices, uses Callkit to receive calls (Twilio Voice SDK [v6.13.0](https://www.twilio.com/docs/voice/sdks/ios/changelog#6130)).
-- Receive and place calls from Android devices, uses ~~custom UI~~ native call screen to receive calls (via a `ConnectionService` impl) (Twilio Voice SDK [v6.9.0](https://www.twilio.com/docs/voice/sdks/android/3x-changelog#690)).
-- Receive and place calls from Web (FCM push notification integration not yet supported by Twilio Voice Web, see [here](https://github.com/twilio/twilio-voice.js/pull/159#issuecomment-1551553299) for discussion)
+- Receive and place calls from iOS devices, uses Callkit to receive calls (Twilio Voice SDK [v6.13.6](https://www.twilio.com/docs/voice/sdks/ios/changelog#6136)).
+- Receive and place calls from Android devices, uses ~~custom UI~~ native call screen to receive calls (via a `ConnectionService` impl) (Twilio Voice SDK [v6.10.0](https://www.twilio.com/docs/voice/sdks/android/3x-changelog#6100)).
+- Receive and place calls from Web [v2.18.0](https://www.twilio.com/docs/voice/sdks/javascript/changelog#2180-january-5-2026) (FCM push notification integration not yet supported by Twilio Voice Web, see [here](https://github.com/twilio/twilio-voice.js/pull/159#issuecomment-1551553299) for discussion)
 - Receive and place calls from MacOS devices, uses custom UI to receive calls (in future & macOS
-  13.0+, we'll be using CallKit).
+  13.0+, we'll be using CallKit) based on [v2.18.0](https://www.twilio.com/docs/voice/sdks/javascript/changelog#2180-january-5-2026)
 - Interpret TwiML parameters to populate UI, see below [Interpreting Parameters](#interpreting-parameters)
 
 ### Feature addition schedule:
