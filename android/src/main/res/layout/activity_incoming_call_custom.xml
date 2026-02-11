@@ -258,4 +258,144 @@
 
     </LinearLayout>
 
+    <!-- ============================== -->
+    <!-- CALL WAITING BOTTOM SHEET      -->
+    <!-- ============================== -->
+
+    <!-- Dark overlay (initially hidden) -->
+    <View
+        android:id="@+id/callWaitingBottomSheetOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#99000000"
+        android:visibility="gone"
+        android:clickable="true"
+        android:focusable="true" />
+
+    <!-- Bottom Sheet Container (initially hidden) -->
+    <LinearLayout
+        android:id="@+id/callWaitingBottomSheet"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:orientation="vertical"
+        android:background="@drawable/bottom_sheet_background"
+        android:paddingTop="20dp"
+        android:paddingBottom="28dp"
+        android:paddingHorizontal="20dp"
+        android:visibility="gone"
+        android:elevation="16dp">
+
+        <!-- Drag Handle Indicator -->
+        <View
+            android:layout_width="40dp"
+            android:layout_height="4dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginBottom="16dp"
+            android:background="@drawable/bottom_sheet_handle" />
+
+        <!-- Heading: "Answer call and" -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Answer call and..."
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:textColor="#FFFFFF"
+            android:layout_marginBottom="16dp"
+            android:layout_marginStart="4dp" />
+
+        <!-- Option 1: Put on hold -->
+        <LinearLayout
+            android:id="@+id/optionHoldAndAnswer"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="12dp"
+            android:background="@drawable/bottom_sheet_option_ripple"
+            android:clickable="true"
+            android:focusable="true">
+
+            <ImageView
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:src="@drawable/ic_pause_circle"
+                android:tint="#FFC107"
+                android:contentDescription="Hold" />
+
+            <TextView
+                android:id="@+id/optionHoldText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Put caller on hold"
+                android:textSize="16sp"
+                android:textColor="#FFFFFF"
+                android:layout_marginStart="14dp" />
+
+        </LinearLayout>
+
+        <!-- Option 2: End first call and answer -->
+        <LinearLayout
+            android:id="@+id/optionEndAndAnswer"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="12dp"
+            android:layout_marginTop="2dp"
+            android:background="@drawable/bottom_sheet_option_ripple"
+            android:clickable="true"
+            android:focusable="true">
+
+            <ImageView
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:src="@drawable/ic_phone_end"
+                android:tint="#FF5252"
+                android:contentDescription="End Call" />
+
+            <TextView
+                android:id="@+id/optionEndText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="End call with caller"
+                android:textSize="16sp"
+                android:textColor="#FFFFFF"
+                android:layout_marginStart="14dp" />
+
+        </LinearLayout>
+
+        <!-- Option 3: Decline incoming call -->
+        <LinearLayout
+            android:id="@+id/optionDecline"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="12dp"
+            android:layout_marginTop="2dp"
+            android:background="@drawable/bottom_sheet_option_ripple"
+            android:clickable="true"
+            android:focusable="true">
+
+            <ImageView
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:src="@drawable/ic_phone_decline_simple"
+                android:tint="#B0B0B0"
+                android:contentDescription="Decline" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Decline incoming call"
+                android:textSize="16sp"
+                android:textColor="#B0B0B0"
+                android:layout_marginStart="14dp" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
 </FrameLayout>

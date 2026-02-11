@@ -1,5 +1,6 @@
 enum CallEvent {
   incoming,
+  incomingWhileActive, // Incoming call while another call is active - doesn't overwrite activeCall
   connecting,
   ringing,
   connected,

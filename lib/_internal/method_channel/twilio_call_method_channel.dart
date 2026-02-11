@@ -6,6 +6,7 @@ import '../platform_interface/twilio_call_platform_interface.dart';
 // abstract class MethodChannelTwilioCall extends TwilioVoiceSharedPlatform {
 class MethodChannelTwilioCall extends TwilioCallPlatform {
   ActiveCall? _activeCall;
+  ActiveCall? _waitingCall;
 
   @override
   ActiveCall? get activeCall => _activeCall;
@@ -13,6 +14,16 @@ class MethodChannelTwilioCall extends TwilioCallPlatform {
   @override
   set activeCall(ActiveCall? activeCall) {
     _activeCall = activeCall;
+  }
+
+  /// Gets the waiting call (incoming call during active call)
+  @override
+  ActiveCall? get waitingCall => _waitingCall;
+
+  /// Sets the waiting call
+  @override
+  set waitingCall(ActiveCall? waitingCall) {
+    _waitingCall = waitingCall;
   }
 
   MethodChannel get _channel => sharedChannel;

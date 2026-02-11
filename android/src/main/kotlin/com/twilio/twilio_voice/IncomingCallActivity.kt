@@ -39,6 +39,9 @@ import com.twilio.voice.CallInvite
  * After answering, the Flutter UI will be shown.
  */
 class IncomingCallActivity : AppCompatActivity() {
+    // Logging counters
+    private var log_showCallWaitingBottomSheetCounter: Int = 0
+    private var log_acceptButtonCounter: Int = 0
 
     companion object {
         private const val TAG = "IncomingCallActivity"
@@ -46,6 +49,10 @@ class IncomingCallActivity : AppCompatActivity() {
         const val EXTRA_CALLER_NAME = "EXTRA_CALLER_NAME"
         const val EXTRA_CALLER_NUMBER = "EXTRA_CALLER_NUMBER"
         const val EXTRA_CALL_SID = "EXTRA_CALL_SID"
+        const val EXTRA_HAS_ACTIVE_CALL = "EXTRA_HAS_ACTIVE_CALL"
+        const val EXTRA_ACTIVE_CALLER_NAME = "EXTRA_ACTIVE_CALLER_NAME"
+        const val EXTRA_ACTIVE_CALLER_NUMBER = "EXTRA_ACTIVE_CALLER_NUMBER"
+        const val EXTRA_ACTIVE_CALL_HANDLE = "EXTRA_ACTIVE_CALL_HANDLE"
         private const val REQUEST_RECORD_AUDIO_PERMISSION = 200
 
         fun createIntent(context: Context, callInvite: CallInvite): Intent {
@@ -87,6 +94,12 @@ class IncomingCallActivity : AppCompatActivity() {
     private var myNumber: String? = null  // The number receiving the call (to)
     private var wakeLock: PowerManager.WakeLock? = null
     
+    // Call waiting state - active call info when this is a second incoming call
+    private var hasActiveCall = false
+    private var activeCallerName: String? = null
+    private var activeCallerNumber: String? = null
+    private var activeCallHandle: String? = null
+    
     // Ringtone and vibration for incoming call
     private var ringtone: Ringtone? = null
     private var vibrator: Vibrator? = null
@@ -121,7 +134,109 @@ class IncomingCallActivity : AppCompatActivity() {
 
     @SuppressLint("WakelockTimeout")
     override fun onCreate(savedInstanceState: Bundle?) {
-        android.util.Log.d(TAG, "onCreate: STARTED - IncomingCallActivity created")
+    android.util.Log.d(TAG, "[LOG] onCreate: intent extras: " + intent.extras?.keySet()?.joinToString() + ", hasActiveCall=" + intent.getBooleanExtra(EXTRA_HAS_ACTIVE_CALL, false) + ", activeCallerName=" + intent.getStringExtra(EXTRA_ACTIVE_CALLER_NAME) + ", activeCallerNumber=" + intent.getStringExtra(EXTRA_ACTIVE_CALLER_NUMBER) + ", activeCallHandle=" + intent.getStringExtra(EXTRA_ACTIVE_CALL_HANDLE))
+    // Enhanced: Dump all intent extras and relevant state
+    val extras = intent?.extras
+    if (extras != null) {
+        for (key in extras.keySet()) {
+            android.util.Log.d(TAG, "[LOG] onCreate: intent extra $key = ${extras.get(key)}")
+        }
+    } else {
+        android.util.Log.d(TAG, "[LOG] onCreate: intent has no extras")
+    }
+        val activityTimestamp = System.currentTimeMillis()
+        val currentThread = Thread.currentThread()
+        val incomingCallSid = intent.getStringExtra(EXTRA_CALL_SID)
+        val shortSid = incomingCallSid?.takeLast(6) ?: "null"
+        
+        android.util.Log.d(TAG, "╔════════════════════════════════════════════════════════════════════╗")
+        android.util.Log.d(TAG, "║ IncomingCallActivity.onCreate START - Thread: ${currentThread.name}")
+        android.util.Log.d(TAG, "║ Activity Timestamp: $activityTimestamp")
+        android.util.Log.d(TAG, "║ CallSid from intent: $incomingCallSid (short: $shortSid)")
+        android.util.Log.d(TAG, "╚════════════════════════════════════════════════════════════════════╝")
+
+        // CRITICAL: Must call super.onCreate() BEFORE any finish()/return calls.
+        // Android requires super.onCreate() to be called, otherwise a
+        // SuperNotCalledException crash will occur.
+        super.onCreate(savedInstanceState)
+        
+        // ============================================================
+        // SIMULTANEOUS INCOMING CALLS CHECK - IMMEDIATE EXIT
+        // Check if this call's SID matches the pending/claimed call.
+        // If not, this is a duplicate call that should have been rejected.
+        // Immediately finish without showing any UI.
+        // ============================================================
+        val pendingCallSid = TVConnectionService.getPendingIncomingCallSidFromPrefs(applicationContext)
+        val pendingCallSidMem = TVConnectionService.getPendingIncomingCallSid()
+        val serviceActiveCallHandle = TVConnectionService.getActiveCallHandle()
+        val activeConnectionsCount = TVConnectionService.activeConnections.size
+        val isCallInActiveConnections = incomingCallSid != null && TVConnectionService.activeConnections.containsKey(incomingCallSid)
+        
+        android.util.Log.d(TAG, "[ACT-$shortSid] ┌─ State Check ─────────────────────────────────────┐")
+        android.util.Log.d(TAG, "[ACT-$shortSid] │ incomingCallSid = $incomingCallSid")
+        android.util.Log.d(TAG, "[ACT-$shortSid] │ pendingCallSid (prefs) = $pendingCallSid")
+        android.util.Log.d(TAG, "[ACT-$shortSid] │ pendingCallSid (mem) = $pendingCallSidMem")
+        android.util.Log.d(TAG, "[ACT-$shortSid] │ activeCallHandle = $serviceActiveCallHandle")
+        android.util.Log.d(TAG, "[ACT-$shortSid] │ activeConnections.size = $activeConnectionsCount")
+        android.util.Log.d(TAG, "[ACT-$shortSid] │ isCallInActiveConnections = $isCallInActiveConnections")
+        android.util.Log.d(TAG, "[ACT-$shortSid] └────────────────────────────────────────────────────┘")
+        
+        // ============================================================
+        // CHECK 1: If NO pending call exists AND the call is not tracked in activeConnections,
+        // this activity was triggered AFTER the call was already rejected/cleared.
+        // This handles the race condition where:
+        // - fullScreenIntent triggers activity launch
+        // - call gets rejected (clears pendingCallSid)
+        // - activity's onCreate runs with stale data
+        //
+        // NOTE: We also check activeConnections because the pending call SID may have been
+        // cleared after the connection was added to activeConnections but before this
+        // activity launched (200ms delay in showIncomingCallOverLockScreen).
+        // ============================================================
+        if (pendingCallSid == null && pendingCallSidMem == null && serviceActiveCallHandle == null && !isCallInActiveConnections) {
+            android.util.Log.w(TAG, "[ACT-$shortSid] ❌ REJECTED - No pending call exists!")
+            android.util.Log.w(TAG, "[ACT-$shortSid] ❌ Call was likely rejected before activity launched")
+            android.util.Log.w(TAG, "[ACT-$shortSid] ❌ Finishing orphaned activity immediately")
+            finish()
+            return
+        }
+        
+        // CHECK 2: If there's an active call already, allow it through for call waiting
+        // The IncomingCallActivity will show a bottom sheet with hold/merge/end options
+        if (serviceActiveCallHandle != null && serviceActiveCallHandle != incomingCallSid) {
+            android.util.Log.d(TAG, "[ACT-$shortSid] ℹ️ Active call exists ($serviceActiveCallHandle) - will show call waiting options")
+            // Don't finish() - we'll show a different UI for call waiting
+        }
+        
+        // CHECK 3: If there's a different pending call in SharedPreferences, close immediately
+        if (pendingCallSid != null && incomingCallSid != null && pendingCallSid != incomingCallSid) {
+            android.util.Log.w(TAG, "[ACT-$shortSid] ❌ REJECTED - Different pending call exists!")
+            android.util.Log.w(TAG, "[ACT-$shortSid] ❌ pending=$pendingCallSid != current=$incomingCallSid")
+            android.util.Log.w(TAG, "[ACT-$shortSid] ❌ Finishing duplicate activity immediately")
+            finish()
+            return
+        }
+        
+        // CHECK 4: If there's a different pending call in memory, close immediately
+        if (pendingCallSidMem != null && incomingCallSid != null && pendingCallSidMem != incomingCallSid) {
+            android.util.Log.w(TAG, "[ACT-$shortSid] ❌ REJECTED - Different pending call in memory!")
+            android.util.Log.w(TAG, "[ACT-$shortSid] ❌ pendingMem=$pendingCallSidMem != current=$incomingCallSid")
+            android.util.Log.w(TAG, "[ACT-$shortSid] ❌ Finishing duplicate activity immediately")
+            finish()
+            return
+        }
+        
+        // CHECK 5: If this call's SID doesn't match the pending SID (when pending exists), reject
+        if (pendingCallSid != null && pendingCallSid != incomingCallSid) {
+            android.util.Log.w(TAG, "[ACT-$shortSid] ❌ REJECTED - CallSid mismatch with pending!")
+            android.util.Log.w(TAG, "[ACT-$shortSid] ❌ pending=$pendingCallSid != current=$incomingCallSid")
+            android.util.Log.w(TAG, "[ACT-$shortSid] ❌ Finishing mismatched activity immediately")
+            finish()
+            return
+        }
+        
+        android.util.Log.d(TAG, "[ACT-$shortSid] ✓ Call is valid, proceeding with UI")
+        // ============================================================
         
         // For MIUI devices, try to set overlay window type BEFORE super.onCreate()
         if (isMiuiDevice() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -135,10 +250,8 @@ class IncomingCallActivity : AppCompatActivity() {
             }
         }
         
-        // CRITICAL: Set window flags BEFORE super.onCreate() for lock screen display
+        // CRITICAL: Set window flags for lock screen display
         showOverLockScreen()
-        
-        super.onCreate(savedInstanceState)
         
         // Wake up the screen immediately after onCreate
         wakeUpScreen()
@@ -176,6 +289,13 @@ class IncomingCallActivity : AppCompatActivity() {
         
         // Extract the "to" number (the number receiving the call)
         myNumber = callInvite?.to ?: ""
+        
+        // Get active call info (call waiting scenario)
+        hasActiveCall = intent.getBooleanExtra(EXTRA_HAS_ACTIVE_CALL, false)
+        activeCallerName = intent.getStringExtra(EXTRA_ACTIVE_CALLER_NAME)
+        activeCallerNumber = intent.getStringExtra(EXTRA_ACTIVE_CALLER_NUMBER)
+        activeCallHandle = intent.getStringExtra(EXTRA_ACTIVE_CALL_HANDLE)
+        android.util.Log.d(TAG, "onCreate: hasActiveCall=$hasActiveCall, activeCallerName=$activeCallerName, activeCallerNumber=$activeCallerNumber")
 
         // Set caller info
         findViewById<TextView>(R.id.callerName).text = callerName
@@ -224,8 +344,20 @@ class IncomingCallActivity : AppCompatActivity() {
         acceptButtonContainer.elevation = 12f
         acceptButtonBg.elevation = 10f
         
-        setupButtonSwipeAnimation(acceptButtonContainer, acceptButtonBg, acceptButtonCircle) {
-            answerCall()
+        if (hasActiveCall) {
+            android.util.Log.d(TAG, "[LOG] acceptButton: hasActiveCall=true, should show bottom sheet | callSid=$callSid, activeCallHandle=$activeCallHandle, callerName=$callerName, callerNumber=$callerNumber, activeCallerName=$activeCallerName, activeCallerNumber=$activeCallerNumber")
+            // Call waiting mode: accept shows bottom sheet with options
+            setupButtonSwipeAnimation(acceptButtonContainer, acceptButtonBg, acceptButtonCircle) {
+                android.util.Log.d(TAG, "[LOG] acceptButton: onSwipe - about to showCallWaitingBottomSheet | hasActiveCall=$hasActiveCall, callSid=$callSid, activeCallHandle=$activeCallHandle")
+                showCallWaitingBottomSheet()
+            }
+        } else {
+            android.util.Log.d(TAG, "[LOG] acceptButton: hasActiveCall=false, should answer directly | callSid=$callSid, callerName=$callerName, callerNumber=$callerNumber")
+            // Normal mode: accept answers directly
+            setupButtonSwipeAnimation(acceptButtonContainer, acceptButtonBg, acceptButtonCircle) {
+                android.util.Log.d(TAG, "[LOG] acceptButton: onSwipe - about to answerCall | hasActiveCall=$hasActiveCall, callSid=$callSid")
+                answerCall()
+            }
         }
 
         // Set up decline button with swipe animation
@@ -241,6 +373,12 @@ class IncomingCallActivity : AppCompatActivity() {
         
         setupButtonSwipeAnimation(declineButtonContainer, declineButtonBg, declineButtonCircle) {
             declineCall()
+        }
+        
+        // If there's an active call, update the "Call from" label to indicate call waiting
+        if (hasActiveCall) {
+            val callFromLabel = findViewById<TextView>(R.id.callFromLabel)
+            callFromLabel.text = "Another call from"
         }
         
         // Register broadcast receiver to listen for call ended events
@@ -677,6 +815,176 @@ class IncomingCallActivity : AppCompatActivity() {
         releaseWakeLock()
     }
 
+    // ============================================================
+    // CALL WAITING BOTTOM SHEET
+    // Shows 3 options when accepting a call while another is active
+    // ============================================================
+    
+    private fun showCallWaitingBottomSheet() {
+    log_showCallWaitingBottomSheetCounter++
+    android.util.Log.d(TAG, "[LOG] showCallWaitingBottomSheet CALLED. log_showCallWaitingBottomSheetCounter=$log_showCallWaitingBottomSheetCounter | hasActiveCall=$hasActiveCall, callSid=$callSid, activeCallHandle=$activeCallHandle, callerName=$callerName, callerNumber=$callerNumber, activeCallerName=$activeCallerName, activeCallerNumber=$activeCallerNumber")
+    android.util.Log.d(TAG, "showCallWaitingBottomSheet: Showing call waiting options")
+        
+        val bottomSheetOverlay = findViewById<View>(R.id.callWaitingBottomSheetOverlay)
+        val bottomSheetContainer = findViewById<View>(R.id.callWaitingBottomSheet)
+        
+        if (bottomSheetOverlay == null || bottomSheetContainer == null) {
+            android.util.Log.w(TAG, "showCallWaitingBottomSheet: Bottom sheet views not found, falling back to hold+answer")
+            answerCallWithHold()
+            return
+        }
+        
+        // Show the overlay and bottom sheet with animation
+        bottomSheetOverlay.visibility = View.VISIBLE
+        bottomSheetContainer.visibility = View.VISIBLE
+        
+        // Animate bottom sheet sliding up (post to allow layout measurement)
+        bottomSheetContainer.post {
+            bottomSheetContainer.translationY = bottomSheetContainer.height.toFloat()
+            bottomSheetContainer.animate()
+                .translationY(0f)
+                .setDuration(300)
+                .setInterpolator(android.view.animation.DecelerateInterpolator())
+                .start()
+        }
+        
+        // Fade in overlay
+        bottomSheetOverlay.alpha = 0f
+        bottomSheetOverlay.animate()
+            .alpha(1f)
+            .setDuration(300)
+            .start()
+        
+        // Dismiss on overlay tap
+        bottomSheetOverlay.setOnClickListener {
+            hideCallWaitingBottomSheet()
+        }
+        
+        // Set dynamic text with active caller name
+        val displayName = if (!activeCallerName.isNullOrEmpty() && activeCallerName != "Unknown") {
+            activeCallerName!!
+        } else if (!activeCallerNumber.isNullOrEmpty()) {
+            formatPhoneNumber(activeCallerNumber)
+        } else {
+            "active call"
+        }
+        
+        findViewById<TextView>(R.id.optionHoldText)?.text = "Put $displayName on hold"
+        findViewById<TextView>(R.id.optionEndText)?.text = "End call with $displayName"
+        
+        // Set up option buttons
+        findViewById<View>(R.id.optionHoldAndAnswer)?.setOnClickListener {
+            android.util.Log.d(TAG, "showCallWaitingBottomSheet: Option 1 - Hold & Answer")
+            hideCallWaitingBottomSheet()
+            answerCallWithHold()
+        }
+        
+        findViewById<View>(R.id.optionEndAndAnswer)?.setOnClickListener {
+            android.util.Log.d(TAG, "showCallWaitingBottomSheet: Option 2 - End & Answer")
+            hideCallWaitingBottomSheet()
+            answerCallWithEndFirst()
+        }
+        
+        findViewById<View>(R.id.optionDecline)?.setOnClickListener {
+            android.util.Log.d(TAG, "showCallWaitingBottomSheet: Option 3 - Decline incoming")
+            hideCallWaitingBottomSheet()
+            declineCall()
+        }
+    }
+    
+    private fun hideCallWaitingBottomSheet() {
+        val bottomSheetOverlay = findViewById<View>(R.id.callWaitingBottomSheetOverlay)
+        val bottomSheetContainer = findViewById<View>(R.id.callWaitingBottomSheet)
+        
+        bottomSheetContainer?.animate()
+            ?.translationY(bottomSheetContainer.height.toFloat())
+            ?.setDuration(200)
+            ?.withEndAction {
+                bottomSheetContainer.visibility = View.GONE
+            }
+            ?.start()
+        
+        bottomSheetOverlay?.animate()
+            ?.alpha(0f)
+            ?.setDuration(200)
+            ?.withEndAction {
+                bottomSheetOverlay.visibility = View.GONE
+            }
+            ?.start()
+    }
+    
+    private fun answerCallWithHold() {
+        stopRinging()
+        if (callHandled) {
+            android.util.Log.w(TAG, "answerCallWithHold: Call already handled, ignoring")
+            finishAndRemoveTask()
+            return
+        }
+        
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            android.util.Log.d(TAG, "answerCallWithHold: Requesting RECORD_AUDIO permission")
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_RECORD_AUDIO_PERMISSION)
+            return
+        }
+        
+        callHandled = true
+        android.util.Log.d(TAG, "answerCallWithHold: Holding active call and answering new call")
+        releaseWakeLock()
+        callSid?.let { sid ->
+            val answerIntent = Intent(this, TVConnectionService::class.java).apply {
+                action = TVConnectionService.ACTION_ANSWER_WITH_HOLD
+                putExtra(TVConnectionService.EXTRA_CALL_HANDLE, sid)
+                putExtra("EXTRA_ACTIVE_CALL_HANDLE", activeCallHandle)
+                callInvite?.let { invite ->
+                    putExtra(TVConnectionService.EXTRA_INCOMING_CALL_INVITE, invite)
+                }
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(answerIntent)
+            } else {
+                startService(answerIntent)
+            }
+            launchMainActivity()
+        }
+        finishAndRemoveTask()
+    }
+    
+    private fun answerCallWithEndFirst() {
+        stopRinging()
+        if (callHandled) {
+            android.util.Log.w(TAG, "answerCallWithEndFirst: Call already handled, ignoring")
+            finishAndRemoveTask()
+            return
+        }
+        
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            android.util.Log.d(TAG, "answerCallWithEndFirst: Requesting RECORD_AUDIO permission")
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_RECORD_AUDIO_PERMISSION)
+            return
+        }
+        
+        callHandled = true
+        android.util.Log.d(TAG, "answerCallWithEndFirst: Ending active call and answering new call")
+        releaseWakeLock()
+        callSid?.let { sid ->
+            val answerIntent = Intent(this, TVConnectionService::class.java).apply {
+                action = TVConnectionService.ACTION_ANSWER_WITH_END_FIRST
+                putExtra(TVConnectionService.EXTRA_CALL_HANDLE, sid)
+                putExtra("EXTRA_ACTIVE_CALL_HANDLE", activeCallHandle)
+                callInvite?.let { invite ->
+                    putExtra(TVConnectionService.EXTRA_INCOMING_CALL_INVITE, invite)
+                }
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(answerIntent)
+            } else {
+                startService(answerIntent)
+            }
+            launchMainActivity()
+        }
+        finishAndRemoveTask()
+    }
+
     private fun answerCall() {
         // Stop ringing immediately when answering
         stopRinging()
@@ -700,7 +1008,15 @@ class IncomingCallActivity : AppCompatActivity() {
     
     private fun proceedWithAnswer() {
         callHandled = true
-        android.util.Log.d(TAG, "proceedWithAnswer: STARTED - Answering call with callSid: $callSid, hasCallInvite: ${callInvite != null}")
+        android.util.Log.d(TAG, "[LOG] proceedWithAnswer: STARTED - Answering call with callSid: $callSid, hasCallInvite: ${callInvite != null}, hasActiveCall=$hasActiveCall, activeCallHandle=$activeCallHandle, callerName=$callerName, callerNumber=$callerNumber, activeCallerName=$activeCallerName, activeCallerNumber=$activeCallerNumber")
+        val extras = intent?.extras
+        if (extras != null) {
+            for (key in extras.keySet()) {
+                android.util.Log.d(TAG, "[LOG] proceedWithAnswer: intent extra $key = ${extras.get(key)}")
+            }
+        } else {
+            android.util.Log.d(TAG, "[LOG] proceedWithAnswer: intent has no extras")
+        }
         releaseWakeLock()
         callSid?.let { sid ->
             android.util.Log.d(TAG, "proceedWithAnswer: Creating ACTION_ANSWER intent for TVConnectionService")
@@ -777,7 +1093,30 @@ class IncomingCallActivity : AppCompatActivity() {
         } ?: run {
             android.util.Log.w(TAG, "declineCall: No callSid available")
         }
+        
+        // If declining during call waiting, bring back the main activity
+        // so the user can see the active call screen
+        if (hasActiveCall) {
+            android.util.Log.d(TAG, "declineCall: Has active call, launching main activity to restore call UI")
+            launchMainActivityForActiveCall()
+        }
         finishAndRemoveTask()
+    }
+
+    /**
+     * Bring main activity to front to restore the active call UI.
+     * Used when declining the incoming call during call waiting.
+     * Does NOT pass call data extras to avoid resetting Flutter call state (timer, connecting status).
+     */
+    private fun launchMainActivityForActiveCall() {
+        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+        launchIntent?.let {
+            it.flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
+                       Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                       Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+            startActivity(it)
+            android.util.Log.d(TAG, "launchMainActivityForActiveCall: Brought main activity to front for active call - handle=$activeCallHandle")
+        }
     }
 
     private fun launchMainActivity() {
@@ -801,29 +1140,49 @@ class IncomingCallActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
-        android.util.Log.d(TAG, "onNewIntent called with action=${intent?.getStringExtra("action")}")
+        val newCallSid = intent?.getStringExtra(EXTRA_CALL_SID)
+        android.util.Log.d(TAG, "onNewIntent called with action=${intent?.getStringExtra("action")}, newCallSid=$newCallSid, currentCallSid=$callSid")
         
-        // Update the intent
+        // CRITICAL: If we already have a valid call showing, IGNORE any new calls
+        // This prevents the second incoming call from updating the UI
+        if (!callSid.isNullOrEmpty() && newCallSid != null && newCallSid != callSid) {
+            android.util.Log.d(TAG, "onNewIntent: IGNORING new call $newCallSid - already showing call $callSid")
+            // Do NOT update intent or stored values - keep showing the first call
+            return
+        }
+        
+        // Update the intent only if it's the same call or we don't have a call yet
         setIntent(intent)
         
         intent?.let {
             // Check if this is an answer action from notification
             val action = it.getStringExtra("action")
             if (action == "answer") {
-                android.util.Log.d(TAG, "onNewIntent: Handling answer action from notification")
-                // Update the stored values before handling
-                callInvite = it.getParcelableExtra(EXTRA_CALL_INVITE)
-                callSid = it.getStringExtra(EXTRA_CALL_SID)
-                callerName = it.getStringExtra(EXTRA_CALLER_NAME) ?: callerName
-                callerNumber = it.getStringExtra(EXTRA_CALLER_NUMBER) ?: callerNumber
-                myNumber = it.getStringExtra("extra_my_number") ?: myNumber
-                handleAnswerFromNotification()
+                // Only process if this answer is for our current call
+                if (newCallSid == null || newCallSid == callSid) {
+                    android.util.Log.d(TAG, "onNewIntent: Handling answer action from notification for call $callSid")
+                    // Update the stored values before handling
+                    callInvite = it.getParcelableExtra(EXTRA_CALL_INVITE)
+                    callSid = it.getStringExtra(EXTRA_CALL_SID)
+                    callerName = it.getStringExtra(EXTRA_CALLER_NAME) ?: callerName
+                    callerNumber = it.getStringExtra(EXTRA_CALLER_NUMBER) ?: callerNumber
+                    myNumber = it.getStringExtra("extra_my_number") ?: myNumber
+                    handleAnswerFromNotification()
+                } else {
+                    android.util.Log.d(TAG, "onNewIntent: IGNORING answer action for different call $newCallSid (current: $callSid)")
+                }
                 return
             }
             
             // Handle if a new call comes in while this activity is showing
-            callInvite = it.getParcelableExtra(EXTRA_CALL_INVITE)
-            callSid = it.getStringExtra(EXTRA_CALL_SID)
+            // Only update if same call or we don't have one yet
+            if (callSid.isNullOrEmpty() || newCallSid == callSid) {
+                callInvite = it.getParcelableExtra(EXTRA_CALL_INVITE)
+                callSid = it.getStringExtra(EXTRA_CALL_SID)
+                android.util.Log.d(TAG, "onNewIntent: Updated call to $callSid")
+            } else {
+                android.util.Log.d(TAG, "onNewIntent: Keeping current call $callSid, ignoring $newCallSid")
+            }
         }
     }
 

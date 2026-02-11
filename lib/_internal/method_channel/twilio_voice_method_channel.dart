@@ -309,6 +309,21 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
             'Connected - From: ${call.activeCall!.from}, To: ${call.activeCall!.to}, StartOn: ${call.activeCall!.initiated}, Direction: ${call.activeCall!.callDirection}');
       }
       return CallEvent.connected;
+    } else if (state.startsWith("IncomingWhileActive|")) {
+      // Incoming call while another call is active
+      // Do NOT overwrite activeCall - store as waitingCall instead
+      final waitingCallData =
+          createCallFromState(state, callDirection: CallDirection.incoming);
+      if (call is MethodChannelTwilioCall) {
+        (call as MethodChannelTwilioCall).waitingCall = waitingCallData;
+      }
+
+      if (kDebugMode) {
+        printDebug(
+            'IncomingWhileActive - From: ${waitingCallData.from}, To: ${waitingCallData.to}, Direction: ${waitingCallData.callDirection}');
+      }
+
+      return CallEvent.incomingWhileActive;
     } else if (state.startsWith("Incoming|")) {
       // Added as temporary override for incoming calls, not breaking current (expected) Ringing behaviour
       call.activeCall =
