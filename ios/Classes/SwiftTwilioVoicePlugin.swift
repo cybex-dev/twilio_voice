@@ -1219,6 +1219,13 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             self.sendPhoneCallEvents(description: "Call Ended", isError: false)
         } else {
             self.sendPhoneCallEvents(description: "LOG|Call disconnected but other calls remain, suppressing Call Ended", isError: false)
+            
+            // Check if the disconnected call was the held call (not the active one)
+            if let uuid = call.uuid, uuid != self.activeCallUUID {
+                // The held call ended remotely - notify Flutter to clear the held call banner
+                self.sendPhoneCallEvents(description: "Held Call Ended", isError: false)
+            }
+            
             // Unhold the remaining call and restore its info
             unholdRemainingCall()
         }

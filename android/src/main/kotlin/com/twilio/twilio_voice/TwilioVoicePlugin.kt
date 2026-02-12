@@ -2009,6 +2009,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 addAction(TVBroadcastReceiver.ACTION_ACTIVE_CALL_CHANGED)
                 addAction(TVBroadcastReceiver.ACTION_INCOMING_CALL)
                 addAction(TVBroadcastReceiver.ACTION_CALL_ENDED)
+                addAction(TVBroadcastReceiver.ACTION_HELD_CALL_ENDED)
                 addAction(TVBroadcastReceiver.ACTION_CALL_STATE)
                 addAction(TVBroadcastReceiver.ACTION_INCOMING_CALL_IGNORED)
 
@@ -2549,6 +2550,11 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                     Log.d(TAG, "handleBroadcastIntent: Call Ended $callHandle, no remaining calls")
                 }
                 logEvent("", "Call Ended")
+            }
+
+            TVBroadcastReceiver.ACTION_HELD_CALL_ENDED -> {
+                Log.d(TAG, "handleBroadcastIntent: Held Call Ended - the held call disconnected while another call is active")
+                logEvent("", "Held Call Ended")
             }
 
             TVBroadcastReceiver.ACTION_CALL_STATE -> {

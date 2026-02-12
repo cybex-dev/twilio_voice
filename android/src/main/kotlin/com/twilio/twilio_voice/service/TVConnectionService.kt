@@ -950,6 +950,8 @@ class TVConnectionService : ConnectionService() {
                             stopSelfSafe()
                         } else {
                             Log.d(TAG, "[ACTION_INCOMING_CALL onDisconnected] Call $callSid ended but other calls still active (${activeConnections.size} remaining), suppressing ACTION_CALL_ENDED")
+                            // Notify Flutter that the held call ended so the "On Hold" banner is cleared
+                            sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_HELD_CALL_ENDED, callSid, connection.extras)
                             // Unhold remaining call if it was on hold
                             val remainingHandle = getActiveCallHandle()
                             if (remainingHandle != null) {
@@ -1014,6 +1016,8 @@ class TVConnectionService : ConnectionService() {
                                     stopSelfSafe()
                                 } else {
                                     Log.d(TAG, "[ACTION_ANSWER onDisconnected] Call $callSid ended but other calls still active, suppressing ACTION_CALL_ENDED")
+                                    // Notify Flutter that the held call ended so the "On Hold" banner is cleared
+                                    sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_HELD_CALL_ENDED, callSid, newConnection.extras)
                                     val remainingHandle = getActiveCallHandle()
                                     if (remainingHandle != null) {
                                         val remainingConn = getConnection(remainingHandle)
@@ -1509,6 +1513,8 @@ class TVConnectionService : ConnectionService() {
                                 stopSelfSafe()
                             } else {
                                 Log.d(TAG, "[Outgoing onDisconnected] Call ${call.sid} ended but other calls still active, suppressing ACTION_CALL_ENDED")
+                                // Notify Flutter that the held call ended so the "On Hold" banner is cleared
+                                sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_HELD_CALL_ENDED, call.sid ?: "", connection.extras)
                                 val remainingHandle = getActiveCallHandle()
                                 if (remainingHandle != null) {
                                     val remainingConn = getConnection(remainingHandle)

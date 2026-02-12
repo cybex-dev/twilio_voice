@@ -380,6 +380,8 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
         return CallEvent.unhold;
       case 'Hold':
         return CallEvent.hold;
+      case 'Held Call Ended':
+        return CallEvent.heldCallEnded;
       case 'Unmute':
         return CallEvent.unmute;
       case 'Mute':

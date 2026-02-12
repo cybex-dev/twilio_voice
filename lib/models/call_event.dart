@@ -7,6 +7,7 @@ enum CallEvent {
   reconnected,
   reconnecting,
   callEnded,
+  heldCallEnded, // The held call ended remotely while another call is active
   unhold,
   hold,
   unmute,
