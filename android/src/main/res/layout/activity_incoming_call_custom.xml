@@ -2,15 +2,15 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/call_background">
+    android:background="@drawable/incoming_call_background">
 
-    <!-- Background Pattern Image -->
-    <ImageView
-        android:id="@+id/backgroundPattern"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-    android:src="@drawable/doodle_10_percentage"
-        android:scaleType="centerCrop" />
+    <!-- Incoming call background: custom layered gradients matching spec -->
+    <!-- Use a single drawable that composes the top bar, left/right gradients and central spotlight -->
+    <!-- Replaces previous ellipse/vignette layering to precisely match design colors and blends -->
+    <!-- Note: keep a subtle translucent bottom rect for action area via the background drawable itself -->
+    <!-- Set the FrameLayout background to the new incoming background drawable -->
+    
+    <!-- Background drawable applied to root FrameLayout via android:background (set above) -->
 
     <!-- Main Content -->
     <LinearLayout
@@ -22,11 +22,10 @@
         <!-- Top Section: Easify Logo with Name (Center Top) -->
         <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="0.08"
+            android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center"
-            android:paddingTop="30dp">
+            android:paddingTop="60dp">
 
             <!-- Easify Logo with Text (Center, larger) -->
             <ImageView
@@ -39,11 +38,11 @@
 
         </LinearLayout>
 
-    <!-- Spacer - Reduced spacing between logo and caller info -->
+    <!-- Spacer - increased spacing between logo and caller info to match reference -->
     <Space
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="0.01" />
+        android:layout_weight="0.12" />
 
     <!-- Caller Information Section -->
     <LinearLayout
@@ -57,11 +56,12 @@
         <TextView
             android:id="@+id/callFromLabel"
             android:layout_width="wrap_content"
-            android:layout_height="21dp"
+            android:layout_height="wrap_content"
             android:text="Call from"
             android:textSize="14sp"
             android:textColor="#D4D4D8"
-            android:gravity="center_horizontal|top" />
+            android:gravity="center_horizontal"
+            android:layout_marginBottom="4dp" />
 
         <!-- Caller Name -->
         <TextView
@@ -71,17 +71,18 @@
             android:text="Unknown"
             android:textSize="32sp"
             android:textColor="#FFFFFF"
+            android:textStyle="bold"
             android:gravity="center_horizontal" />
 
         <!-- Caller Details (Mobile + Number) -->
         <TextView
             android:id="@+id/callerNumber"
             android:layout_width="wrap_content"
-            android:layout_height="20dp"
+            android:layout_height="wrap_content"
             android:text="Mobile"
             android:textSize="16sp"
             android:textColor="#CCFFFFFF"
-            android:gravity="center_horizontal|top"
+            android:gravity="center_horizontal"
             android:layout_marginTop="4dp" />
 
     </LinearLayout>
@@ -99,52 +100,7 @@
         android:layout_weight="0.48"
         android:gravity="center">
 
-        <!-- Blue Glow Effect Inside Ring -->
-        <View
-            android:id="@+id/avatarGlow"
-            android:layout_width="150dp"
-            android:layout_height="150dp"
-            android:layout_gravity="center"
-            android:background="@drawable/avatar_glow" />
-
-        <!-- Avatar Container with Animated Ring -->
-        <FrameLayout
-            android:id="@+id/avatarContainer"
-            android:layout_width="158dp"
-            android:layout_height="158dp"
-            android:layout_gravity="center" />
-
-        <!-- Caller Initials/Person Icon (Center of ring) -->
-        <FrameLayout
-            android:layout_width="120dp"
-            android:layout_height="120dp"
-            android:layout_gravity="center"
-            android:background="@drawable/avatar_center_background">
-
-            <!-- Caller Initials (Initially Hidden, shown if name is known) -->
-            <TextView
-                android:id="@+id/callerInitials"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:text="BT"
-                android:textSize="40sp"
-                android:textStyle="bold"
-                android:textColor="@color/text_primary"
-                android:gravity="center"
-                android:visibility="visible" />
-
-            <!-- Person Icon (Shown if name is unknown) -->
-            <ImageView
-                android:id="@+id/personIcon"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:src="@drawable/ic_person"
-                android:scaleType="fitCenter"
-                android:padding="20dp"
-                android:contentDescription="Unknown Caller"
-                android:visibility="gone" />
-
-        </FrameLayout>
+        <!-- Center area intentionally left empty (no avatar, no ring, no initials) per design request -->
 
     </FrameLayout>
 
@@ -166,7 +122,7 @@
         android:clipChildren="false"
         android:clipToPadding="false">
 
-        <!-- Accept Button (Left) - with swipe gesture -->
+        <!-- Decline Button (Left) - solid red circle with white icon -->
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -175,56 +131,12 @@
             android:layout_marginEnd="70dp">
 
             <FrameLayout
-                android:id="@+id/acceptButton"
-                android:layout_width="70dp"
-                android:layout_height="70dp"
-                android:clickable="true"
-                android:focusable="true"
-                android:background="@drawable/button_gray_ripple">
-
-                <ImageView
-                    android:id="@+id/acceptButtonCircle"
-                    android:layout_width="28dp"
-                    android:layout_height="28dp"
-                    android:layout_gravity="center"
-                    android:src="@drawable/ic_phone_answer"
-                    android:contentDescription="Accept Call"
-                    android:scaleType="fitCenter"
-                    android:tint="@color/button_accept_icon" />
-
-                <View
-                    android:layout_width="70dp"
-                    android:layout_height="70dp"
-                    android:id="@+id/acceptButtonBg"
-                    android:visibility="gone" />
-
-            </FrameLayout>
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Accept"
-                android:textSize="14sp"
-                android:textColor="@color/text_primary"
-                android:layout_marginTop="8dp" />
-
-        </LinearLayout>
-
-        <!-- Decline Button (Right) - with swipe gesture -->
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:gravity="center_horizontal"
-            android:layout_marginStart="70dp">
-
-            <FrameLayout
                 android:id="@+id/declineButton"
                 android:layout_width="70dp"
                 android:layout_height="70dp"
                 android:clickable="true"
                 android:focusable="true"
-                android:background="@drawable/button_gray_ripple">
+                android:background="@drawable/button_decline_ripple">
 
                 <ImageView
                     android:id="@+id/declineButtonCircle"
@@ -234,7 +146,7 @@
                     android:src="@drawable/ic_phone_end"
                     android:contentDescription="Decline Call"
                     android:scaleType="fitCenter"
-                    android:tint="@color/button_decline_icon" />
+                    android:tint="#FFFFFF" />
 
                 <View
                     android:layout_width="70dp"
@@ -254,6 +166,50 @@
 
         </LinearLayout>
 
+        <!-- Accept Button (Right) - solid green circle with white icon -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center_horizontal"
+            android:layout_marginStart="70dp">
+
+            <FrameLayout
+                android:id="@+id/acceptButton"
+                android:layout_width="70dp"
+                android:layout_height="70dp"
+                android:clickable="true"
+                android:focusable="true"
+                android:background="@drawable/button_accept_ripple">
+
+                <ImageView
+                    android:id="@+id/acceptButtonCircle"
+                    android:layout_width="28dp"
+                    android:layout_height="28dp"
+                    android:layout_gravity="center"
+                    android:src="@drawable/ic_phone_answer"
+                    android:contentDescription="Accept Call"
+                    android:scaleType="fitCenter"
+                    android:tint="#FFFFFF" />
+
+                <View
+                    android:layout_width="70dp"
+                    android:layout_height="70dp"
+                    android:id="@+id/acceptButtonBg"
+                    android:visibility="gone" />
+
+            </FrameLayout>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Accept"
+                android:textSize="14sp"
+                android:textColor="@color/text_primary"
+                android:layout_marginTop="8dp" />
+
+        </LinearLayout>
+
     </LinearLayout>
 
     </LinearLayout>
@@ -262,12 +218,12 @@
     <!-- CALL WAITING BOTTOM SHEET      -->
     <!-- ============================== -->
 
-    <!-- Dark overlay (initially hidden) -->
-    <View
+    <!-- Blurred overlay (initially hidden) - captures & blurs background -->
+    <ImageView
         android:id="@+id/callWaitingBottomSheetOverlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#99000000"
+        android:scaleType="centerCrop"
         android:visibility="gone"
         android:clickable="true"
         android:focusable="true" />
@@ -284,54 +240,61 @@
         android:paddingBottom="28dp"
         android:paddingHorizontal="20dp"
         android:visibility="gone"
-        android:elevation="16dp">
+        android:elevation="16dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="16dp">
 
         <!-- Drag Handle Indicator -->
-        <View
-            android:layout_width="40dp"
-            android:layout_height="4dp"
-            android:layout_gravity="center_horizontal"
-            android:layout_marginBottom="16dp"
-            android:background="@drawable/bottom_sheet_handle" />
+        <!-- Drag handle removed per design: sheet should look like a card -->
 
-        <!-- Heading: "Answer call and" -->
+        <!-- Heading: "Answer call and" (use grey style) -->
         <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Answer call and..."
-            android:textSize="18sp"
-            android:textStyle="bold"
-            android:textColor="#FFFFFF"
-            android:layout_marginBottom="16dp"
+            android:id="@+id/answer_call"
+            android:layout_width="105dp"
+            android:layout_height="18dp"
+            android:text="@string/answer_call"
+            android:textAppearance="@style/answer_call"
+            android:gravity="center_horizontal|center_vertical"
+            android:layout_marginBottom="20dp"
             android:layout_marginStart="4dp" />
 
         <!-- Option 1: Put on hold -->
         <LinearLayout
             android:id="@+id/optionHoldAndAnswer"
             android:layout_width="match_parent"
-            android:layout_height="56dp"
+            android:layout_height="64dp"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:paddingHorizontal="12dp"
+            android:paddingHorizontal="16dp"
             android:background="@drawable/bottom_sheet_option_ripple"
             android:clickable="true"
             android:focusable="true">
 
-            <ImageView
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:src="@drawable/ic_pause_circle"
-                android:tint="#FFC107"
-                android:contentDescription="Hold" />
+            <FrameLayout
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_gravity="center"
+                android:background="@drawable/icon_circle_yellow_ring">
+
+                <ImageView
+                    android:layout_width="18dp"
+                    android:layout_height="18dp"
+                    android:layout_gravity="center"
+                    android:src="@drawable/ic_call_hold"
+                    android:tint="#FFC107"
+                    android:contentDescription="Hold" />
+
+            </FrameLayout>
 
             <TextView
-                android:id="@+id/optionHoldText"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Put caller on hold"
-                android:textSize="16sp"
-                android:textColor="#FFFFFF"
-                android:layout_marginStart="14dp" />
+                android:id="@+id/put_1_222_3"
+                android:layout_width="175dp"
+                android:layout_height="18dp"
+                android:text="@string/put_1_222_3"
+                android:textAppearance="@style/put_1_222_3"
+                android:gravity="center_horizontal|center_vertical"
+                android:layout_marginStart="20dp" />
 
         </LinearLayout>
 
@@ -339,30 +302,39 @@
         <LinearLayout
             android:id="@+id/optionEndAndAnswer"
             android:layout_width="match_parent"
-            android:layout_height="56dp"
+            android:layout_height="64dp"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:paddingHorizontal="12dp"
-            android:layout_marginTop="2dp"
+            android:paddingHorizontal="16dp"
+            android:layout_marginTop="6dp"
             android:background="@drawable/bottom_sheet_option_ripple"
             android:clickable="true"
             android:focusable="true">
 
-            <ImageView
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:src="@drawable/ic_phone_end"
-                android:tint="#FF5252"
-                android:contentDescription="End Call" />
+                <FrameLayout
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:layout_gravity="center"
+                    android:background="@drawable/icon_circle_red_filled">
+
+                    <ImageView
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_phone_end"
+                        android:tint="#FFFFFF"
+                        android:contentDescription="End Call" />
+
+                </FrameLayout>
 
             <TextView
-                android:id="@+id/optionEndText"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="End call with caller"
-                android:textSize="16sp"
-                android:textColor="#FFFFFF"
-                android:layout_marginStart="14dp" />
+                android:id="@+id/end_call_wi"
+                android:layout_width="183dp"
+                android:layout_height="18dp"
+                android:text="@string/end_call_wi"
+                android:textAppearance="@style/end_call_wi"
+                android:gravity="center_horizontal|center_vertical"
+                android:layout_marginStart="20dp" />
 
         </LinearLayout>
 
@@ -370,29 +342,39 @@
         <LinearLayout
             android:id="@+id/optionDecline"
             android:layout_width="match_parent"
-            android:layout_height="56dp"
+            android:layout_height="64dp"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:paddingHorizontal="12dp"
-            android:layout_marginTop="2dp"
+            android:paddingHorizontal="16dp"
+            android:layout_marginTop="6dp"
             android:background="@drawable/bottom_sheet_option_ripple"
             android:clickable="true"
             android:focusable="true">
 
-            <ImageView
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:src="@drawable/ic_phone_decline_simple"
-                android:tint="#B0B0B0"
-                android:contentDescription="Decline" />
+                <FrameLayout
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:layout_gravity="center"
+                    android:background="@drawable/icon_circle_grey_outline">
+
+                    <ImageView
+                        android:layout_width="16dp"
+                        android:layout_height="16dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_phone_decline_simple"
+                        android:tint="#B0B0B0"
+                        android:contentDescription="Decline" />
+
+                </FrameLayout>
 
             <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Decline incoming call"
-                android:textSize="16sp"
-                android:textColor="#B0B0B0"
-                android:layout_marginStart="14dp" />
+                android:id="@+id/decline_inc"
+                android:layout_width="129dp"
+                android:layout_height="18dp"
+                android:text="@string/decline_inc"
+                android:textAppearance="@style/decline_inc"
+                android:gravity="center_horizontal|center_vertical"
+                android:layout_marginStart="20dp" />
 
         </LinearLayout>
 

@@ -5,6 +5,27 @@
              Flutter draws its first frame -->
         <item name="android:windowBackground">@drawable/launch_background</item>
     </style>
+    
+    <!-- Bottom sheet text styles from design -->
+    <style name="answer_call">
+        <item name="android:textSize">14sp</item>
+        <item name="android:textColor">#A1A1AA</item>
+    </style>
+
+    <style name="put_1_222_3">
+        <item name="android:textSize">14sp</item>
+        <item name="android:textColor">#FAFAFA</item>
+    </style>
+
+    <style name="end_call_wi">
+        <item name="android:textSize">14sp</item>
+        <item name="android:textColor">#FAFAFA</item>
+    </style>
+
+    <style name="decline_inc">
+        <item name="android:textSize">14sp</item>
+        <item name="android:textColor">#A1A1AA</item>
+    </style>
 
     <!-- Theme for incoming call activity - shows over lock screen -->
     <style name="Theme.IncomingCall" parent="Theme.AppCompat.NoActionBar">

@@ -20,6 +20,7 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import android.telecom.*
 import android.util.Log
+import android.widget.RemoteViews
 import androidx.annotation.RequiresApi
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.twilio.twilio_voice.R
@@ -2465,8 +2466,17 @@ class TVConnectionService : ConnectionService() {
         val displayName = if (hasCallerName) callerName else formattedCallerNumber.ifEmpty { "Unknown Number" }
         val displaySubtext = if (hasCallerName && formattedCallerNumber.isNotEmpty()) formattedCallerNumber else null
         
+        // Build custom notification layout with RemoteViews
+        val customView = RemoteViews(packageName, R.layout.notification_incoming_call)
+        customView.setTextViewText(R.id.notification_caller_name, displayName)
+        customView.setTextViewText(R.id.notification_caller_number, displaySubtext ?: "Incoming Call")
+        
+        // Attach PendingIntents to the pill buttons
+        customView.setOnClickPendingIntent(R.id.notification_decline_button, declinePendingIntent)
+        customView.setOnClickPendingIntent(R.id.notification_answer_button, answerActivityPendingIntent)
+        
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            // Android 12+ - Use CallStyle for proper call notification
+            // Android 12+ - Use CallStyle with custom content views
             val person = android.app.Person.Builder()
                 .setName(displayName)
                 .setImportant(true)
@@ -2485,18 +2495,19 @@ class TVConnectionService : ConnectionService() {
                 setFullScreenIntent(fullScreenPendingIntent, true)
                 setContentIntent(fullScreenPendingIntent)
                 setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
-                // Use CallStyle for proper incoming call notification
-                // Use activity-based answerActivityPendingIntent to bring app to foreground first
-                // This is required for Android 14+ because foreground services started from background
-                // cannot access microphone. The activity brings app to foreground, then starts service.
+                // Use CallStyle for proper incoming call notification behavior
+                // (ensures system grants full-screen intent permission and proper call UI)
                 style = Notification.CallStyle.forIncomingCall(
                     person,
                     declinePendingIntent,
-                    answerActivityPendingIntent  // Use activity-based intent to bring app to foreground first for microphone access
+                    answerActivityPendingIntent
                 )
+                // Apply custom layout for heads-up (expanded) view
+                setCustomHeadsUpContentView(customView)
+                setCustomBigContentView(customView)
             }
         } else {
-            // Pre-Android 12 - Use regular notification with actions
+            // Pre-Android 12 - Use custom layout with actions as fallback
             Notification.Builder(this, channel.id).apply {
                 setOngoing(true)
                 setContentTitle(displayName)
@@ -2509,12 +2520,14 @@ class TVConnectionService : ConnectionService() {
                 setContentIntent(fullScreenPendingIntent)
                 setVisibility(Notification.VISIBILITY_PUBLIC)
                 setAutoCancel(false)
-                // Add answer and decline actions
-                // Use activity-based intent to bring app to foreground first for microphone access
+                // Apply custom layout for heads-up view
+                setCustomHeadsUpContentView(customView)
+                setCustomBigContentView(customView)
+                // Also add standard actions as fallback for compact notification
                 addAction(Notification.Action.Builder(
                     android.R.drawable.ic_menu_call,
                     "Answer",
-                    answerActivityPendingIntent  // Use activity-based intent for microphone access
+                    answerActivityPendingIntent
                 ).build())
                 addAction(Notification.Action.Builder(
                     android.R.drawable.ic_menu_close_clear_cancel,

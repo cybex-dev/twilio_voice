@@ -8,6 +8,12 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.RenderEffect
+import android.graphics.Shader
 import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.Ringtone
@@ -307,33 +313,10 @@ class IncomingCallActivity : AppCompatActivity() {
         val easifyLogo = findViewById<ImageView>(R.id.easifyLogo)
         easifyLogo.elevation = 8f
 
-        // Add animated avatar ring to container
-        val avatarContainer = findViewById<FrameLayout>(R.id.avatarContainer)
-        val animatedRing = com.twilio.twilio_voice.ui.AnimatedCallAvatarView(this)
-        avatarContainer.addView(animatedRing)
+    // Animated ring removed from UI per design change - keep avatar container in layout for initials/icon only.
 
-        // Handle caller initials or person icon
-        val initialsView = findViewById<TextView>(R.id.callerInitials)
-        val personIconView = findViewById<ImageView>(R.id.personIcon)
-        
-        // Extract initials from caller name (skip phone numbers)
-        if (!callerName.isNullOrEmpty() && callerName != "Unknown" && !callerName!!.matches(Regex("^[+\\d\\s()-]*$"))) {
-            // This is a real name, not just a phone number
-            val initials = callerName!!.split(" ").take(2).map { it.firstOrNull()?.uppercaseChar() ?: "" }.joinToString("")
-            if (initials.isNotEmpty()) {
-                initialsView.text = initials
-                initialsView.visibility = android.view.View.VISIBLE
-                personIconView.visibility = android.view.View.GONE
-            } else {
-                // Show person icon for phone number or empty name
-                initialsView.visibility = android.view.View.GONE
-                personIconView.visibility = android.view.View.VISIBLE
-            }
-        } else {
-            // Show person icon for unknown caller or phone number
-            initialsView.visibility = android.view.View.GONE
-            personIconView.visibility = android.view.View.VISIBLE
-        }
+            // Caller initials and person icon views removed from layout per design change.
+            // No runtime handling required here.
 
         // Set up answer button with swipe animation
         val acceptButtonContainer = findViewById<FrameLayout>(R.id.acceptButton)
@@ -825,7 +808,7 @@ class IncomingCallActivity : AppCompatActivity() {
     android.util.Log.d(TAG, "[LOG] showCallWaitingBottomSheet CALLED. log_showCallWaitingBottomSheetCounter=$log_showCallWaitingBottomSheetCounter | hasActiveCall=$hasActiveCall, callSid=$callSid, activeCallHandle=$activeCallHandle, callerName=$callerName, callerNumber=$callerNumber, activeCallerName=$activeCallerName, activeCallerNumber=$activeCallerNumber")
     android.util.Log.d(TAG, "showCallWaitingBottomSheet: Showing call waiting options")
         
-        val bottomSheetOverlay = findViewById<View>(R.id.callWaitingBottomSheetOverlay)
+        val bottomSheetOverlay = findViewById<ImageView>(R.id.callWaitingBottomSheetOverlay)
         val bottomSheetContainer = findViewById<View>(R.id.callWaitingBottomSheet)
         
         if (bottomSheetOverlay == null || bottomSheetContainer == null) {
@@ -833,6 +816,9 @@ class IncomingCallActivity : AppCompatActivity() {
             answerCallWithHold()
             return
         }
+        
+        // Capture the current screen and apply blur for frosted glass effect
+        applyBlurToOverlay(bottomSheetOverlay)
         
         // Show the overlay and bottom sheet with animation
         bottomSheetOverlay.visibility = View.VISIBLE
@@ -869,8 +855,9 @@ class IncomingCallActivity : AppCompatActivity() {
             "active call"
         }
         
-        findViewById<TextView>(R.id.optionHoldText)?.text = "Put $displayName on hold"
-        findViewById<TextView>(R.id.optionEndText)?.text = "End call with $displayName"
+    // Update bottom sheet option labels to use new resource ids
+    findViewById<TextView>(R.id.put_1_222_3)?.text = "Put $displayName on hold"
+    findViewById<TextView>(R.id.end_call_wi)?.text = "End call with $displayName"
         
         // Set up option buttons
         findViewById<View>(R.id.optionHoldAndAnswer)?.setOnClickListener {
@@ -909,8 +896,172 @@ class IncomingCallActivity : AppCompatActivity() {
             ?.setDuration(200)
             ?.withEndAction {
                 bottomSheetOverlay.visibility = View.GONE
+                // Clear the bitmap to free memory
+                (bottomSheetOverlay as? ImageView)?.setImageDrawable(null)
             }
             ?.start()
+    }
+
+    /**
+     * Captures the current screen content and applies a blur effect to the overlay ImageView.
+     * Uses RenderEffect on Android 12+ for hardware-accelerated blur,
+     * falls back to a fast stack blur algorithm on older versions.
+     */
+    private fun applyBlurToOverlay(overlayImageView: ImageView) {
+        try {
+            val rootView = window.decorView.rootView
+            // Capture the root view into a bitmap
+            val bitmap = Bitmap.createBitmap(rootView.width, rootView.height, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            rootView.draw(canvas)
+            
+            // Add a dark tint on top (semi-transparent black) for the frosted glass look
+            val tintPaint = Paint().apply {
+                color = Color.parseColor("#80000000") // 50% black tint
+            }
+            canvas.drawRect(0f, 0f, bitmap.width.toFloat(), bitmap.height.toFloat(), tintPaint)
+            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                // Android 12+ - Use RenderEffect for GPU-accelerated blur
+                overlayImageView.setImageBitmap(bitmap)
+                overlayImageView.setRenderEffect(
+                    RenderEffect.createBlurEffect(25f, 25f, Shader.TileMode.CLAMP)
+                )
+            } else {
+                // Pre-Android 12 - Use fast stack blur on a downscaled bitmap
+                val scaleFactor = 0.25f
+                val scaledWidth = (bitmap.width * scaleFactor).toInt().coerceAtLeast(1)
+                val scaledHeight = (bitmap.height * scaleFactor).toInt().coerceAtLeast(1)
+                val scaledBitmap = Bitmap.createScaledBitmap(bitmap, scaledWidth, scaledHeight, true)
+                val blurredBitmap = fastStackBlur(scaledBitmap, 20)
+                overlayImageView.setImageBitmap(blurredBitmap)
+                overlayImageView.scaleType = ImageView.ScaleType.CENTER_CROP
+                bitmap.recycle()
+                if (scaledBitmap != blurredBitmap) scaledBitmap.recycle()
+            }
+            
+            android.util.Log.d(TAG, "applyBlurToOverlay: Blur effect applied successfully")
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "applyBlurToOverlay: Failed to apply blur, using dark fallback: ${e.message}")
+            // Fallback: just use a semi-transparent dark background
+            overlayImageView.setBackgroundColor(Color.parseColor("#99000000"))
+        }
+    }
+
+    /**
+     * Fast stack blur algorithm for pre-Android 12 devices.
+     * This is a CPU-based blur that works on a downscaled bitmap for performance.
+     */
+    private fun fastStackBlur(sentBitmap: Bitmap, radius: Int): Bitmap {
+        val bitmap = sentBitmap.copy(sentBitmap.config ?: Bitmap.Config.ARGB_8888, true)
+        val w = bitmap.width
+        val h = bitmap.height
+        val pix = IntArray(w * h)
+        bitmap.getPixels(pix, 0, w, 0, 0, w, h)
+
+        val wm = w - 1
+        val hm = h - 1
+        val wh = w * h
+        val div = radius + radius + 1
+        val r = IntArray(wh)
+        val g = IntArray(wh)
+        val b = IntArray(wh)
+        var rsum: Int; var gsum: Int; var bsum: Int
+        var x: Int; var y: Int; var i: Int; var p: Int; var yp: Int; var yi: Int; var yw: Int
+        val vmin = IntArray(maxOf(w, h))
+        var divsum = (div + 1) shr 1
+        divsum *= divsum
+        val dv = IntArray(256 * divsum)
+        i = 0
+        while (i < 256 * divsum) { dv[i] = i / divsum; i++ }
+
+        yi = 0; yw = 0
+        val stack = Array(div) { IntArray(3) }
+        var stackpointer: Int; var stackstart: Int; var sir: IntArray
+        var rbs: Int; var r1 = radius + 1
+        var routsum: Int; var goutsum: Int; var boutsum: Int
+        var rinsum: Int; var ginsum: Int; var binsum: Int
+
+        y = 0
+        while (y < h) {
+            rinsum = 0; ginsum = 0; binsum = 0
+            routsum = 0; goutsum = 0; boutsum = 0
+            rsum = 0; gsum = 0; bsum = 0
+            i = -radius
+            while (i <= radius) {
+                p = pix[yi + minOf(wm, maxOf(i, 0))]
+                sir = stack[i + radius]
+                sir[0] = (p and 0xff0000) shr 16
+                sir[1] = (p and 0x00ff00) shr 8
+                sir[2] = (p and 0x0000ff)
+                rbs = r1 - kotlin.math.abs(i)
+                rsum += sir[0] * rbs; gsum += sir[1] * rbs; bsum += sir[2] * rbs
+                if (i > 0) { rinsum += sir[0]; ginsum += sir[1]; binsum += sir[2] }
+                else { routsum += sir[0]; goutsum += sir[1]; boutsum += sir[2] }
+                i++
+            }
+            stackpointer = radius
+            x = 0
+            while (x < w) {
+                r[yi] = dv[rsum]; g[yi] = dv[gsum]; b[yi] = dv[bsum]
+                rsum -= routsum; gsum -= goutsum; bsum -= boutsum
+                stackstart = stackpointer - radius + div
+                sir = stack[stackstart % div]
+                routsum -= sir[0]; goutsum -= sir[1]; boutsum -= sir[2]
+                if (y == 0) vmin[x] = minOf(x + radius + 1, wm)
+                p = pix[yw + vmin[x]]
+                sir[0] = (p and 0xff0000) shr 16; sir[1] = (p and 0x00ff00) shr 8; sir[2] = (p and 0x0000ff)
+                rinsum += sir[0]; ginsum += sir[1]; binsum += sir[2]
+                rsum += rinsum; gsum += ginsum; bsum += binsum
+                stackpointer = (stackpointer + 1) % div
+                sir = stack[stackpointer % div]
+                routsum += sir[0]; goutsum += sir[1]; boutsum += sir[2]
+                rinsum -= sir[0]; ginsum -= sir[1]; binsum -= sir[2]
+                yi++; x++
+            }
+            yw += w; y++
+        }
+        x = 0
+        while (x < w) {
+            rinsum = 0; ginsum = 0; binsum = 0
+            routsum = 0; goutsum = 0; boutsum = 0
+            rsum = 0; gsum = 0; bsum = 0
+            yp = -radius * w
+            i = -radius
+            while (i <= radius) {
+                yi = maxOf(0, yp) + x
+                sir = stack[i + radius]
+                sir[0] = r[yi]; sir[1] = g[yi]; sir[2] = b[yi]
+                rbs = r1 - kotlin.math.abs(i)
+                rsum += r[yi] * rbs; gsum += g[yi] * rbs; bsum += b[yi] * rbs
+                if (i > 0) { rinsum += sir[0]; ginsum += sir[1]; binsum += sir[2] }
+                else { routsum += sir[0]; goutsum += sir[1]; boutsum += sir[2] }
+                if (i < hm) yp += w
+                i++
+            }
+            yi = x; stackpointer = radius
+            y = 0
+            while (y < h) {
+                pix[yi] = (0xff000000.toInt() and pix[yi]) or (dv[rsum] shl 16) or (dv[gsum] shl 8) or dv[bsum]
+                rsum -= routsum; gsum -= goutsum; bsum -= boutsum
+                stackstart = stackpointer - radius + div
+                sir = stack[stackstart % div]
+                routsum -= sir[0]; goutsum -= sir[1]; boutsum -= sir[2]
+                if (x == 0) vmin[y] = minOf(y + r1, hm) * w
+                p = x + vmin[y]
+                sir[0] = r[p]; sir[1] = g[p]; sir[2] = b[p]
+                rinsum += sir[0]; ginsum += sir[1]; binsum += sir[2]
+                rsum += rinsum; gsum += ginsum; bsum += binsum
+                stackpointer = (stackpointer + 1) % div
+                sir = stack[stackpointer]
+                routsum += sir[0]; goutsum += sir[1]; boutsum += sir[2]
+                rinsum -= sir[0]; ginsum -= sir[1]; binsum -= sir[2]
+                yi += w; y++
+            }
+            x++
+        }
+        bitmap.setPixels(pix, 0, w, 0, 0, w, h)
+        return bitmap
     }
     
     private fun answerCallWithHold() {
