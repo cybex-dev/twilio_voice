@@ -2328,13 +2328,14 @@ class TVConnectionService : ConnectionService() {
     }
 
     private fun getOrCreateIncomingCallChannel(): NotificationChannel {
-        val id = "${applicationContext.packageName}_incoming_calls_v2"
+        val id = "${applicationContext.packageName}_incoming_calls_v3"
         val name = "Incoming Calls"
         val descriptionText = "Incoming Voice Calls"
         val notificationManager: NotificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         
-        // Delete old channel if exists (in case importance was wrong)
+        // Delete old channels if exists (in case importance or settings were cached)
         notificationManager.deleteNotificationChannel("${applicationContext.packageName}_incoming_calls")
+        notificationManager.deleteNotificationChannel("${applicationContext.packageName}_incoming_calls_v2")
         
         // IMPORTANCE_HIGH is required for full-screen intent to work in terminated state
         val importance = NotificationManager.IMPORTANCE_HIGH
@@ -2476,71 +2477,47 @@ class TVConnectionService : ConnectionService() {
         customView.setOnClickPendingIntent(R.id.notification_answer_button, answerActivityPendingIntent)
         
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            // Android 12+ - Use CallStyle with custom content views
-            val person = android.app.Person.Builder()
-                .setName(displayName)
-                .setImportant(true)
-                .build()
-            
+            // Android 12+
             Notification.Builder(this, channel.id).apply {
                 setSmallIcon(R.drawable.ic_microphone)
-                setContentTitle("Incoming Call")
-                if (displaySubtext != null) {
-                    setContentText(displaySubtext)
-                }
-                setCategory(Notification.CATEGORY_CALL)
                 setVisibility(Notification.VISIBILITY_PUBLIC)
                 setOngoing(true)
                 setAutoCancel(false)
                 setFullScreenIntent(fullScreenPendingIntent, true)
                 setContentIntent(fullScreenPendingIntent)
                 setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
-                // Use CallStyle for proper incoming call notification behavior
-                // (ensures system grants full-screen intent permission and proper call UI)
-                style = Notification.CallStyle.forIncomingCall(
-                    person,
-                    declinePendingIntent,
-                    answerActivityPendingIntent
-                )
-                // Apply custom layout for heads-up (expanded) view
-                setCustomHeadsUpContentView(customView)
+                // Colorize the notification background to dark so the system header
+                // (app icon + chevron) blends into the dark custom layout
+                setColorized(true)
+                setColor(android.graphics.Color.parseColor("#2C2C2E"))
+                // Use custom views via builder
+                setCustomContentView(customView)
                 setCustomBigContentView(customView)
+                setCustomHeadsUpContentView(customView)
+                style = Notification.DecoratedCustomViewStyle()
             }
         } else {
-            // Pre-Android 12 - Use custom layout with actions as fallback
+            // Pre-Android 12
             Notification.Builder(this, channel.id).apply {
                 setOngoing(true)
-                setContentTitle(displayName)
-                if (displaySubtext != null) {
-                    setContentText(displaySubtext)
-                }
-                setCategory(Notification.CATEGORY_CALL)
                 setSmallIcon(R.drawable.ic_microphone)
                 setFullScreenIntent(fullScreenPendingIntent, true)
                 setContentIntent(fullScreenPendingIntent)
                 setVisibility(Notification.VISIBILITY_PUBLIC)
                 setAutoCancel(false)
-                // Apply custom layout for heads-up view
-                setCustomHeadsUpContentView(customView)
+                setColorized(true)
+                setColor(android.graphics.Color.parseColor("#2C2C2E"))
+                setCustomContentView(customView)
                 setCustomBigContentView(customView)
-                // Also add standard actions as fallback for compact notification
-                addAction(Notification.Action.Builder(
-                    android.R.drawable.ic_menu_call,
-                    "Answer",
-                    answerActivityPendingIntent
-                ).build())
-                addAction(Notification.Action.Builder(
-                    android.R.drawable.ic_menu_close_clear_cancel,
-                    "Decline",
-                    declinePendingIntent
-                ).build())
-                // Priority for pre-Oreo devices
+                setCustomHeadsUpContentView(customView)
+                style = Notification.DecoratedCustomViewStyle()
                 if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
                     @Suppress("DEPRECATION")
                     setPriority(Notification.PRIORITY_MAX)
                 }
             }
         }
+        
         return builder.build()
     }
 

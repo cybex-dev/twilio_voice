@@ -7,7 +7,7 @@
     android:paddingEnd="20dp"
     android:paddingTop="16dp"
     android:paddingBottom="16dp"
-    android:background="@android:color/transparent">
+    android:background="#2C2C2E">
 
     <!-- Top row: Avatar + Caller info -->
     <LinearLayout
