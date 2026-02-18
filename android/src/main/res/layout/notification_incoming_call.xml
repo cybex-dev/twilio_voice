@@ -7,7 +7,7 @@
     android:paddingEnd="20dp"
     android:paddingTop="16dp"
     android:paddingBottom="16dp"
-    android:background="#2C2C2E">
+    android:background="#1C1C1E">
 
     <!-- Top row: Avatar + Caller info -->
     <LinearLayout
@@ -16,25 +16,12 @@
         android:orientation="horizontal"
         android:gravity="center_vertical">
 
-        <!-- Avatar circle with person icon -->
-        <FrameLayout
+        <!-- Avatar: programmatically set bitmap (gradient circle + initials or person icon) -->
+        <ImageView
+            android:id="@+id/notification_avatar"
             android:layout_width="48dp"
-            android:layout_height="48dp">
-
-            <ImageView
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:background="@drawable/notification_avatar_circle"
-                android:scaleType="center" />
-
-            <ImageView
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:layout_gravity="center"
-                android:src="@drawable/ic_person"
-                android:scaleType="fitCenter" />
-
-        </FrameLayout>
+            android:layout_height="48dp"
+            android:scaleType="centerCrop" />
 
         <!-- Caller Name + Number -->
         <LinearLayout
@@ -44,27 +31,32 @@
             android:orientation="vertical"
             android:layout_marginStart="14dp">
 
-            <!-- Caller Name -->
+            <!-- Caller Name: 17sp, medium weight (500), white, ~20sp line height -->
             <TextView
                 android:id="@+id/notification_caller_name"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textSize="18sp"
+                android:textSize="17sp"
                 android:textColor="#FFFFFF"
-                android:textStyle="bold"
+                android:fontFamily="sans-serif-medium"
+                android:lineSpacingExtra="3sp"
+                android:includeFontPadding="false"
                 android:ellipsize="end"
                 android:maxLines="1" />
 
-            <!-- Caller Number -->
+            <!-- Caller Number: 14sp, regular (400), white 80%, ~20sp line height -->
             <TextView
                 android:id="@+id/notification_caller_number"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:textSize="14sp"
-                android:textColor="#9E9E9E"
+                android:textColor="#CCFFFFFF"
+                android:fontFamily="sans-serif"
+                android:lineSpacingExtra="6sp"
+                android:includeFontPadding="false"
                 android:ellipsize="end"
                 android:maxLines="1"
-                android:layout_marginTop="2dp" />
+                android:layout_marginTop="4dp" />
 
         </LinearLayout>
 

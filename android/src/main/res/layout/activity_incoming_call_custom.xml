@@ -122,57 +122,13 @@
         android:clipChildren="false"
         android:clipToPadding="false">
 
-        <!-- Decline Button (Left) - solid red circle with white icon -->
+        <!-- Accept Button (Left) - solid green circle with white icon -->
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:gravity="center_horizontal"
             android:layout_marginEnd="70dp">
-
-            <FrameLayout
-                android:id="@+id/declineButton"
-                android:layout_width="70dp"
-                android:layout_height="70dp"
-                android:clickable="true"
-                android:focusable="true"
-                android:background="@drawable/button_decline_ripple">
-
-                <ImageView
-                    android:id="@+id/declineButtonCircle"
-                    android:layout_width="28dp"
-                    android:layout_height="28dp"
-                    android:layout_gravity="center"
-                    android:src="@drawable/ic_phone_end"
-                    android:contentDescription="Decline Call"
-                    android:scaleType="fitCenter"
-                    android:tint="#FFFFFF" />
-
-                <View
-                    android:layout_width="70dp"
-                    android:layout_height="70dp"
-                    android:id="@+id/declineButtonBg"
-                    android:visibility="gone" />
-
-            </FrameLayout>
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Decline"
-                android:textSize="14sp"
-                android:textColor="@color/text_primary"
-                android:layout_marginTop="8dp" />
-
-        </LinearLayout>
-
-        <!-- Accept Button (Right) - solid green circle with white icon -->
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:gravity="center_horizontal"
-            android:layout_marginStart="70dp">
 
             <FrameLayout
                 android:id="@+id/acceptButton"
@@ -204,6 +160,50 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Accept"
+                android:textSize="14sp"
+                android:textColor="@color/text_primary"
+                android:layout_marginTop="8dp" />
+
+        </LinearLayout>
+
+        <!-- Decline Button (Right) - solid red circle with white icon -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center_horizontal"
+            android:layout_marginStart="70dp">
+
+            <FrameLayout
+                android:id="@+id/declineButton"
+                android:layout_width="70dp"
+                android:layout_height="70dp"
+                android:clickable="true"
+                android:focusable="true"
+                android:background="@drawable/button_decline_ripple">
+
+                <ImageView
+                    android:id="@+id/declineButtonCircle"
+                    android:layout_width="28dp"
+                    android:layout_height="28dp"
+                    android:layout_gravity="center"
+                    android:src="@drawable/ic_phone_end"
+                    android:contentDescription="Decline Call"
+                    android:scaleType="fitCenter"
+                    android:tint="#FFFFFF" />
+
+                <View
+                    android:layout_width="70dp"
+                    android:layout_height="70dp"
+                    android:id="@+id/declineButtonBg"
+                    android:visibility="gone" />
+
+            </FrameLayout>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Decline"
                 android:textSize="14sp"
                 android:textColor="@color/text_primary"
                 android:layout_marginTop="8dp" />

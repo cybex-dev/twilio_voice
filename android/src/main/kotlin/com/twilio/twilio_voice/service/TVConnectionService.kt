@@ -5,9 +5,20 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.app.Person
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.LinearGradient
+import android.graphics.Paint
+import android.graphics.RadialGradient
+import android.graphics.Rect
+import android.graphics.Shader
+import android.graphics.Typeface
+import android.graphics.drawable.Icon
 import android.media.AudioAttributes
 import android.media.Ringtone
 import android.media.RingtoneManager
@@ -724,7 +735,7 @@ class TVConnectionService : ConnectionService() {
                         try {
                             val channel = getOrCreateIncomingCallChannel()
                             val notification = Notification.Builder(this, channel.id).apply {
-                                setSmallIcon(R.drawable.ic_microphone)
+                                setSmallIcon(R.drawable.ic_transparent)
                                 setContentTitle("Call Cancelled")
                                 setContentText("The call was cancelled")
                                 setCategory(Notification.CATEGORY_CALL)
@@ -809,7 +820,7 @@ class TVConnectionService : ConnectionService() {
                         try {
                             val channel = getOrCreateIncomingCallChannel()
                             val notification = Notification.Builder(this, channel.id).apply {
-                                setSmallIcon(R.drawable.ic_microphone)
+                                setSmallIcon(R.drawable.ic_transparent)
                                 setContentTitle("Incoming Call")
                                 setContentText("Connecting...")
                                 setCategory(Notification.CATEGORY_CALL)
@@ -2044,7 +2055,7 @@ class TVConnectionService : ConnectionService() {
             setContentTitle("Voice Calls")
             setCategory(Notification.CATEGORY_SERVICE)
             setContentIntent(pendingIntent)
-            setSmallIcon(R.drawable.ic_microphone)
+            setSmallIcon(R.drawable.ic_transparent)
         }.build()
     }
 
@@ -2139,47 +2150,11 @@ class TVConnectionService : ConnectionService() {
         
         val displayName = callerName ?: "Unknown"
         
-        // Get app icon as a rounded bitmap for the caller icon
-        val appIconBitmap = try {
-            val appInfo = packageManager.getApplicationInfo(packageName, 0)
-            val drawable = packageManager.getApplicationIcon(appInfo)
-            
-            // Convert to bitmap
-            val originalBitmap = if (drawable is android.graphics.drawable.BitmapDrawable) {
-                drawable.bitmap
-            } else {
-                val bitmap = android.graphics.Bitmap.createBitmap(
-                    drawable.intrinsicWidth.coerceAtLeast(1),
-                    drawable.intrinsicHeight.coerceAtLeast(1),
-                    android.graphics.Bitmap.Config.ARGB_8888
-                )
-                val canvas = android.graphics.Canvas(bitmap)
-                drawable.setBounds(0, 0, canvas.width, canvas.height)
-                drawable.draw(canvas)
-                bitmap
-            }
-            
-            // Create a circular/rounded bitmap
-            val size = minOf(originalBitmap.width, originalBitmap.height)
-            val output = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
-            val canvas = android.graphics.Canvas(output)
-            val paint = android.graphics.Paint().apply {
-                isAntiAlias = true
-                shader = android.graphics.BitmapShader(originalBitmap, android.graphics.Shader.TileMode.CLAMP, android.graphics.Shader.TileMode.CLAMP)
-            }
-            val radius = size / 2f
-            canvas.drawCircle(radius, radius, radius, paint)
-            output
-        } catch (e: Exception) {
-            Log.w(TAG, "Could not get app icon: ${e.message}")
-            null
-        }
-        
         // Store the call start time for duration tracking
         val callStartTime = System.currentTimeMillis()
         
         // Start a handler to update the call duration in subtitle
-        startOngoingCallDurationUpdater(callSid, displayName, appIconBitmap, callStartTime, channel, contentIntent, hangupPendingIntent)
+        startOngoingCallDurationUpdater(callSid, displayName, callStartTime, channel, contentIntent, hangupPendingIntent)
     }
     
     // Handler for updating ongoing call notification duration
@@ -2189,7 +2164,6 @@ class TVConnectionService : ConnectionService() {
     private fun startOngoingCallDurationUpdater(
         callSid: String,
         displayName: String,
-        appIconBitmap: android.graphics.Bitmap?,
         callStartTime: Long,
         channel: NotificationChannel,
         contentIntent: PendingIntent,
@@ -2207,7 +2181,7 @@ class TVConnectionService : ConnectionService() {
                 
                 // Build and update notification
                 val notification = buildOngoingCallNotification(
-                    displayName, durationText, appIconBitmap, channel, contentIntent, hangupPendingIntent
+                    displayName, durationText, channel, contentIntent, hangupPendingIntent
                 )
                 
                 try {
@@ -2224,7 +2198,7 @@ class TVConnectionService : ConnectionService() {
         
         // Build initial notification and start foreground
         val initialNotification = buildOngoingCallNotification(
-            displayName, "00:00", appIconBitmap, channel, contentIntent, hangupPendingIntent
+            displayName, "00:00", channel, contentIntent, hangupPendingIntent
         )
         
         try {
@@ -2273,7 +2247,6 @@ class TVConnectionService : ConnectionService() {
     private fun buildOngoingCallNotification(
         displayName: String,
         durationText: String,
-        appIconBitmap: android.graphics.Bitmap?,
         channel: NotificationChannel,
         contentIntent: PendingIntent,
         hangupPendingIntent: PendingIntent
@@ -2292,14 +2265,16 @@ class TVConnectionService : ConnectionService() {
         
         return Notification.Builder(this, channel.id).apply {
             setOngoing(true)
-            setSmallIcon(R.drawable.ic_microphone)
+            setSmallIcon(R.drawable.ic_transparent)
             setContentIntent(contentIntent)
             setCategory(Notification.CATEGORY_CALL)
             setVisibility(Notification.VISIBILITY_PUBLIC)
-            setColor(0xFFFF0000.toInt())
-            
-            // Set the large icon which will appear in the header
-            appIconBitmap?.let { setLargeIcon(it) }
+            setShowWhen(false)
+            setColorized(true)
+            setColor(Color.parseColor("#1C1C1E"))
+            setContentTitle("")
+            setContentText("")
+            style = Notification.DecoratedMediaCustomViewStyle()
             
             // Use custom view for the notification content
             setCustomContentView(remoteViews)
@@ -2328,7 +2303,7 @@ class TVConnectionService : ConnectionService() {
     }
 
     private fun getOrCreateIncomingCallChannel(): NotificationChannel {
-        val id = "${applicationContext.packageName}_incoming_calls_v3"
+        val id = "${applicationContext.packageName}_incoming_calls_v7"
         val name = "Incoming Calls"
         val descriptionText = "Incoming Voice Calls"
         val notificationManager: NotificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -2336,6 +2311,10 @@ class TVConnectionService : ConnectionService() {
         // Delete old channels if exists (in case importance or settings were cached)
         notificationManager.deleteNotificationChannel("${applicationContext.packageName}_incoming_calls")
         notificationManager.deleteNotificationChannel("${applicationContext.packageName}_incoming_calls_v2")
+        notificationManager.deleteNotificationChannel("${applicationContext.packageName}_incoming_calls_v3")
+        notificationManager.deleteNotificationChannel("${applicationContext.packageName}_incoming_calls_v4")
+        notificationManager.deleteNotificationChannel("${applicationContext.packageName}_incoming_calls_v5")
+        notificationManager.deleteNotificationChannel("${applicationContext.packageName}_incoming_calls_v6")
         
         // IMPORTANCE_HIGH is required for full-screen intent to work in terminated state
         val importance = NotificationManager.IMPORTANCE_HIGH
@@ -2348,6 +2327,101 @@ class TVConnectionService : ConnectionService() {
         }
         notificationManager.createNotificationChannel(channel)
         return channel
+    }
+
+    /**
+     * Creates a circular gradient bitmap for the caller avatar.
+     * If callerName is a real name (not "Unknown Caller"), shows the initials.
+     * Otherwise, draws a person icon silhouette.
+     * The gradient goes from a lighter dark gray to a deeper dark,
+     * with a subtle ring border — matching the metallic look from the design.
+     */
+    private fun createCallerAvatarBitmap(callerName: String, sizeDp: Int = 64): Bitmap {
+        val density = resources.displayMetrics.density
+        val sizePx = (sizeDp * density).toInt()
+        val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val cx = sizePx / 2f
+        val cy = sizePx / 2f
+        val radius = sizePx / 2f
+
+        // Outer ring: subtle gray gradient border
+        val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = LinearGradient(
+                0f, 0f, sizePx.toFloat(), sizePx.toFloat(),
+                Color.parseColor("#5A5A5A"),
+                Color.parseColor("#3A3A3A"),
+                Shader.TileMode.CLAMP
+            )
+        }
+        canvas.drawCircle(cx, cy, radius, ringPaint)
+
+        // Inner fill: dark radial gradient for metallic/3D look
+        val innerRadius = radius - (2 * density) // 2dp border
+        val innerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = RadialGradient(
+                cx * 0.8f, cy * 0.7f, innerRadius * 1.2f,
+                Color.parseColor("#4A4A4A"),
+                Color.parseColor("#1A1A1A"),
+                Shader.TileMode.CLAMP
+            )
+        }
+        canvas.drawCircle(cx, cy, innerRadius, innerPaint)
+
+        val hasName = callerName != "Unknown Caller" && callerName.isNotBlank()
+
+        if (hasName) {
+            // Draw initials
+            val initials = callerName.split(" ")
+                .filter { it.isNotBlank() }
+                .take(2)
+                .joinToString("") { it.first().uppercase() }
+
+            val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.WHITE
+                textSize = sizePx * 0.35f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                textAlign = Paint.Align.CENTER
+            }
+            val textBounds = Rect()
+            textPaint.getTextBounds(initials, 0, initials.length, textBounds)
+            val textY = cy + textBounds.height() / 2f
+            canvas.drawText(initials, cx, textY, textPaint)
+        } else {
+            // Draw person icon silhouette
+            val iconPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.parseColor("#CCCCCC")
+                style = Paint.Style.FILL
+            }
+            // Head circle
+            val headRadius = sizePx * 0.15f
+            val headCy = cy - sizePx * 0.08f
+            canvas.drawCircle(cx, headCy, headRadius, iconPaint)
+
+            // Body arc (shoulders)
+            val bodyTop = headCy + headRadius + sizePx * 0.06f
+            val bodyRect = android.graphics.RectF(
+                cx - sizePx * 0.28f,
+                bodyTop,
+                cx + sizePx * 0.28f,
+                bodyTop + sizePx * 0.36f
+            )
+            canvas.drawOval(bodyRect, iconPaint)
+        }
+
+        return bitmap
+    }
+
+    /**
+     * Extracts caller initials from a name string.
+     * E.g., "John Doe" → "JD", "Alice" → "A", "Unknown Caller" → ""
+     */
+    private fun getCallerInitials(callerName: String): String {
+        if (callerName == "Unknown Caller" || callerName.isBlank()) return ""
+        return callerName.split(" ")
+            .filter { it.isNotBlank() }
+            .take(2)
+            .joinToString("") { it.first().uppercase() }
     }
 
     private fun createIncomingCallNotification(callInvite: CallInvite): Notification {
@@ -2467,50 +2541,64 @@ class TVConnectionService : ConnectionService() {
         val displayName = if (hasCallerName) callerName else formattedCallerNumber.ifEmpty { "Unknown Number" }
         val displaySubtext = if (hasCallerName && formattedCallerNumber.isNotEmpty()) formattedCallerNumber else null
         
-        // Build custom notification layout with RemoteViews
-        val customView = RemoteViews(packageName, R.layout.notification_incoming_call)
-        customView.setTextViewText(R.id.notification_caller_name, displayName)
-        customView.setTextViewText(R.id.notification_caller_number, displaySubtext ?: "Incoming Call")
-        
-        // Attach PendingIntents to the pill buttons
-        customView.setOnClickPendingIntent(R.id.notification_decline_button, declinePendingIntent)
-        customView.setOnClickPendingIntent(R.id.notification_answer_button, answerActivityPendingIntent)
+        // Generate the circular gradient avatar bitmap
+        val avatarBitmap = createCallerAvatarBitmap(callerName)
         
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            // Android 12+
+            // Android 12+ — use CallStyle for native incoming call UI
+            // Note: CallStyle renders system-controlled text, so custom fonts are not possible here
+            val callerPerson = Person.Builder()
+                .setName(displayName)
+                .setIcon(Icon.createWithBitmap(avatarBitmap))
+                .setImportant(true)
+                .build()
+            
+            val callStyle = Notification.CallStyle.forIncomingCall(
+                callerPerson,
+                declinePendingIntent,
+                answerActivityPendingIntent
+            )
+            
             Notification.Builder(this, channel.id).apply {
-                setSmallIcon(R.drawable.ic_microphone)
+                setSmallIcon(R.drawable.ic_transparent)
                 setVisibility(Notification.VISIBILITY_PUBLIC)
                 setOngoing(true)
                 setAutoCancel(false)
+                setShowWhen(false)
                 setFullScreenIntent(fullScreenPendingIntent, true)
                 setContentIntent(fullScreenPendingIntent)
                 setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
-                // Colorize the notification background to dark so the system header
-                // (app icon + chevron) blends into the dark custom layout
-                setColorized(true)
-                setColor(android.graphics.Color.parseColor("#2C2C2E"))
-                // Use custom views via builder
-                setCustomContentView(customView)
-                setCustomBigContentView(customView)
-                setCustomHeadsUpContentView(customView)
-                style = Notification.DecoratedCustomViewStyle()
+                setCategory(Notification.CATEGORY_CALL)
+                setContentTitle(displayName)
+                setContentText(displaySubtext ?: "Incoming Call")
+                style = callStyle
             }
         } else {
-            // Pre-Android 12
+            // Pre-Android 12 — use custom RemoteViews for full control over fonts/colors
+            val customView = RemoteViews(packageName, R.layout.notification_incoming_call)
+            customView.setTextViewText(R.id.notification_caller_name, displayName)
+            customView.setTextViewText(R.id.notification_caller_number, displaySubtext ?: "Incoming Call")
+            customView.setImageViewBitmap(R.id.notification_avatar, avatarBitmap)
+            customView.setOnClickPendingIntent(R.id.notification_decline_button, declinePendingIntent)
+            customView.setOnClickPendingIntent(R.id.notification_answer_button, answerActivityPendingIntent)
+            
             Notification.Builder(this, channel.id).apply {
                 setOngoing(true)
-                setSmallIcon(R.drawable.ic_microphone)
+                setSmallIcon(R.drawable.ic_transparent)
                 setFullScreenIntent(fullScreenPendingIntent, true)
                 setContentIntent(fullScreenPendingIntent)
                 setVisibility(Notification.VISIBILITY_PUBLIC)
                 setAutoCancel(false)
+                setShowWhen(false)
+                setCategory(Notification.CATEGORY_CALL)
                 setColorized(true)
-                setColor(android.graphics.Color.parseColor("#2C2C2E"))
+                setColor(Color.parseColor("#1C1C1E"))
+                setContentTitle("")
+                setContentText("")
+                style = Notification.DecoratedMediaCustomViewStyle()
                 setCustomContentView(customView)
                 setCustomBigContentView(customView)
                 setCustomHeadsUpContentView(customView)
-                style = Notification.DecoratedCustomViewStyle()
                 if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
                     @Suppress("DEPRECATION")
                     setPriority(Notification.PRIORITY_MAX)
