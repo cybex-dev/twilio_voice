@@ -995,6 +995,10 @@ class TVConnectionService : ConnectionService() {
                     // Set classloader for CallInvite deserialization
                     it.setExtrasClassLoader(CallInvite::class.java.classLoader)
                     
+                    // Check if IncomingCallActivity is handling the MainActivity launch
+                    // If true, we should NOT launch MainActivity from the service (avoids dual onNewIntent)
+                    val launchedFromActivity = it.getBooleanExtra("LAUNCHED_FROM_ACTIVITY", false)
+                    
                     val callHandle = it.getStringExtra(EXTRA_CALL_HANDLE) ?: getIncomingCallHandle()
                     var connection = if (callHandle != null) getConnection(callHandle) else null
                     
@@ -1116,32 +1120,40 @@ class TVConnectionService : ConnectionService() {
                         // Show ongoing call notification
                         showOngoingCallNotification(callSid, callerNumber)
                         
-                        // Launch main activity IMMEDIATELY with call data from callInvite
-                        // No delay needed since callInvite data is available immediately
-                        try {
-                            val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
-                            launchIntent?.let { intent ->
-                                // Use flags that work well from lock screen
-                                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
-                                               Intent.FLAG_ACTIVITY_CLEAR_TOP or 
-                                               Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                                               Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
-                                intent.putExtra("fromIncomingCall", true)
-                                intent.putExtra("callHandle", callSid)
-                                intent.putExtra("callAnswered", true)
-                                // Add extras that MainActivity expects for call data
-                                intent.putExtra("SHOW_OVER_LOCK_SCREEN", true)
-                                intent.putExtra("CALL_ANSWERED", true)
-                                intent.putExtra("CALL_SID", callSid)
-                                intent.putExtra("CALLER_NAME", callerNumber) // Use number as name for now
-                                intent.putExtra("CALLER_NUMBER", callerNumber)
-                                intent.putExtra("MY_NUMBER", myNumber)
-                                intent.putExtra("CALL_DIRECTION", "incoming")
-                                startActivity(intent)
-                                Log.d(TAG, "Launched main activity with call data from callInvite - caller: $callerNumber")
+                        // Only launch MainActivity from the service if IncomingCallActivity is NOT
+                        // already handling it. When answering from the swipe UI or notification button
+                        // in IncomingCallActivity, it sets LAUNCHED_FROM_ACTIVITY=true and handles
+                        // the MainActivity launch itself. Launching here too causes dual onNewIntent
+                        // calls which confuse Flutter and destroy/recreate the activity unnecessarily.
+                        if (!launchedFromActivity) {
+                            // Launch main activity IMMEDIATELY with call data from callInvite
+                            // This path is used when answering from notification action button
+                            // that goes directly to the service (without IncomingCallActivity)
+                            try {
+                                val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+                                launchIntent?.let { intent ->
+                                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
+                                                   Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                                                   Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                                    intent.putExtra("fromIncomingCall", true)
+                                    intent.putExtra("callHandle", callSid)
+                                    intent.putExtra("callAnswered", true)
+                                    // Add extras that MainActivity expects for call data
+                                    intent.putExtra("SHOW_OVER_LOCK_SCREEN", true)
+                                    intent.putExtra("CALL_ANSWERED", true)
+                                    intent.putExtra("CALL_SID", callSid)
+                                    intent.putExtra("CALLER_NAME", callerNumber)
+                                    intent.putExtra("CALLER_NUMBER", callerNumber)
+                                    intent.putExtra("MY_NUMBER", myNumber)
+                                    intent.putExtra("CALL_DIRECTION", "incoming")
+                                    startActivity(intent)
+                                    Log.d(TAG, "Launched main activity with call data from callInvite - caller: $callerNumber")
+                                }
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Could not launch main activity after answering: ${e.message}")
                             }
-                        } catch (e: Exception) {
-                            Log.w(TAG, "Could not launch main activity after answering: ${e.message}")
+                        } else {
+                            Log.d(TAG, "ACTION_ANSWER: Skipping MainActivity launch - IncomingCallActivity is handling it")
                         }
                     } else {
                         Log.e(TAG, "onStartCommand: [ACTION_ANSWER] connection is not TVCallInviteConnection")
@@ -2117,9 +2129,11 @@ class TVConnectionService : ConnectionService() {
         
         // Create intent to launch main app when notification is tapped
         val launchIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+            // Use SINGLE_TOP + REORDER_TO_FRONT to preserve existing Flutter activity state
+            // CLEAR_TOP was destroying and recreating MainActivity on notification tap during calls
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
-                    Intent.FLAG_ACTIVITY_CLEAR_TOP or 
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
             putExtra("fromOngoingCall", true)
             putExtra("callHandle", callSid)
         }
@@ -2434,6 +2448,21 @@ class TVConnectionService : ConnectionService() {
         // Use unique request code to avoid PendingIntent caching
         val fullScreenRequestCode = (callInvite.callSid.hashCode() and 0x7FFFFFFF) % 10000 + 1000
         val fullScreenIntent = IncomingCallActivity.createIntent(applicationContext, callInvite)
+        
+        // IMPORTANT: Include active call extras in fullScreenIntent so that if the system
+        // fires the fullScreenIntent (e.g. lock screen), the IncomingCallActivity knows
+        // about the active call and shows the call-waiting bottom sheet instead of
+        // answering directly. Without this, the fullScreenIntent fires first WITHOUT
+        // active call info, then launchIncomingCallActivity fires 200ms later WITH it,
+        // causing a "double bottom sheet" flash.
+        if (hasActiveCallDuringIncoming) {
+            fullScreenIntent.putExtra(IncomingCallActivity.EXTRA_HAS_ACTIVE_CALL, true)
+            fullScreenIntent.putExtra(IncomingCallActivity.EXTRA_ACTIVE_CALLER_NAME, activeCallCallerName)
+            fullScreenIntent.putExtra(IncomingCallActivity.EXTRA_ACTIVE_CALLER_NUMBER, activeCallCallerNumber)
+            fullScreenIntent.putExtra(IncomingCallActivity.EXTRA_ACTIVE_CALL_HANDLE, activeCallHandleDuringIncoming)
+            Log.d(TAG, "[SVC-$shortSid] │ Added active call extras to fullScreenIntent")
+        }
+        
         val fullScreenPendingIntent = PendingIntent.getActivity(
             applicationContext,
             fullScreenRequestCode,
@@ -2706,10 +2735,15 @@ class TVConnectionService : ConnectionService() {
             Log.d(TAG, "[SVC-$shortSid] │ Acquired FULL wake lock")
             
             // Step 2: Launch the activity after a short delay to let wake lock take effect
+            // BUT skip if the activity is already alive (fullScreenIntent already opened it)
             Log.d(TAG, "[SVC-$shortSid] │ Scheduling launchIncomingCallActivity in 200ms...")
             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                Log.d(TAG, "[SVC-$shortSid] │ Handler fired - calling launchIncomingCallActivity NOW")
-                launchIncomingCallActivity(callInvite)
+                if (IncomingCallActivity.isActivityAlive) {
+                    Log.d(TAG, "[SVC-$shortSid] │ Handler fired - IncomingCallActivity already alive, SKIPPING duplicate launch")
+                } else {
+                    Log.d(TAG, "[SVC-$shortSid] │ Handler fired - calling launchIncomingCallActivity NOW")
+                    launchIncomingCallActivity(callInvite)
+                }
             }, 200)
             
             Log.d(TAG, "[SVC-$shortSid] └────────────────────────────────────────────────────┘")
@@ -2764,8 +2798,9 @@ class TVConnectionService : ConnectionService() {
         try {
             val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
             launchIntent?.let { intent ->
+                // Use SINGLE_TOP + REORDER_TO_FRONT to preserve existing Flutter activity
+                // CLEAR_TOP destroys and recreates MainActivity, killing Flutter engine state
                 intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
-                               Intent.FLAG_ACTIVITY_CLEAR_TOP or 
                                Intent.FLAG_ACTIVITY_SINGLE_TOP or
                                Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
                 intent.putExtra("fromIncomingCall", true)
@@ -2825,10 +2860,11 @@ class TVConnectionService : ConnectionService() {
                     Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
                 )
                 
-                // For MIUI, also add CLEAR_TASK to ensure fresh start
-                if (isMiui) {
-                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                }
+                // NOTE: Removed FLAG_ACTIVITY_CLEAR_TASK for MIUI.
+                // That flag combined with singleInstance launchMode was destroying
+                // the existing activity and recreating it, causing a double bottom
+                // sheet flash. The singleInstance mode + REORDER_TO_FRONT is sufficient
+                // to bring the activity to front on all devices including MIUI.
                 
                 // Pass active call info if there's an active call during this incoming call
                 if (hasActiveCallDuringIncoming) {

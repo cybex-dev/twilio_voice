@@ -51,6 +51,17 @@ class IncomingCallActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "IncomingCallActivity"
+        
+        /**
+         * Static flag to track whether IncomingCallActivity is currently alive/showing.
+         * Used by TVConnectionService to avoid launching a second instance when the
+         * notification's fullScreenIntent has already opened the activity.
+         */
+        @Volatile
+        @JvmStatic
+        var isActivityAlive: Boolean = false
+            private set
+        
         const val EXTRA_CALL_INVITE = "EXTRA_CALL_INVITE"
         const val EXTRA_CALLER_NAME = "EXTRA_CALLER_NAME"
         const val EXTRA_CALLER_NUMBER = "EXTRA_CALLER_NUMBER"
@@ -63,12 +74,16 @@ class IncomingCallActivity : AppCompatActivity() {
 
         fun createIntent(context: Context, callInvite: CallInvite): Intent {
             return Intent(context, IncomingCallActivity::class.java).apply {
-                // Aggressive flags for lock screen incoming call display
+                // Flags for lock screen incoming call display
                 // FLAG_ACTIVITY_NO_USER_ACTION is critical for fullScreenIntent on lock screen
+                // NOTE: FLAG_ACTIVITY_CLEAR_TOP is intentionally NOT used here because
+                // combined with singleInstance launchMode it destroys the existing activity
+                // and recreates it, causing a "double bottom sheet" flash when the
+                // notification's fullScreenIntent and the explicit launchIncomingCallActivity
+                // both fire. With singleInstance, the system will deliver onNewIntent instead.
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or
                         Intent.FLAG_ACTIVITY_SINGLE_TOP or
                         Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS or
-                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
                         Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
                         Intent.FLAG_ACTIVITY_NO_USER_ACTION
                 
@@ -114,6 +129,9 @@ class IncomingCallActivity : AppCompatActivity() {
     // Idempotency flag to prevent double-handling of answer/decline
     @Volatile
     private var callHandled = false
+    
+    // Guard to prevent showing the bottom sheet multiple times
+    private var isBottomSheetShowing = false
     
     // Helper function to extract user number from Twilio format
     private fun extractUserNumber(input: String): String {
@@ -165,6 +183,9 @@ class IncomingCallActivity : AppCompatActivity() {
         // Android requires super.onCreate() to be called, otherwise a
         // SuperNotCalledException crash will occur.
         super.onCreate(savedInstanceState)
+        
+        // Mark activity as alive so TVConnectionService knows not to launch again
+        isActivityAlive = true
         
         // ============================================================
         // SIMULTANEOUS INCOMING CALLS CHECK - IMMEDIATE EXIT
@@ -523,6 +544,9 @@ class IncomingCallActivity : AppCompatActivity() {
             val answerIntent = Intent(this, TVConnectionService::class.java).apply {
                 action = TVConnectionService.ACTION_ANSWER
                 putExtra(TVConnectionService.EXTRA_CALL_HANDLE, sid)
+                // Tell the service that IncomingCallActivity is handling the MainActivity launch
+                // so the service should NOT launch MainActivity again (avoids dual onNewIntent)
+                putExtra("LAUNCHED_FROM_ACTIVITY", true)
                 invite?.let { 
                     putExtra(TVConnectionService.EXTRA_INCOMING_CALL_INVITE, it) 
                 }
@@ -792,6 +816,8 @@ class IncomingCallActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        // Mark activity as no longer alive
+        isActivityAlive = false
         super.onDestroy()
         stopRinging()
         unregisterCallEndedReceiver()
@@ -806,6 +832,14 @@ class IncomingCallActivity : AppCompatActivity() {
     private fun showCallWaitingBottomSheet() {
     log_showCallWaitingBottomSheetCounter++
     android.util.Log.d(TAG, "[LOG] showCallWaitingBottomSheet CALLED. log_showCallWaitingBottomSheetCounter=$log_showCallWaitingBottomSheetCounter | hasActiveCall=$hasActiveCall, callSid=$callSid, activeCallHandle=$activeCallHandle, callerName=$callerName, callerNumber=$callerNumber, activeCallerName=$activeCallerName, activeCallerNumber=$activeCallerNumber")
+    
+    // Guard: prevent showing the bottom sheet if it's already visible
+    if (isBottomSheetShowing) {
+        android.util.Log.d(TAG, "showCallWaitingBottomSheet: Already showing, ignoring duplicate call")
+        return
+    }
+    isBottomSheetShowing = true
+    
     android.util.Log.d(TAG, "showCallWaitingBottomSheet: Showing call waiting options")
         
         val bottomSheetOverlay = findViewById<ImageView>(R.id.callWaitingBottomSheetOverlay)
@@ -820,9 +854,12 @@ class IncomingCallActivity : AppCompatActivity() {
         // Capture the current screen and apply blur for frosted glass effect
         applyBlurToOverlay(bottomSheetOverlay)
         
-        // Show the overlay and bottom sheet with animation
-        bottomSheetOverlay.visibility = View.VISIBLE
+        // Push bottom sheet off-screen BEFORE making it visible to prevent 1-frame flash
+        // (Previously, setting VISIBLE before post{} caused the sheet to appear at y=0
+        // for one frame before being translated down and animated up)
+        bottomSheetContainer.translationY = 2000f  // large value to ensure off-screen
         bottomSheetContainer.visibility = View.VISIBLE
+        bottomSheetOverlay.visibility = View.VISIBLE
         
         // Animate bottom sheet sliding up (post to allow layout measurement)
         bottomSheetContainer.post {
@@ -880,6 +917,7 @@ class IncomingCallActivity : AppCompatActivity() {
     }
     
     private fun hideCallWaitingBottomSheet() {
+        isBottomSheetShowing = false
         val bottomSheetOverlay = findViewById<View>(R.id.callWaitingBottomSheetOverlay)
         val bottomSheetContainer = findViewById<View>(R.id.callWaitingBottomSheet)
         
@@ -1095,7 +1133,8 @@ class IncomingCallActivity : AppCompatActivity() {
             } else {
                 startService(answerIntent)
             }
-            launchMainActivity()
+            // Use call-waiting variant that doesn't destroy Flutter activity
+            launchMainActivityForCallWaiting()
         }
         finishAndRemoveTask()
     }
@@ -1131,7 +1170,8 @@ class IncomingCallActivity : AppCompatActivity() {
             } else {
                 startService(answerIntent)
             }
-            launchMainActivity()
+            // Use call-waiting variant that doesn't destroy Flutter activity
+            launchMainActivityForCallWaiting()
         }
         finishAndRemoveTask()
     }
@@ -1175,6 +1215,9 @@ class IncomingCallActivity : AppCompatActivity() {
             val answerIntent = Intent(this, TVConnectionService::class.java).apply {
                 action = TVConnectionService.ACTION_ANSWER
                 putExtra(TVConnectionService.EXTRA_CALL_HANDLE, sid)
+                // Tell the service that IncomingCallActivity is handling the MainActivity launch
+                // so the service should NOT launch MainActivity again (avoids dual onNewIntent)
+                putExtra("LAUNCHED_FROM_ACTIVITY", true)
                 callInvite?.let { invite ->
                     putExtra(TVConnectionService.EXTRA_INCOMING_CALL_INVITE, invite)
                 }
@@ -1270,11 +1313,43 @@ class IncomingCallActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Bring main activity to front for call-waiting answer scenarios (hold+answer, end+answer).
+     * Uses SINGLE_TOP + REORDER_TO_FRONT instead of CLEAR_TOP to avoid destroying the
+     * existing Flutter activity and its BLoC state (active call screen, timer, etc.).
+     * Passes call data via extras so Flutter can update to show the new call.
+     * MainActivity.onNewIntent() handles receiving this data.
+     */
+    private fun launchMainActivityForCallWaiting() {
+        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+        launchIntent?.let {
+            it.flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
+                       Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                       Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+            // Add extras to tell MainActivity to show over lock screen
+            it.putExtra("SHOW_OVER_LOCK_SCREEN", true)
+            it.putExtra("CALL_ANSWERED", true)
+            it.putExtra("CALL_SID", callSid)
+            // Pass call data so Flutter can display it immediately
+            it.putExtra("CALLER_NAME", callerName)
+            it.putExtra("CALLER_NUMBER", callerNumber)
+            it.putExtra("MY_NUMBER", myNumber)
+            it.putExtra("CALL_DIRECTION", "incoming")
+            startActivity(it)
+            android.util.Log.d(TAG, "launchMainActivityForCallWaiting: Brought main activity to front with call data - caller: $callerName, number: $callerNumber")
+        }
+    }
+
     private fun launchMainActivity() {
         // Get the main launcher activity
         val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
         launchIntent?.let {
-            it.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            // Use SINGLE_TOP + REORDER_TO_FRONT to preserve existing Flutter activity
+            // CLEAR_TOP was destroying and recreating MainActivity, killing the Flutter engine
+            // and causing surface destroy/recreate (32 frame skip, dual onNewIntent, etc.)
+            it.flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
+                       Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                       Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
             // Add extras to tell MainActivity to show over lock screen
             it.putExtra("SHOW_OVER_LOCK_SCREEN", true)
             it.putExtra("CALL_ANSWERED", true)
@@ -1350,6 +1425,7 @@ class IncomingCallActivity : AppCompatActivity() {
         var startX = 0f
         var startY = 0f
         var isDragging = false
+        var hasSwipeCompleted = false
         
         buttonContainer.setOnTouchListener { _, event ->
             when (event.action) {
@@ -1357,6 +1433,7 @@ class IncomingCallActivity : AppCompatActivity() {
                     startX = event.x
                     startY = event.y
                     isDragging = false
+                    hasSwipeCompleted = false
                     
                     // Start pulse animation on button with icon scale
                     buttonContainer.animate()
@@ -1403,8 +1480,9 @@ class IncomingCallActivity : AppCompatActivity() {
                         val alphaDrag = 0.9f + (totalDelta / 500f).coerceAtMost(0.1f)
                         buttonBg.alpha = alphaDrag
                         
-                        // If dragged more than 120dp, trigger action
-                        if (totalDelta > 120) {
+                        // If dragged more than 120dp, trigger action (only once per gesture)
+                        if (totalDelta > 120 && !hasSwipeCompleted) {
+                            hasSwipeCompleted = true
                             // Haptic feedback
                             buttonContainer.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
                             buttonContainer.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
@@ -1453,7 +1531,8 @@ class IncomingCallActivity : AppCompatActivity() {
                 
                 android.view.MotionEvent.ACTION_UP,
                 android.view.MotionEvent.ACTION_CANCEL -> {
-                    if (!isDragging) {
+                    if (!isDragging && !hasSwipeCompleted) {
+                        hasSwipeCompleted = true
                         // Simple tap detected - immediate action
                         buttonContainer.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
                         
