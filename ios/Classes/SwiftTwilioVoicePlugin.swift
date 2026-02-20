@@ -2140,9 +2140,26 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         let audioSession = AVAudioSession.sharedInstance()
         self.logAudioSessionState(label: "BEFORE applyInitialAudioRoute")
         
-        // CRITICAL: If user explicitly changed audio route, don't override their choice
+        // CRITICAL: If user explicitly changed audio route, re-apply their choice.
+        // CallKit may have reset the AVAudioSession during hold/unhold transitions,
+        // so we must actively restore the desired route — not just skip.
         if self.userExplicitlyChangedAudioRoute {
-            self.sendPhoneCallEvents(description: "LOG|applyInitialAudioRoute: User explicitly changed route, respecting their choice", isError: false)
+            self.sendPhoneCallEvents(description: "LOG|applyInitialAudioRoute: User explicitly changed route, re-applying their choice", isError: false)
+            if self.desiredSpeakerState {
+                self.sendPhoneCallEvents(description: "LOG|applyInitialAudioRoute: Restoring speaker route", isError: false)
+                self.applySpeakerRoute()
+            } else if self.desiredBluetoothState {
+                // Only restore bluetooth if a BT device is still available
+                if self.isBluetoothAvailableSafe(afterDisconnect: false) {
+                    self.sendPhoneCallEvents(description: "LOG|applyInitialAudioRoute: Restoring bluetooth route", isError: false)
+                    self.applyBluetoothRoute()
+                } else {
+                    self.sendPhoneCallEvents(description: "LOG|applyInitialAudioRoute: Bluetooth no longer available, falling back to earpiece", isError: false)
+                    self.desiredBluetoothState = false
+                }
+            } else {
+                self.sendPhoneCallEvents(description: "LOG|applyInitialAudioRoute: User chose earpiece, no action needed", isError: false)
+            }
             return
         }
         
