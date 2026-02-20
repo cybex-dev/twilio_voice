@@ -1707,9 +1707,9 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     }
 
     private fun toggleSpeaker(ctx: Context, speakerIsOn: Boolean) {
-        // Use callSid if available, otherwise get from active connections
-        val handle = callSid ?: TVConnectionService.getActiveCallHandle()
-        Log.d(TAG, "toggleSpeaker: speakerIsOn=$speakerIsOn, callSid=$callSid, handle=$handle")
+        // Validate callSid is still a live connection, otherwise resolve from active connections
+        val handle = if (callSid != null && TVConnectionService.getConnection(callSid!!) != null) callSid else TVConnectionService.getActiveCallHandle()
+        Log.d(TAG, "toggleSpeaker: speakerIsOn=$speakerIsOn, callSid=$callSid, resolvedHandle=$handle")
         
         Intent(ctx, TVConnectionService::class.java).apply {
             action = TVConnectionService.ACTION_TOGGLE_SPEAKER
@@ -1720,9 +1720,9 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     }
 
     private fun toggleMute(ctx: Context, mute: Boolean) {
-        // Use callSid if available, otherwise get from active connections
-        val handle = callSid ?: TVConnectionService.getActiveCallHandle()
-        Log.d(TAG, "toggleMute: mute=$mute, callSid=$callSid, handle=$handle")
+        // Validate callSid is still a live connection, otherwise resolve from active connections
+        val handle = if (callSid != null && TVConnectionService.getConnection(callSid!!) != null) callSid else TVConnectionService.getActiveCallHandle()
+        Log.d(TAG, "toggleMute: mute=$mute, callSid=$callSid, resolvedHandle=$handle")
         
         Intent(ctx, TVConnectionService::class.java).apply {
             action = TVConnectionService.ACTION_TOGGLE_MUTE
@@ -1733,9 +1733,9 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     }
 
     private fun toggleBluetooth(ctx: Context, bluetoothOn: Boolean) {
-        // Use callSid if available, otherwise get from active connections
-        val handle = callSid ?: TVConnectionService.getActiveCallHandle()
-        Log.d(TAG, "toggleBluetooth: bluetoothOn=$bluetoothOn, callSid=$callSid, handle=$handle")
+        // Validate callSid is still a live connection, otherwise resolve from active connections
+        val handle = if (callSid != null && TVConnectionService.getConnection(callSid!!) != null) callSid else TVConnectionService.getActiveCallHandle()
+        Log.d(TAG, "toggleBluetooth: bluetoothOn=$bluetoothOn, callSid=$callSid, resolvedHandle=$handle")
         
         Intent(ctx, TVConnectionService::class.java).apply {
             action = TVConnectionService.ACTION_TOGGLE_BLUETOOTH
@@ -1746,9 +1746,9 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     }
 
     private fun toggleHold(ctx: Context, shouldHold: Boolean) {
-        // Use callSid if available, otherwise get from active connections
-        val handle = callSid ?: TVConnectionService.getActiveCallHandle()
-        Log.d(TAG, "toggleHold: shouldHold=$shouldHold, callSid=$callSid, handle=$handle")
+        // Validate callSid is still a live connection, otherwise resolve from active connections
+        val handle = if (callSid != null && TVConnectionService.getConnection(callSid!!) != null) callSid else TVConnectionService.getActiveCallHandle()
+        Log.d(TAG, "toggleHold: shouldHold=$shouldHold, callSid=$callSid, resolvedHandle=$handle")
         
         Intent(ctx, TVConnectionService::class.java).apply {
             action = TVConnectionService.ACTION_TOGGLE_HOLD
@@ -2647,12 +2647,18 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
 
             TVNativeCallActions.ACTION_UNHOLD -> {
                 Log.d(TAG, "handleBroadcastIntent: Unhold")
-                // Restore callSid from the remaining active connection
-                // This is needed when a second call ends and the held call is restored
+                // Always restore callSid from the remaining active connection on unhold.
+                // This is critical when a second call ends and the held call is restored,
+                // because callSid may still point to the ended call's SID.
                 val activeHandle = TVConnectionService.getActiveCallHandle()
-                if (activeHandle != null && callSid == null) {
+                if (activeHandle != null) {
+                    val oldSid = callSid
                     callSid = activeHandle
-                    Log.d(TAG, "handleBroadcastIntent: Unhold - restored callSid=$callSid from active connection")
+                    if (oldSid != activeHandle) {
+                        Log.d(TAG, "handleBroadcastIntent: Unhold - updated callSid from $oldSid to $callSid")
+                    } else {
+                        Log.d(TAG, "handleBroadcastIntent: Unhold - callSid already correct: $callSid")
+                    }
                 }
                 logEvent("", "Unhold")
             }

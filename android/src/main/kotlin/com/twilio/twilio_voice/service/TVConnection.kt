@@ -269,6 +269,20 @@ open class TVCallConnection(
         // Route to Bluetooth if connected, otherwise audio will go to earpiece by default
         routeAudioToBluetoothIfConnected()
     }
+
+    /**
+     * Force re-acquire audio focus for this connection.
+     * Used when another connection's disconnect released the shared OS audio focus,
+     * leaving this connection's audio routing broken (MODE_NORMAL, no communication device).
+     *
+     * This resets [hasAudioFocus] so [requestAudioFocus] will perform a full re-acquire
+     * including MODE_IN_COMMUNICATION, audio device callback, and Bluetooth routing.
+     */
+    internal fun restoreAudioFocus() {
+        Log.d(TAG, "restoreAudioFocus: Forcing audio focus re-acquire (current hasAudioFocus=$hasAudioFocus)")
+        hasAudioFocus = false
+        requestAudioFocus()
+    }
     
     /**
      * Register audio device callback to detect Bluetooth connect/disconnect during calls
@@ -923,9 +937,18 @@ open class TVCallConnection(
     }
 
     override fun onDisconnected(call: Call, reason: CallException?) {
-        // TODO run below only if we did NOT ended call i.e. remove disconnect from other client
-        Log.d(TAG, "onDisconnected: onDisconnected, reason: ${reason?.message}.\nException: ${reason.toString()}")
+        Log.d(TAG, "onDisconnected: onDisconnected, reason: ${reason?.message}, isDisconnectingOrDisconnected=$isDisconnectingOrDisconnected.\nException: ${reason.toString()}")
         twilioCall = null
+        
+        // If forceDisconnectWithLogging() already handled this disconnect,
+        // skip releaseAudioFocus/destroy to avoid killing the restored audio focus
+        // of a remaining call in a call-waiting scenario.
+        if (isDisconnectingOrDisconnected) {
+            Log.d(TAG, "onDisconnected: Already handled by forceDisconnectWithLogging, skipping duplicate cleanup")
+            return
+        }
+        isDisconnectingOrDisconnected = true
+        
         releaseAudioFocus()
         onCallStateListener?.withValue(call.state)
         onEvent?.onChange(TVNativeCallEvents.EVENT_DISCONNECTED_REMOTE, Bundle().apply {
@@ -939,7 +962,12 @@ open class TVCallConnection(
 
     override fun onAbort() {
         super.onAbort()
-        Log.i(TAG, "onAbort: onAbort")
+        Log.i(TAG, "onAbort: onAbort, isDisconnectingOrDisconnected=$isDisconnectingOrDisconnected")
+        if (isDisconnectingOrDisconnected) {
+            Log.d(TAG, "onAbort: Already handled by forceDisconnectWithLogging, skipping duplicate cleanup")
+            return
+        }
+        isDisconnectingOrDisconnected = true
         twilioCall?.disconnect()
         releaseAudioFocus()
         setDisconnected(DisconnectCause(DisconnectCause.CANCELED))
@@ -950,7 +978,12 @@ open class TVCallConnection(
 
     override fun onDisconnect() {
         super.onDisconnect()
-        Log.i(TAG, "onDisconnect: onDisconnect")
+        Log.i(TAG, "onDisconnect: onDisconnect, isDisconnectingOrDisconnected=$isDisconnectingOrDisconnected")
+        if (isDisconnectingOrDisconnected) {
+            Log.d(TAG, "onDisconnect: Already handled by forceDisconnectWithLogging, skipping duplicate cleanup")
+            return
+        }
+        isDisconnectingOrDisconnected = true
         twilioCall?.disconnect()
         releaseAudioFocus()
         setDisconnected(DisconnectCause(DisconnectCause.LOCAL))
@@ -1128,14 +1161,23 @@ open class TVCallConnection(
      * @param newState: true if speaker is enabled, false if speaker is disabled
      */
     fun toggleSpeaker(newState: Boolean) {
-        Log.d(TAG, "=== toggleSpeaker START === newState=$newState")
-        // First try using TelecomManager's audio route
-        if (callAudioState != null) {
-            Log.d(TAG, "toggleSpeaker: Using TelecomManager route, newState=$newState")
-            toggleAudioRoute(CallAudioState.ROUTE_SPEAKER, newState)
+        Log.d(TAG, "=== toggleSpeaker START === newState=$newState, state=$state, callAudioState=$callAudioState")
+        
+        // When the connection is alive AND TelecomManager is tracking audio state,
+        // use setAudioRoute() which is the official API. When callAudioState is null
+        // (e.g. self-managed connection or after call-waiting), setAudioRoute() silently
+        // fails because TelecomManager has no audio state to route. In that case we must
+        // manipulate AudioManager directly — same as the disconnected path.
+        if (state != STATE_DISCONNECTED && callAudioState != null) {
+            Log.d(TAG, "toggleSpeaker: Using TelecomManager setAudioRoute, newState=$newState")
+            if (newState) {
+                setAudioRoute(CallAudioState.ROUTE_SPEAKER)
+            } else {
+                setAudioRoute(CallAudioState.ROUTE_WIRED_OR_EARPIECE)
+            }
         } else {
-            // Fallback: Use AudioManager directly when not using TelecomManager
-            Log.d(TAG, "toggleSpeaker: callAudioState is NULL, using AudioManager directly")
+            // Use AudioManager directly when callAudioState is null or disconnected
+            Log.d(TAG, "toggleSpeaker: callAudioState is null or disconnected, using AudioManager directly")
             val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
             audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
             
@@ -1214,15 +1256,22 @@ open class TVCallConnection(
      * @param newState: true if bluetooth is enabled, false if bluetooth is disabled
      */
     fun toggleBluetooth(newState: Boolean) {
-        Log.d(TAG, "=== toggleBluetooth START === newState=$newState")
-        // When callAudioState is available, toggleAudioRoute triggers onCallAudioStateChanged
-        // which broadcasts ACTION_AUDIO_STATE, and the handler in TwilioVoicePlugin emits events.
-        if (callAudioState != null) {
-            Log.d(TAG, "toggleBluetooth: Using TelecomManager route, newState=$newState")
-            toggleAudioRoute(CallAudioState.ROUTE_BLUETOOTH, newState)
+        Log.d(TAG, "=== toggleBluetooth START === newState=$newState, state=$state, callAudioState=$callAudioState")
+        // When the connection is alive AND TelecomManager is tracking audio state,
+        // use setAudioRoute(). When callAudioState is null, setAudioRoute() silently
+        // fails so we must use AudioManager directly.
+        if (state != STATE_DISCONNECTED && callAudioState != null) {
+            Log.d(TAG, "toggleBluetooth: Using TelecomManager setAudioRoute, newState=$newState")
+            if (newState) {
+                setAudioRoute(CallAudioState.ROUTE_BLUETOOTH)
+            } else {
+                setAudioRoute(CallAudioState.ROUTE_WIRED_OR_EARPIECE)
+            }
+            
+            if (newState) wasOnBluetooth = true else wasOnBluetooth = false
         } else {
-            // Fallback: Use AudioManager directly when not using TelecomManager
-            Log.d(TAG, "toggleBluetooth: callAudioState is NULL, using AudioManager directly")
+            // Use AudioManager directly when callAudioState is null or disconnected
+            Log.d(TAG, "toggleBluetooth: callAudioState is null or disconnected, using AudioManager directly")
             val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
             audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
             

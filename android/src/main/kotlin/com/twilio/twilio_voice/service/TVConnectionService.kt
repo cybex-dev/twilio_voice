@@ -1409,6 +1409,15 @@ class TVConnectionService : ConnectionService() {
                                 remainingConnection.toggleHold(false)
                                 Log.d(TAG, "[Decline] Unholding remaining call $remainingHandle")
                             }
+
+                            // Re-request audio focus for the remaining call.
+                            // The disconnected call's forceDisconnectWithLogging() released audio focus
+                            // which reset MODE to NORMAL, cleared communication device, and stopped BT SCO.
+                            // Without re-requesting, audio toggles (speaker/earpiece/bluetooth) won't work.
+                            remainingConnection?.let { conn ->
+                                Log.d(TAG, "[Decline] Restoring audio focus for remaining call $remainingHandle")
+                                conn.restoreAudioFocus()
+                            }
                             
                             // Bring back the main activity to show the remaining call's UI
                             // Use bringMainActivityToFront() instead of launchMainActivityWithCallData()
