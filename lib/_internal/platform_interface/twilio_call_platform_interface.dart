@@ -96,4 +96,11 @@ abstract class TwilioCallPlatform extends SharedPlatformInterface {
 
   //getActiveCallOnResumeFromTerminatedState
   Future<bool?> getActiveCallOnResumeFromTerminatedState();
+
+  /// Clears all local call state (_activeCall, _waitingCall).
+  /// Used when all calls have ended to prevent stale state.
+  void clearCallState() {
+    activeCall = null;
+    waitingCall = null;
+  }
 }

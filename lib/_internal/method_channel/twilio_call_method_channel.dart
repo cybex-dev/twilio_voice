@@ -164,4 +164,12 @@ class MethodChannelTwilioCall extends TwilioCallPlatform {
     return _channel.invokeMethod(
         'getActiveCallOnResumeFromTerminatedState', <String, dynamic>{});
   }
+
+  /// Clears all local call state (_activeCall, _waitingCall).
+  /// Used when all calls have ended to prevent stale state.
+  @override
+  void clearCallState() {
+    _activeCall = null;
+    _waitingCall = null;
+  }
 }

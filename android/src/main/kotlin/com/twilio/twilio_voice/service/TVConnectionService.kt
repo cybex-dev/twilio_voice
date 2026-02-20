@@ -20,6 +20,8 @@ import android.graphics.Shader
 import android.graphics.Typeface
 import android.graphics.drawable.Icon
 import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.media.Ringtone
 import android.media.RingtoneManager
 import android.net.Uri
@@ -648,6 +650,60 @@ class TVConnectionService : ConnectionService() {
     private var ringtone: Ringtone? = null
     private var vibrator: Vibrator? = null
     private var isRinging = false
+
+    /**
+     * Detect the current audio route from AudioManager.
+     * Returns "speaker", "bluetooth", or "earpiece".
+     * Called BEFORE a connection disconnects so we can restore the route later.
+     */
+    private fun detectCurrentAudioRoute(am: AudioManager): String {
+        // Android 12+: use communicationDevice for accurate detection
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try {
+                val commDevice = am.communicationDevice
+                if (commDevice != null) {
+                    return when (commDevice.type) {
+                        AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> "speaker"
+                        AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+                        AudioDeviceInfo.TYPE_BLE_HEADSET,
+                        AudioDeviceInfo.TYPE_HEARING_AID,
+                        AudioDeviceInfo.TYPE_BLE_SPEAKER -> {
+                            if (am.isBluetoothScoOn) "bluetooth" else "earpiece"
+                        }
+                        else -> "earpiece"
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "detectCurrentAudioRoute: Error", e)
+            }
+        }
+        // Fallback for older Android
+        if (am.isBluetoothScoOn) return "bluetooth"
+        if (am.isSpeakerphoneOn) return "speaker"
+        return "earpiece"
+    }
+
+    /**
+     * Check if a Bluetooth audio device is available for voice communication.
+     * Uses communicationDevices on Android 12+, falls back to BluetoothAdapter check.
+     */
+    private fun isBluetoothDeviceAvailable(am: AudioManager?): Boolean {
+        if (am == null) return false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try {
+                return am.availableCommunicationDevices.any {
+                    it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                    it.type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
+                    it.type == AudioDeviceInfo.TYPE_HEARING_AID ||
+                    it.type == AudioDeviceInfo.TYPE_BLE_SPEAKER
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "isBluetoothDeviceAvailable: Error", e)
+            }
+        }
+        // Fallback: check if BT SCO is on
+        return am.isBluetoothScoOn
+    }
 
     @SuppressLint("WakelockTimeout")
     private fun wakeScreen() {
@@ -1332,6 +1388,11 @@ class TVConnectionService : ConnectionService() {
 
                     var connection = getConnection(callHandle)
                     
+                    // ── Save current audio route BEFORE any disconnect resets it ──
+                    // Declared here so it's in scope for the restoration code below,
+                    // regardless of whether the connection was found or recovered.
+                    var savedAudioRoute = "earpiece"
+                    
                     // If connection not found, try to recover from CallInvite in intent (terminated state case)
                     if (connection == null) {
                         val callInvite = it.getParcelableExtraSafe<CallInvite>(EXTRA_INCOMING_CALL_INVITE)
@@ -1379,6 +1440,18 @@ class TVConnectionService : ConnectionService() {
                             connection.onAction = null
                         }
                         
+                        // ── Snapshot the audio route before disconnect resets it ──
+                        // forceDisconnectWithLogging → releaseAudioFocus clears speaker,
+                        // stops BT SCO, and resets MODE to NORMAL.  We snapshot the route
+                        // here so we can restore it on the remaining connection.
+                        if (otherCallsRemain) {
+                            val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                            if (am != null) {
+                                savedAudioRoute = detectCurrentAudioRoute(am)
+                                Log.d(TAG, "[Decline] Saved audio route before disconnect: $savedAudioRoute")
+                            }
+                        }
+                        
                         connection.forceDisconnectWithLogging()
                         
                         // Only broadcast call ended to Flutter if no other active calls remain
@@ -1417,6 +1490,33 @@ class TVConnectionService : ConnectionService() {
                             remainingConnection?.let { conn ->
                                 Log.d(TAG, "[Decline] Restoring audio focus for remaining call $remainingHandle")
                                 conn.restoreAudioFocus()
+                                
+                                // ── Restore the audio route the user had selected ──
+                                // restoreAudioFocus() always routes to earpiece (or BT if
+                                // connected).  If the user had speaker ON we must re-apply it.
+                                // For Bluetooth we only restore if the device is still available.
+                                Log.d(TAG, "[Decline] Restoring saved audio route: $savedAudioRoute")
+                                when (savedAudioRoute) {
+                                    "speaker" -> {
+                                        Log.d(TAG, "[Decline] Re-applying speaker route")
+                                        conn.toggleSpeaker(true)
+                                    }
+                                    "bluetooth" -> {
+                                        // Check if BT device is still available before restoring
+                                        val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                                        val btAvailable = am?.isBluetoothScoOn == true || isBluetoothDeviceAvailable(am)
+                                        if (btAvailable) {
+                                            Log.d(TAG, "[Decline] Re-applying bluetooth route (device still available)")
+                                            conn.toggleBluetooth(true)
+                                        } else {
+                                            Log.d(TAG, "[Decline] Bluetooth device no longer available, staying on earpiece")
+                                        }
+                                    }
+                                    else -> {
+                                        // earpiece - already the default after restoreAudioFocus
+                                        Log.d(TAG, "[Decline] Earpiece is already the default, no action needed")
+                                    }
+                                }
                             }
                             
                             // Bring back the main activity to show the remaining call's UI
