@@ -427,7 +427,11 @@ open class TVCallConnection(
     }
     
     /**
-     * Auto-route to earpiece when Bluetooth disconnects mid-call
+     * Handle audio route when Bluetooth disconnects mid-call.
+     * 
+     * If the user was actively on Bluetooth → switch to earpiece.
+     * If the user was on speaker or earpiece (not using BT for audio) → keep current route.
+     * Always notifies Flutter that Bluetooth is no longer available.
      */
     private fun autoRouteToEarpieceOnBluetoothDisconnect() {
         Log.d(TAG, "=== autoRouteToEarpieceOnBluetoothDisconnect START ===")
@@ -440,33 +444,61 @@ open class TVCallConnection(
             return
         }
         
-        // Always route to earpiece when a Bluetooth device is removed during a call
-        // This ensures audio doesn't get stuck on a non-existent device
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            try {
-                Log.d(TAG, "autoRouteToEarpieceOnBluetoothDisconnect: Clearing communication device")
-                am.clearCommunicationDevice()
-                
-                val availableDevices = am.availableCommunicationDevices
-                val earpieceDevice = availableDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE }
-                if (earpieceDevice != null) {
-                    val result = am.setCommunicationDevice(earpieceDevice)
-                    Log.d(TAG, "autoRouteToEarpieceOnBluetoothDisconnect: setCommunicationDevice to earpiece result=$result")
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "autoRouteToEarpieceOnBluetoothDisconnect: Error", e)
-            }
+        // Determine if the user was currently on speaker BEFORE clearing communication device
+        val wasOnSpeaker = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val commDevice = am.communicationDevice
+            val onSpeakerViaCommunicationDevice = commDevice != null && commDevice.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+            val onSpeakerViaLegacy = am.isSpeakerphoneOn
+            Log.d(TAG, "autoRouteToEarpieceOnBluetoothDisconnect: commDevice type=${commDevice?.type}, isSpeakerphoneOn=$onSpeakerViaLegacy, onSpeakerViaCommunicationDevice=$onSpeakerViaCommunicationDevice")
+            onSpeakerViaCommunicationDevice || onSpeakerViaLegacy
         } else {
-            // Legacy
-            am.stopBluetoothSco()
-            am.isBluetoothScoOn = false
+            am.isSpeakerphoneOn
+        }
+        
+        Log.d(TAG, "autoRouteToEarpieceOnBluetoothDisconnect: wasOnSpeaker=$wasOnSpeaker")
+        
+        if (wasOnBluetooth && !wasOnSpeaker) {
+            // User was actively on Bluetooth → switch to earpiece
+            Log.d(TAG, "autoRouteToEarpieceOnBluetoothDisconnect: Was on BT, routing to earpiece")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                try {
+                    am.clearCommunicationDevice()
+                    val availableDevices = am.availableCommunicationDevices
+                    val earpieceDevice = availableDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE }
+                    if (earpieceDevice != null) {
+                        val result = am.setCommunicationDevice(earpieceDevice)
+                        Log.d(TAG, "autoRouteToEarpieceOnBluetoothDisconnect: setCommunicationDevice to earpiece result=$result")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "autoRouteToEarpieceOnBluetoothDisconnect: Error routing to earpiece", e)
+                }
+            } else {
+                am.stopBluetoothSco()
+                am.isBluetoothScoOn = false
+            }
+        } else if (wasOnSpeaker) {
+            // User was on speaker → keep speaker, just clean up BT SCO
+            Log.d(TAG, "autoRouteToEarpieceOnBluetoothDisconnect: Was on speaker, keeping speaker active")
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+                // Legacy: just stop BT SCO, speaker stays active via isSpeakerphoneOn
+                am.stopBluetoothSco()
+                am.isBluetoothScoOn = false
+            }
+            // For Android 12+: communication device is already set to speaker, no change needed
+        } else {
+            // User was on earpiece (not on BT, not on speaker) → stay on earpiece
+            Log.d(TAG, "autoRouteToEarpieceOnBluetoothDisconnect: Was on earpiece, staying on earpiece")
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+                am.stopBluetoothSco()
+                am.isBluetoothScoOn = false
+            }
+            // For Android 12+: communication device is already earpiece or default, no change needed
         }
         
         wasOnBluetooth = false
         
         // ALWAYS notify Flutter about Bluetooth disconnection when a BT device is removed
-        // This ensures UI is immediately updated
+        // This ensures UI is immediately updated (BT option removed from audio toggle)
         Log.d(TAG, "autoRouteToEarpieceOnBluetoothDisconnect: Broadcasting EVENT_BLUETOOTH with state=false")
         onEvent?.onChange(TVNativeCallEvents.EVENT_BLUETOOTH, Bundle().apply {
             putBoolean(TVBroadcastReceiver.EXTRA_CALL_BLUETOOTH_STATE, false)
