@@ -1125,6 +1125,27 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         }
     }
     
+    /**
+     * Checks if the device is currently on a non-Twilio (system/cellular) call.
+     * Uses CXCallObserver to get all active calls on the device, then excludes
+     * calls that belong to our app (tracked in `calls` and `callInvites`).
+     *
+     * @return true if there is at least one active non-Twilio call on the device
+     */
+    private func isDeviceOnNonTwilioCall() -> Bool {
+        let allSystemCalls = callObserver.calls.filter { !$0.hasEnded }
+        
+        // Get all UUIDs that belong to our Twilio calls
+        let twilioCallUUIDs = Set(self.calls.keys).union(Set(self.callInvites.keys))
+        
+        // Check if any system call is NOT a Twilio call
+        let nonTwilioCalls = allSystemCalls.filter { !twilioCallUUIDs.contains($0.uuid) }
+        
+        self.sendPhoneCallEvents(description: "LOG|isDeviceOnNonTwilioCall: allSystemCalls=\(allSystemCalls.count), twilioCallUUIDs=\(twilioCallUUIDs.count), nonTwilioCalls=\(nonTwilioCalls.count)", isError: false)
+        
+        return !nonTwilioCalls.isEmpty
+    }
+    
     // MARK: TVONotificaitonDelegate
     public func callInviteReceived(callInvite: CallInvite) {
         self.sendPhoneCallEvents(description: "LOG|callInviteReceived: uuid=\(callInvite.uuid)", isError: false)
@@ -1135,6 +1156,28 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
          * sent to this device/identity pair.
          */
         UserDefaults.standard.set(Date(), forKey: kCachedBindingDate)
+        
+        // ============================================================
+        // SYSTEM CALL CHECK: If the device is already on a non-Twilio
+        // system call (cellular/SIM), reject the incoming Twilio call.
+        // We still MUST report the call to CallKit (Apple requirement
+        // for PushKit), then immediately end it.
+        // NOTE: If the active call is from OUR app (Twilio), we allow
+        // it through for call waiting support.
+        // ============================================================
+        if isDeviceOnNonTwilioCall() {
+            self.sendPhoneCallEvents(description: "LOG|callInviteReceived: Device is on a system call - rejecting Twilio incoming call", isError: false)
+            // Must report to CallKit first (Apple PushKit requirement), then immediately end
+            reportIncomingCall(from: callInvite.from ?? defaultCaller, uuid: callInvite.uuid)
+            self.callInvites[callInvite.uuid] = callInvite
+            // Reject the Twilio call invite and end the CallKit call
+            callInvite.reject()
+            self.callInvites.removeValue(forKey: callInvite.uuid)
+            performEndCallAction(uuid: callInvite.uuid)
+            self.sendPhoneCallEvents(description: "LOG|callInviteReceived: Twilio call rejected (system call active)", isError: false)
+            return
+        }
+        // ============================================================
         
         let incomingCallerDetails:String = callInvite.from ?? defaultCaller
         let userNumber:String = extractUserNumber(from: incomingCallerDetails)

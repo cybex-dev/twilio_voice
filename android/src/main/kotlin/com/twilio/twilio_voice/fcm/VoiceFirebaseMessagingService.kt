@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.PowerManager
+import android.telephony.TelephonyManager
 import android.util.Log
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.google.firebase.messaging.FirebaseMessagingService
@@ -172,6 +173,31 @@ class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageListene
         Log.d(TAG, "[FCM-${callInvite.callSid.takeLast(6)}] ✓ CLAIMED successfully, proceeding with UI")
         // ============================================================
 
+        // ============================================================
+        // SYSTEM CALL CHECK: Reject incoming Twilio call if the device
+        // is already on a system (cellular/SIM) phone call. This prevents
+        // the user seeing two calls ringing simultaneously.
+        // NOTE: If the active call is from OUR app (Twilio), the check
+        // above (tryClaimIncomingCall) handles it for call waiting.
+        // This check is specifically for non-Twilio system calls.
+        // ============================================================
+        val isDeviceOnSystemCall = isDeviceInSystemCall()
+        Log.d(TAG, "[FCM-${callInvite.callSid.takeLast(6)}] System call check: isDeviceOnSystemCall=$isDeviceOnSystemCall")
+        if (isDeviceOnSystemCall) {
+            Log.w(TAG, "[FCM-${callInvite.callSid.takeLast(6)}] ❌ Device is already on a system call - rejecting Twilio incoming call")
+            try {
+                callInvite.reject(applicationContext)
+                Log.d(TAG, "[FCM-${callInvite.callSid.takeLast(6)}] ✓ Successfully rejected (system call active)")
+            } catch (e: Exception) {
+                Log.e(TAG, "[FCM-${callInvite.callSid.takeLast(6)}] Failed to reject: ${e.message}", e)
+            }
+            // Clear the pending call claim so future calls can come through
+            TVConnectionService.clearPendingIncomingCallFromPrefs(applicationContext)
+            Log.d(TAG, "[FCM-${callInvite.callSid.takeLast(6)}] ════ FCM END (rejected - system call active) ════")
+            return
+        }
+        // ============================================================
+
         // Acquire a partial wake lock to ensure the CPU stays awake long enough
         // to start the foreground service and show the incoming call UI
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -241,4 +267,25 @@ class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageListene
         }
     }
     //endregion
+
+    /**
+     * Checks if the device is currently on a system (cellular/SIM) phone call.
+     * Uses TelephonyManager to detect active/ringing system calls.
+     * This does NOT detect Twilio VoIP calls - only native telephony calls.
+     * 
+     * @return true if the device has an active or ringing system call
+     */
+    private fun isDeviceInSystemCall(): Boolean {
+        return try {
+            val telephonyManager = getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
+            telephonyManager?.let {
+                val callState = it.callState
+                Log.d(TAG, "isDeviceInSystemCall: TelephonyManager.callState=$callState (IDLE=0, RINGING=1, OFFHOOK=2)")
+                callState != TelephonyManager.CALL_STATE_IDLE
+            } ?: false
+        } catch (e: Exception) {
+            Log.e(TAG, "isDeviceInSystemCall: Error checking call state: ${e.message}", e)
+            false
+        }
+    }
 }
