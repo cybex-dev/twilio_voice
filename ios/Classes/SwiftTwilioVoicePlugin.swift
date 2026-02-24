@@ -1346,6 +1346,12 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             }
         }
         
+        // IMPORTANT: Capture activeCallUUID BEFORE callDisconnected() clears it.
+        // callDisconnected sets activeCallUUID = nil when the ending call IS the
+        // active call. We need the original value to correctly determine whether
+        // the ending call was the active call (Call B) or the held call (Call A).
+        let wasActiveCallUUID = self.activeCallUUID
+        
         if let uuid = call.uuid {
             callDisconnected(uuid: uuid)
         }
@@ -1356,8 +1362,13 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         } else {
             self.sendPhoneCallEvents(description: "LOG|Call disconnected but other calls remain, suppressing Call Ended", isError: false)
             
-            // Check if the disconnected call was the held call (not the active one)
-            if let uuid = call.uuid, uuid != self.activeCallUUID {
+            // Check if the disconnected call was the held call (not the active one).
+            // Use the SAVED wasActiveCallUUID — not self.activeCallUUID which was
+            // already cleared by callDisconnected(). Without this, the check would
+            // always pass (uuid != nil) and incorrectly send "Held Call Ended" even
+            // when the ACTIVE call (Call B) ended, which would clear the saved
+            // held-call data (Call A) before the Unhold event can restore it.
+            if let uuid = call.uuid, uuid != wasActiveCallUUID {
                 // The held call ended remotely - notify Flutter to clear the held call banner
                 self.sendPhoneCallEvents(description: "Held Call Ended", isError: false)
             }

@@ -1018,8 +1018,6 @@ class TVConnectionService : ConnectionService() {
                             stopSelfSafe()
                         } else {
                             Log.d(TAG, "[ACTION_INCOMING_CALL onDisconnected] Call $callSid ended but other calls still active (${activeConnections.size} remaining), suppressing ACTION_CALL_ENDED")
-                            // Notify Flutter that the held call ended so the "On Hold" banner is cleared
-                            sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_HELD_CALL_ENDED, callSid, connection.extras)
                             // Unhold remaining call if it was on hold
                             val remainingHandle = getActiveCallHandle()
                             if (remainingHandle != null) {
@@ -1028,8 +1026,14 @@ class TVConnectionService : ConnectionService() {
                                     ?: remainingConn?.extras?.getString("caller_number") ?: ""
                                 showOngoingCallNotification(remainingHandle, remainingNumber)
                                 if (remainingConn?.state == Connection.STATE_HOLDING) {
+                                    // The remaining call is ON HOLD → the ACTIVE call ended.
+                                    // Do NOT send ACTION_HELD_CALL_ENDED — the held call is still alive.
                                     remainingConn.toggleHold(false)
                                     Log.d(TAG, "[ACTION_INCOMING_CALL onDisconnected] Unholding remaining call $remainingHandle")
+                                } else {
+                                    // The remaining call is NOT on hold → the HELD call ended.
+                                    // Notify Flutter to clear the held call banner.
+                                    sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_HELD_CALL_ENDED, callSid, connection.extras)
                                 }
                                 bringMainActivityToFront()
                             }
@@ -1088,8 +1092,6 @@ class TVConnectionService : ConnectionService() {
                                     stopSelfSafe()
                                 } else {
                                     Log.d(TAG, "[ACTION_ANSWER onDisconnected] Call $callSid ended but other calls still active, suppressing ACTION_CALL_ENDED")
-                                    // Notify Flutter that the held call ended so the "On Hold" banner is cleared
-                                    sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_HELD_CALL_ENDED, callSid, newConnection.extras)
                                     val remainingHandle = getActiveCallHandle()
                                     if (remainingHandle != null) {
                                         val remainingConn = getConnection(remainingHandle)
@@ -1097,8 +1099,14 @@ class TVConnectionService : ConnectionService() {
                                             ?: remainingConn?.extras?.getString("caller_number") ?: ""
                                         showOngoingCallNotification(remainingHandle, remainingNumber)
                                         if (remainingConn?.state == Connection.STATE_HOLDING) {
+                                            // The remaining call is ON HOLD → the ACTIVE call ended.
+                                            // Do NOT send ACTION_HELD_CALL_ENDED — the held call is still alive.
                                             remainingConn.toggleHold(false)
                                             Log.d(TAG, "[ACTION_ANSWER onDisconnected] Unholding remaining call $remainingHandle")
+                                        } else {
+                                            // The remaining call is NOT on hold → the HELD call ended.
+                                            // Notify Flutter to clear the held call banner.
+                                            sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_HELD_CALL_ENDED, callSid, newConnection.extras)
                                         }
                                         bringMainActivityToFront()
                                     }
@@ -1646,8 +1654,6 @@ class TVConnectionService : ConnectionService() {
                                 stopSelfSafe()
                             } else {
                                 Log.d(TAG, "[Outgoing onDisconnected] Call ${call.sid} ended but other calls still active, suppressing ACTION_CALL_ENDED")
-                                // Notify Flutter that the held call ended so the "On Hold" banner is cleared
-                                sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_HELD_CALL_ENDED, call.sid ?: "", connection.extras)
                                 val remainingHandle = getActiveCallHandle()
                                 if (remainingHandle != null) {
                                     val remainingConn = getConnection(remainingHandle)
@@ -1655,8 +1661,14 @@ class TVConnectionService : ConnectionService() {
                                         ?: remainingConn?.extras?.getString("caller_number") ?: ""
                                     showOngoingCallNotification(remainingHandle, remainingNumber)
                                     if (remainingConn?.state == Connection.STATE_HOLDING) {
+                                        // The remaining call is ON HOLD → the ACTIVE call ended.
+                                        // Do NOT send ACTION_HELD_CALL_ENDED — the held call is still alive.
                                         remainingConn.toggleHold(false)
                                         Log.d(TAG, "[Outgoing onDisconnected] Unholding remaining call $remainingHandle")
+                                    } else {
+                                        // The remaining call is NOT on hold → the HELD call ended.
+                                        // Notify Flutter to clear the held call banner.
+                                        sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_HELD_CALL_ENDED, call.sid ?: "", connection.extras)
                                     }
                                     bringMainActivityToFront()
                                 }
