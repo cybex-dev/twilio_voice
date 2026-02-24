@@ -151,6 +151,14 @@ class IncomingCallActivity : AppCompatActivity() {
                 stopRinging()
                 callHandled = true
                 releaseWakeLock()
+                
+                // Bring main activity back if device is unlocked (user was using the app)
+                val km = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+                if (km?.isKeyguardLocked != true) {
+                    android.util.Log.d(TAG, "callEndedReceiver: Device unlocked, bringing main activity to foreground")
+                    launchMainActivityForActiveCall()
+                }
+                
                 finishAndRemoveTask()
             }
         }
@@ -1288,11 +1296,21 @@ class IncomingCallActivity : AppCompatActivity() {
             android.util.Log.w(TAG, "declineCall: No callSid available")
         }
         
-        // If declining during call waiting, bring back the main activity
-        // so the user can see the active call screen
+        // Bring the main activity back to the foreground so the app doesn't stay
+        // in the background after the IncomingCallActivity (which runs in its own task) is dismissed.
+        // Only do this when the device is unlocked (i.e. the user was actively using the app).
+        // If the device is locked, the user was not in the app, so just finish quietly.
+        val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+        val isDeviceLocked = keyguardManager?.isKeyguardLocked == true
+        
         if (hasActiveCall) {
             android.util.Log.d(TAG, "declineCall: Has active call, launching main activity to restore call UI")
             launchMainActivityForActiveCall()
+        } else if (!isDeviceLocked) {
+            android.util.Log.d(TAG, "declineCall: Device is unlocked, bringing main activity back to foreground")
+            launchMainActivityForActiveCall()
+        } else {
+            android.util.Log.d(TAG, "declineCall: Device is locked, not bringing main activity to foreground")
         }
         finishAndRemoveTask()
     }
