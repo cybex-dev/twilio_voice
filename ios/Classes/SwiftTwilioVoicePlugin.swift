@@ -669,11 +669,17 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             // Use clean-category verification to reject phantom BT entries.
             audioSessionQueue.async { [weak self] in
                 guard let self = self else {
-                    result(false)
+                    DispatchQueue.main.async { result(false) }
                     return
                 }
                 let bluetoothAvailable = self.isBluetoothAvailableClean()
-                result(bluetoothAvailable)
+                self.sendPhoneCallEvents(description: "LOG|isBluetoothAvailable METHOD CHANNEL: clean check returned \(bluetoothAvailable)", isError: false)
+                // Dispatch result back to main thread — FlutterResult must be called
+                // on the platform thread to avoid race conditions with concurrent
+                // method channel calls.
+                DispatchQueue.main.async {
+                    result(bluetoothAvailable)
+                }
             }
         }
         else if flutterCall.method == "call-sid"
@@ -1629,18 +1635,22 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     /// Check whether a Bluetooth port represents a real external audio device.
     /// On iOS, when Bluetooth radio is ON but no audio device is connected/paired,
     /// some devices still list phantom .bluetoothHFP entries in availableInputs.
-    /// A real external device always has non-empty dataSources.
+    ///
+    /// NOTE: We previously used a `dataSources` heuristic (real devices have non-empty
+    /// dataSources). This turned out to be WRONG — many real TWS earbuds (e.g. boAt
+    /// Airdopes 91) report dataSources=0 even when connected and actively paired.
+    /// The dataSources check was incorrectly rejecting real connected devices.
+    ///
+    /// Now we simply accept any BT port found in availableInputs. The phantom BT
+    /// filtering is handled at a higher level by `isBluetoothAvailableClean()` which
+    /// uses `checkBluetoothWithCategoryChange()` — the definitive test that temporarily
+    /// removes .allowBluetooth from the category to see if BT persists in currentRoute.
     private func isRealBluetoothDevice(_ port: AVAudioSessionPortDescription) -> Bool {
-        // A real Bluetooth audio device (AirPods, headset, car kit, etc.) will have
-        // at least one data source. Phantom entries from the BT radio being on have none.
-        if let dataSources = port.dataSources, !dataSources.isEmpty {
-            return true
-        }
-        // Also accept if UID doesn't match the built-in mic UID pattern —
-        // external devices have unique UIDs different from built-in hardware
-        // Fallback: log what we see for debugging
-        self.sendPhoneCallEvents(description: "LOG|isRealBluetoothDevice: port=\(port.portType.rawValue), name=\(port.portName), uid=\(port.uid), dataSources=\(port.dataSources?.count ?? 0) — REJECTED (no dataSources)", isError: false)
-        return false
+        self.sendPhoneCallEvents(
+            description: "LOG|isRealBluetoothDevice: port=\(port.portType.rawValue), name=\(port.portName), uid=\(port.uid), dataSources=\(port.dataSources?.count ?? 0) — ACCEPTED",
+            isError: false
+        )
+        return true
     }
 
     /// Check if Bluetooth is available WITHOUT changing the AVAudioSession category.
@@ -1702,6 +1712,11 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             
             // Step 2: Check if BT appears in currentRoute during temp category
             var foundBluetoothDuringTempCategory = false
+            // Track whether BT was found via setPreferredInput — if so, we skip
+            // the Step 3 destructive verification (remove .allowBluetooth) because
+            // TWS earbuds that required setPreferredInput will definitely disappear
+            // from currentRoute when .allowBluetooth is removed, but they ARE real.
+            var foundViaPreferredInput = false
             
             for output in audioSession.currentRoute.outputs {
                 if output.portType == .bluetoothHFP || output.portType == .bluetoothA2DP || output.portType == .bluetoothLE {
@@ -1722,26 +1737,85 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             }
             
             if !foundBluetoothDuringTempCategory {
-                // No BT found even with .allowBluetooth — definitely no BT device
-                // Log availableInputs for debugging
+                // BT didn't auto-appear in currentRoute with .allowBluetooth.
+                // Many TWS earbuds (e.g. boAt Airdopes 91) don't auto-route just
+                // because .allowBluetooth is in the category — they need
+                // setPreferredInput to be called first. Try that now.
                 if let availableInputs = audioSession.availableInputs {
                     let btInputs = availableInputs.filter {
                         $0.portType == .bluetoothHFP || $0.portType == .bluetoothA2DP || $0.portType == .bluetoothLE
                     }
-                    if !btInputs.isEmpty {
-                        self.sendPhoneCallEvents(description: "LOG|checkBluetoothWithCategoryChange: BT in availableInputs but NOT in currentRoute — PHANTOM: \(btInputs.map { "\($0.portType.rawValue):\($0.portName):ds=\($0.dataSources?.count ?? 0)" })", isError: false)
-                    } else {
-                        self.sendPhoneCallEvents(description: "LOG|checkBluetoothWithCategoryChange: No BT found anywhere", isError: false)
+                    if let btInput = btInputs.first {
+                        self.sendPhoneCallEvents(description: "LOG|checkBluetoothWithCategoryChange: BT NOT in currentRoute, trying setPreferredInput for \(btInput.portType.rawValue):\(btInput.portName)", isError: false)
+                        do {
+                            try audioSession.setPreferredInput(btInput)
+                            try audioSession.overrideOutputAudioPort(.none)
+                            // Give iOS time to route audio to the BT device
+                            Thread.sleep(forTimeInterval: 0.1)
+                            
+                            // Check if BT now appears in currentRoute
+                            for output in audioSession.currentRoute.outputs {
+                                if output.portType == .bluetoothHFP || output.portType == .bluetoothA2DP || output.portType == .bluetoothLE {
+                                    self.sendPhoneCallEvents(description: "LOG|checkBluetoothWithCategoryChange: BT appeared after setPreferredInput → REAL device: \(output.portType.rawValue) - \(output.portName)", isError: false)
+                                    foundBluetoothDuringTempCategory = true
+                                    foundViaPreferredInput = true
+                                    break
+                                }
+                            }
+                            if !foundBluetoothDuringTempCategory {
+                                for input in audioSession.currentRoute.inputs {
+                                    if input.portType == .bluetoothHFP || input.portType == .bluetoothA2DP || input.portType == .bluetoothLE {
+                                        self.sendPhoneCallEvents(description: "LOG|checkBluetoothWithCategoryChange: BT appeared in inputs after setPreferredInput → REAL device: \(input.portType.rawValue) - \(input.portName)", isError: false)
+                                        foundBluetoothDuringTempCategory = true
+                                        foundViaPreferredInput = true
+                                        break
+                                    }
+                                }
+                            }
+                            
+                            // Clear preferred input so we don't force BT route
+                            try? audioSession.setPreferredInput(nil)
+                        } catch {
+                            self.sendPhoneCallEvents(description: "LOG|checkBluetoothWithCategoryChange: setPreferredInput failed: \(error.localizedDescription)", isError: false)
+                        }
                     }
+                    
+                    if !foundBluetoothDuringTempCategory {
+                        if !btInputs.isEmpty {
+                            self.sendPhoneCallEvents(description: "LOG|checkBluetoothWithCategoryChange: BT in availableInputs but NOT in currentRoute even after setPreferredInput — PHANTOM: \(btInputs.map { "\($0.portType.rawValue):\($0.portName):ds=\($0.dataSources?.count ?? 0)" })", isError: false)
+                        } else {
+                            self.sendPhoneCallEvents(description: "LOG|checkBluetoothWithCategoryChange: No BT found anywhere", isError: false)
+                        }
+                        
+                        // Restore original category and return false
+                        try audioSession.setCategory(originalCategory, mode: originalMode, options: originalOptions)
+                        cachedBluetoothAvailable = false
+                        return false
+                    }
+                } else {
+                    self.sendPhoneCallEvents(description: "LOG|checkBluetoothWithCategoryChange: No availableInputs", isError: false)
+                    // Restore original category and return false
+                    try audioSession.setCategory(originalCategory, mode: originalMode, options: originalOptions)
+                    cachedBluetoothAvailable = false
+                    return false
                 }
-                
-                // Restore original category and return false
-                try audioSession.setCategory(originalCategory, mode: originalMode, options: originalOptions)
-                cachedBluetoothAvailable = false
-                return false
             }
             
             // Step 3: VERIFICATION — Switch to a CLEAN category with NO Bluetooth options.
+            // Skip this for devices confirmed via setPreferredInput — those are
+            // definitively REAL (audio was actually routed to them), but they will
+            // disappear from currentRoute when .allowBluetooth is removed because
+            // TWS earbuds like boAt Airdopes only stay routed when the category
+            // explicitly allows BT. This step is only needed for devices that
+            // auto-appeared in currentRoute with .allowBluetooth (could be phantom).
+            if foundViaPreferredInput {
+                self.sendPhoneCallEvents(description: "LOG|checkBluetoothWithCategoryChange: SKIPPING Step 3 — device confirmed REAL via setPreferredInput (audio was actually routed)", isError: false)
+                // Restore original category settings
+                try audioSession.setCategory(originalCategory, mode: originalMode, options: originalOptions)
+                cachedBluetoothAvailable = true
+                return true
+            }
+            
             // This is critical: we must NOT restore the original category for verification
             // because the original might already have .allowBluetooth (from a previous
             // applyBluetoothRoute call), which would keep phantom BT in the route.
@@ -1862,8 +1936,10 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         }
         
         // Check 3: BT is not the active route, but is a real device available?
-        // Use availableInputs + isRealBluetoothDevice() to distinguish real from phantom.
-        // Real devices have dataSources (e.g., AirPods have L/R sources), phantoms don't.
+        // Since isRealBluetoothDevice() no longer filters by dataSources (some real
+        // devices like boAt Airdopes report dataSources=0), we first check if ANY
+        // BT entry exists in availableInputs. If found, we use the definitive
+        // checkBluetoothWithCategoryChange() test to verify it's real and not phantom.
         //
         // GUARD: If BT was recently disconnected, don't trust availableInputs —
         // stale BT entries can linger for several seconds after disconnect.
@@ -1876,15 +1952,27 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             }
         }
         
+        // Check if any BT entry exists in availableInputs
+        var hasBtInAvailableInputs = false
         if let availableInputs = audioSession.availableInputs {
             for input in availableInputs {
-                if (input.portType == .bluetoothHFP || input.portType == .bluetoothA2DP || input.portType == .bluetoothLE)
-                    && self.isRealBluetoothDevice(input) {
-                    self.sendPhoneCallEvents(description: "LOG|isBluetoothAvailableClean: Real BT device in availableInputs: \(input.portType.rawValue) - \(input.portName) (dataSources=\(input.dataSources?.count ?? 0)) → true", isError: false)
-                    cachedBluetoothAvailable = true
-                    return true
+                if input.portType == .bluetoothHFP || input.portType == .bluetoothA2DP || input.portType == .bluetoothLE {
+                    hasBtInAvailableInputs = true
+                    self.sendPhoneCallEvents(description: "LOG|isBluetoothAvailableClean: BT found in availableInputs: \(input.portType.rawValue) - \(input.portName) (dataSources=\(input.dataSources?.count ?? 0))", isError: false)
+                    break
                 }
             }
+        }
+        
+        if hasBtInAvailableInputs {
+            // BT is in availableInputs but NOT in currentRoute — this could be either:
+            // (a) A real connected device that's just not the active route (user on earpiece/speaker)
+            // (b) A phantom entry from BT radio being on but no device actually connected
+            // Use the definitive category-change test to distinguish
+            let isReal = self.checkBluetoothWithCategoryChange()
+            self.sendPhoneCallEvents(description: "LOG|isBluetoothAvailableClean: BT in availableInputs, category-change verification → \(isReal ? "REAL" : "PHANTOM")", isError: false)
+            cachedBluetoothAvailable = isReal
+            return isReal
         }
         
         self.sendPhoneCallEvents(description: "LOG|isBluetoothAvailableClean: No real BT found → false", isError: false)
