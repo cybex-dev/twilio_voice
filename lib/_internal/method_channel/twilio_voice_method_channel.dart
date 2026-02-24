@@ -15,6 +15,12 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
   late final TwilioCallPlatform _call = MethodChannelTwilioCall();
   Stream<CallEvent>? _callEventsListener;
 
+  /// Cached audio route data from the latest native AudioRoute event.
+  AudioRouteData? _lastAudioRouteData;
+
+  @override
+  AudioRouteData? get lastAudioRouteData => _lastAudioRouteData;
+
   @override
   TwilioCallPlatform get call => _call;
 
@@ -23,7 +29,14 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
   Stream<CallEvent> get callEventsListener {
     _callEventsListener ??= _eventChannel
         .receiveBroadcastStream()
-        .map((dynamic event) => parseCallEvent(event));
+        .map((dynamic event) => parseCallEvent(event))
+        .handleError((error, stackTrace) {
+      // Gracefully handle FlutterError events from native (e.g., "Call Failed: ...")
+      // Without this, the error would kill the stream listener and crash the app.
+      if (kDebugMode) {
+        printDebug('Event stream error (handled gracefully): $error');
+      }
+    });
     return _callEventsListener!;
   }
 
@@ -222,6 +235,13 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
               2]; // 'bluetoothAvailable=true' or 'bluetoothAvailable=false'
           var isBluetoothAvailable = bluetoothAvailableStr.contains('true');
 
+          // Cache the parsed audio route data so callers can read it
+          // without an extra method channel round-trip.
+          _lastAudioRouteData = AudioRouteData(
+            route: route,
+            isBluetoothAvailable: isBluetoothAvailable,
+          );
+
           if (kDebugMode) {
             printDebug(
                 'Audio route updated: route=$route, bluetoothAvailable=$isBluetoothAvailable');
@@ -398,9 +418,9 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
         return CallEvent.reconnected;
       default:
         if (kDebugMode) {
-          printDebug('$state is not a valid CallState.');
+          printDebug('$state is not a valid CallState, treating as log.');
         }
-        throw ArgumentError('$state is not a valid CallState.');
+        return CallEvent.log;
     }
   }
 

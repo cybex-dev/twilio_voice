@@ -117,8 +117,19 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     // Cancellable work items for delayed audio route operations
     // These MUST be cancelled on hangup to prevent AVAudioSession changes during call teardown
     private var pendingAudioRouteWorkItems: [DispatchWorkItem] = []
+    // Dedicated serial queue for AVAudioSession operations.
+    // AVAudioSession.setCategory() and overrideOutputAudioPort() can block for 1-4+ seconds,
+    // which freezes the Flutter UI if called on the main thread.
+    // All audio session changes MUST happen on this queue, with only eventSink dispatches
+    // going back to the main thread.
+    private let audioSessionQueue = DispatchQueue(label: "com.twilio.voice.audioSession", qos: .userInitiated)
     // Reentrancy guard: prevents handleAudioRouteChange from reacting to our own category changes
     private var isChangingAudioRoute: Bool = false
+    // Suppress guard: prevents handleAudioRouteChange from sending AudioRoute events to Dart
+    // during call setup. CallKit configures the audio session with .allowBluetooth which can
+    // make phantom BT appear in currentRoute. We suppress events until applyInitialAudioRoute
+    // has run and sent its definitive AudioRoute event.
+    private var suppressAudioRouteEvents: Bool = false
     // Event queue: buffers critical call events when eventSink is nil (app in background/terminated)
     // Events are replayed in order when Flutter re-establishes the event channel via onListen
     private var pendingEvents: [Any] = []
@@ -229,8 +240,17 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             return
         }
         
+        // SUPPRESS GUARD: During call setup, CallKit activates the audio session with
+        // .allowBluetooth which can make phantom BT appear in currentRoute.
+        // We suppress AudioRoute events until applyInitialAudioRoute sends the definitive event.
+        // Exception: oldDeviceUnavailable (device physically disconnected) should always be handled.
         let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue)
         let reasonStr = reason.map { String($0.rawValue) } ?? "unknown"
+        
+        if suppressAudioRouteEvents && reason != .oldDeviceUnavailable {
+            self.sendPhoneCallEvents(description: "LOG|Audio route changed. Reason: \(reasonStr) — SUPPRESSED (waiting for applyInitialAudioRoute)", isError: false)
+            return
+        }
         
         self.sendPhoneCallEvents(description: "LOG|Audio route changed. Reason: \(reasonStr)", isError: false)
         
@@ -319,24 +339,20 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             self.scheduleAudioRouteWorkItem(delay: 0.3) { [weak self] in
                 guard let self = self, !self.calls.isEmpty else { return }
                 
-                // Safe check first — no category change
-                var isBluetoothAvailable = self.isBluetoothAvailableSafe()
-                
-                // If safe check didn't find BT, the category might not have .allowBluetooth
-                // (e.g., forceEarpieceRoute sets category with NO BT options).
-                // Since we KNOW a new device just connected, do a deeper check with
-                // a temporary category change to reveal hidden BT devices.
-                if !isBluetoothAvailable {
-                    self.sendPhoneCallEvents(description: "LOG|newDeviceAvailable: Safe check found no BT — doing deep check with category change", isError: false)
-                    isBluetoothAvailable = self.checkBluetoothWithCategoryChange()
-                }
+                // Use clean-category verification to distinguish real BT from phantom.
+                // When a real BT device connects, iOS routes audio through it automatically,
+                // so it will persist in currentRoute even without .allowBluetooth.
+                let isBluetoothAvailable = self.isBluetoothAvailableClean()
                 
                 self.sendPhoneCallEvents(description: "LOG|newDeviceAvailable: btAvailable=\(isBluetoothAvailable), desiredBT=\(self.desiredBluetoothState), desiredSpeaker=\(self.desiredSpeakerState), userExplicitlyChanged=\(self.userExplicitlyChangedAudioRoute)", isError: false)
                 
                 self.cachedBluetoothAvailable = isBluetoothAvailable
                 
-                if isBluetoothAvailable && !self.desiredSpeakerState {
-                    self.sendPhoneCallEvents(description: "LOG|newDeviceAvailable: Auto-switching to Bluetooth...", isError: false)
+                if isBluetoothAvailable {
+                    // ALWAYS auto-switch to Bluetooth when a real BT device connects,
+                    // regardless of current audio route (earpiece OR speaker).
+                    // This matches standard iOS/Android phone behavior.
+                    self.sendPhoneCallEvents(description: "LOG|newDeviceAvailable: Auto-switching to Bluetooth (from desiredSpeaker=\(self.desiredSpeakerState))...", isError: false)
                     
                     self.userExplicitlyChangedAudioRoute = false
                     self.desiredBluetoothState = true
@@ -350,17 +366,15 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                     self.scheduleAudioRouteWorkItem(delay: 0.3) { [weak self] in
                         guard let self = self, !self.calls.isEmpty else { return }
                         let currentRoute = self.getAudioRoute()
+                        // Use clean check for the notification too
+                        let btAvailable = self.isBluetoothAvailableClean()
                         self.sendPhoneCallEvents(
-                            description: "AudioRoute|\(currentRoute)|bluetoothAvailable=true",
+                            description: "AudioRoute|\(currentRoute)|bluetoothAvailable=\(btAvailable)",
                             isError: false
                         )
                     }
                 } else {
-                    if self.desiredSpeakerState {
-                        self.sendPhoneCallEvents(description: "LOG|newDeviceAvailable: NOT auto-switching (user on speaker)", isError: false)
-                    } else {
-                        self.sendPhoneCallEvents(description: "LOG|newDeviceAvailable: NOT auto-switching (no BT found)", isError: false)
-                    }
+                    self.sendPhoneCallEvents(description: "LOG|newDeviceAvailable: NOT auto-switching (no real BT found)", isError: false)
                     
                     let currentRoute = self.getAudioRoute()
                     self.sendPhoneCallEvents(
@@ -376,15 +390,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             self.scheduleAudioRouteWorkItem(delay: 0.2) { [weak self] in
                 guard let self = self, !self.calls.isEmpty else { return }
                 
-                // When on speaker, category may lack .allowBluetooth so isBluetoothAvailableSafe()
-                // would return false even though BT is still connected. Trust the cache in that case.
-                let isBluetoothAvailable: Bool
-                if self.desiredSpeakerState && self.cachedBluetoothAvailable {
-                    isBluetoothAvailable = true
-                    self.sendPhoneCallEvents(description: "LOG|categoryChange: On speaker, trusting cachedBluetoothAvailable=true", isError: false)
-                } else {
-                    isBluetoothAvailable = self.isBluetoothAvailableSafe()
-                }
+                let isBluetoothAvailable = self.isBluetoothAvailableClean()
                 let actualSystemRoute = self.getActualSystemAudioRoute()
                 
                 self.sendPhoneCallEvents(
@@ -416,15 +422,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             self.scheduleAudioRouteWorkItem(delay: 0.2) { [weak self] in
                 guard let self = self, !self.calls.isEmpty else { return }
                 
-                // When on speaker, category may lack .allowBluetooth so isBluetoothAvailableSafe()
-                // would return false even though BT is still connected. Trust the cache in that case.
-                let isBluetoothAvailable: Bool
-                if self.desiredSpeakerState && self.cachedBluetoothAvailable {
-                    isBluetoothAvailable = true
-                    self.sendPhoneCallEvents(description: "LOG|override: On speaker, trusting cachedBluetoothAvailable=true", isError: false)
-                } else {
-                    isBluetoothAvailable = self.isBluetoothAvailableSafe()
-                }
+                let isBluetoothAvailable = self.isBluetoothAvailableClean()
                 let actualSystemRoute = self.getActualSystemAudioRoute()
                 
                 self.sendPhoneCallEvents(
@@ -456,13 +454,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             self.scheduleAudioRouteWorkItem(delay: 0.2) { [weak self] in
                 guard let self = self, !self.calls.isEmpty else { return }
                 
-                // When on speaker, category may lack .allowBluetooth — trust cache
-                let isBluetoothAvailable: Bool
-                if self.desiredSpeakerState && self.cachedBluetoothAvailable {
-                    isBluetoothAvailable = true
-                } else {
-                    isBluetoothAvailable = self.isBluetoothAvailableSafe()
-                }
+                let isBluetoothAvailable = self.isBluetoothAvailableClean()
                 
                 if self.desiredBluetoothState && !isBluetoothAvailable {
                     self.sendPhoneCallEvents(description: "LOG|default handler: Bluetooth was desired but no longer available - switching to earpiece", isError: false)
@@ -533,7 +525,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             }
             self.accessToken = token;
             guard let deviceToken = deviceToken else {
-                self.sendPhoneCallEvents(description: "LOG|Device token is nil. Cannot register for VoIP push notifications.", isError: true)
+                self.sendPhoneCallEvents(description: "LOG|Device token is nil. Cannot register for VoIP push notifications.", isError: false)
                 return
             }
             if let token = accessToken {
@@ -611,15 +603,18 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             self.sendPhoneCallEvents(description: "LOG|METHOD_CHANNEL: toggleSpeaker called with speakerIsOn=\(speakerIsOn)", isError: false)
             toggleAudioRoute(toSpeaker: speakerIsOn)
             
-            // Send response to method call
+            // Send response to method call immediately (non-blocking)
             result(true)
             
             guard let eventSink = eventSink else {
                 return
             }
-            // Return the actual state after attempting to set it
-            let actualState = isSpeakerOn()
-            eventSink(actualState ? "Speaker On" : "Speaker Off")
+            // Use the desired state directly since the actual route change is async
+            // (applySpeakerSetting runs on audioSessionQueue). isSpeakerOn() would read
+            // the old route before the change completes.
+            DispatchQueue.main.async {
+                eventSink(speakerIsOn ? "Speaker On" : "Speaker Off")
+            }
         }
         else if flutterCall.method == "isOnSpeaker"
         {
@@ -648,13 +643,38 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         }
         else if flutterCall.method == "getAudioRoute"
         {
+            // During call setup, suppress — phantom BT may be in currentRoute.
+            // Return "earpiece" as safe default until applyInitialAudioRoute sends definitive state.
+            if self.suppressAudioRouteEvents {
+                self.sendPhoneCallEvents(description: "LOG|getAudioRoute METHOD CHANNEL: returning 'earpiece' (suppressed during call setup)", isError: false)
+                result("earpiece")
+                return
+            }
             let audioRoute = getAudioRoute()
             result(audioRoute)
         }
         else if flutterCall.method == "isBluetoothAvailable"
         {
-            let bluetoothAvailable = isBluetoothAvailable()
-            result(bluetoothAvailable)
+            // During call setup, suppress BT availability to prevent phantom BT.
+            // CallKit activates the audio session with .allowBluetooth which can make
+            // phantom BT appear in currentRoute. We suppress until applyInitialAudioRoute
+            // has done the clean-category check and sent the definitive AudioRoute event.
+            if self.suppressAudioRouteEvents {
+                self.sendPhoneCallEvents(description: "LOG|isBluetoothAvailable METHOD CHANNEL: returning false (suppressed during call setup)", isError: false)
+                result(false)
+                return
+            }
+            
+            // Dispatch to audioSessionQueue to ensure thread-safe access to audio session state.
+            // Use clean-category verification to reject phantom BT entries.
+            audioSessionQueue.async { [weak self] in
+                guard let self = self else {
+                    result(false)
+                    return
+                }
+                let bluetoothAvailable = self.isBluetoothAvailableClean()
+                result(bluetoothAvailable)
+            }
         }
         else if flutterCall.method == "call-sid"
         {
@@ -946,7 +966,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         }
         
         guard registrationRequired() || deviceToken != credentials.token else {
-            self.sendPhoneCallEvents(description: "LOG|pushRegistry:didUpdatePushCredentials device token unchanged, no update needed.", isError: true)
+            self.sendPhoneCallEvents(description: "LOG|pushRegistry:didUpdatePushCredentials device token unchanged, no update needed.", isError: false)
             return
         }
 
@@ -1010,7 +1030,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     func unregister() {
         
         guard let deviceToken = deviceToken, let token = accessToken else {
-            self.sendPhoneCallEvents(description: "LOG|Missing required parameters to unregister", isError: true)
+            self.sendPhoneCallEvents(description: "LOG|Missing required parameters to unregister", isError: false)
             return
         }
         
@@ -1257,15 +1277,13 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         // Mark that we've done the initial Bluetooth check for this call
         hasCheckedBluetoothOnCallStart = true
         
-        // Check current audio route and Bluetooth availability and emit to Dart
+        // DO NOT report Bluetooth availability here — the audio session may have
+        // phantom BT in currentRoute due to CallKit's default .allowBluetooth setup.
+        // applyInitialAudioRoute() (called from didActivateAudioSession) will handle
+        // proper BT detection and send the correct AudioRoute event to Dart.
+        // Just log for debugging.
         let currentRoute = getAudioRoute()
-        let bluetoothAvailable = isBluetoothAvailable()
-        self.sendPhoneCallEvents(
-            description: "AudioRoute|\(currentRoute)|bluetoothAvailable=\(bluetoothAvailable)",
-            isError: false
-        )
-        
-        self.sendPhoneCallEvents(description: "LOG|Call connected. Current audio route: \(currentRoute), Bluetooth available: \(bluetoothAvailable)", isError: false)
+        self.sendPhoneCallEvents(description: "LOG|Call connected. Current audio route: \(currentRoute) (NOT sending AudioRoute event — deferred to applyInitialAudioRoute)", isError: false)
     }
     
     public func call(call: Call, isReconnectingWithError error: Error) {
@@ -1304,7 +1322,10 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     
     public func callDidDisconnect(call: Call, error: Error?) {
         if let error = error {
-            self.sendPhoneCallEvents(description: "Call Failed: \(error.localizedDescription)", isError: true)
+            // IMPORTANT: Send as normal event, NOT isError:true.
+            // isError:true wraps in FlutterError which crashes the Dart event stream
+            // listener (no onError handler). The Dart parser handles "Call Ended" below.
+            self.sendPhoneCallEvents(description: "LOG|Call Failed: \(error.localizedDescription)", isError: false)
         }
         
         if !self.userInitiatedDisconnect {
@@ -1399,6 +1420,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             cachedBluetoothAvailable = false
             hasCheckedBluetoothOnCallStart = false
             lastBluetoothDisconnectTime = nil
+            suppressAudioRouteEvents = false
         } else {
             // Reset just userInitiatedDisconnect for next action
             self.userInitiatedDisconnect = false
@@ -1436,24 +1458,51 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     }
 
     /// Get the current audio route: 'earpiece', 'speaker', 'bluetooth', or 'wired_headset'
-    /// First checks tracked desired state, then falls back to system state
+    /// Checks actual system route first, then falls back to desired state for speaker.
+    /// For Bluetooth, ONLY reports 'bluetooth' if BT is in the actual currentRoute.
     func getAudioRoute() -> String {
-        // First priority: check if we explicitly set Bluetooth (even if system hasn't updated yet)
-        if desiredBluetoothState {
-            // Bluetooth was explicitly set, trust it even if system hasn't updated
-            self.sendPhoneCallEvents(description: "LOG|getAudioRoute: returning 'bluetooth' from desiredBluetoothState", isError: false)
-            return "bluetooth"
+        let audioSession = AVAudioSession.sharedInstance()
+        let currentRoute = audioSession.currentRoute
+        
+        // First: check actual system route for Bluetooth (most reliable)
+        for output in currentRoute.outputs {
+            if output.portType == .bluetoothHFP || output.portType == .bluetoothA2DP || output.portType == .bluetoothLE {
+                self.sendPhoneCallEvents(description: "LOG|getAudioRoute: returning 'bluetooth' from actual currentRoute output", isError: false)
+                return "bluetooth"
+            }
         }
         
-        // Second priority: check if we explicitly set speaker
+        // Check inputs too (BT mic might be the indicator)
+        for input in currentRoute.inputs {
+            if input.portType == .bluetoothHFP || input.portType == .bluetoothA2DP || input.portType == .bluetoothLE {
+                self.sendPhoneCallEvents(description: "LOG|getAudioRoute: returning 'bluetooth' from actual currentRoute input", isError: false)
+                return "bluetooth"
+            }
+        }
+        
+        // If desiredBluetoothState was true but BT is not in currentRoute,
+        // it's phantom or disconnected — clear the stale flag
+        if desiredBluetoothState {
+            self.sendPhoneCallEvents(description: "LOG|getAudioRoute: desiredBluetoothState=true but no BT in currentRoute — clearing stale flag", isError: false)
+            desiredBluetoothState = false
+        }
+        
+        // Check for speaker — trust desiredSpeakerState since speaker is reliable
         if desiredSpeakerState {
             self.sendPhoneCallEvents(description: "LOG|getAudioRoute: returning 'speaker' from desiredSpeakerState", isError: false)
             return "speaker"
         }
         
-        // Third priority: If neither is set, we're on earpiece
-        // Don't query the system state as it may be stale or cause the route to flip back
-        self.sendPhoneCallEvents(description: "LOG|getAudioRoute: returning 'earpiece' (neither bluetooth nor speaker desired)", isError: false)
+        // Check actual system route for speaker as fallback
+        for output in currentRoute.outputs {
+            if output.portType == .builtInSpeaker {
+                self.sendPhoneCallEvents(description: "LOG|getAudioRoute: returning 'speaker' from actual currentRoute", isError: false)
+                return "speaker"
+            }
+        }
+        
+        // Default: earpiece
+        self.sendPhoneCallEvents(description: "LOG|getAudioRoute: returning 'earpiece'", isError: false)
         return "earpiece"
     }
     
@@ -1480,62 +1529,124 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         return "earpiece"
     }
 
-    /// Force a fresh Bluetooth availability check by temporarily enabling Bluetooth options
-    /// Use this when a new device connects to ensure we detect it
+    /// Force a fresh Bluetooth availability check by temporarily enabling Bluetooth options.
+    /// After adding .allowBluetooth to the category, checks currentRoute (not availableInputs).
+    /// Then switches to a CLEAN category (NO BT options) to verify — if BT disappears,
+    /// it was phantom. Finally restores original category.
     private func checkBluetoothAvailableFresh() -> Bool {
         let audioSession = AVAudioSession.sharedInstance()
         
         // First: Check current route - if we're already on Bluetooth, it's available
         for output in audioSession.currentRoute.outputs {
             if output.portType == .bluetoothHFP || output.portType == .bluetoothA2DP || output.portType == .bluetoothLE {
-                self.sendPhoneCallEvents(description: "LOG|checkBluetoothAvailableFresh: Found in current route", isError: false)
+                self.sendPhoneCallEvents(description: "LOG|checkBluetoothAvailableFresh: Found in current route outputs", isError: false)
+                return true
+            }
+        }
+        for input in audioSession.currentRoute.inputs {
+            if input.portType == .bluetoothHFP || input.portType == .bluetoothA2DP || input.portType == .bluetoothLE {
+                self.sendPhoneCallEvents(description: "LOG|checkBluetoothAvailableFresh: Found in current route inputs", isError: false)
                 return true
             }
         }
         
         // Second: Temporarily enable Bluetooth options to detect newly connected devices
-        // Use reentrancy guard to prevent cascading route change notifications
         isChangingAudioRoute = true
         defer { isChangingAudioRoute = false }
         
         do {
-            let currentCategory = audioSession.category
-            let currentMode = audioSession.mode
-            let currentOptions = audioSession.categoryOptions
+            let originalCategory = audioSession.category
+            let originalMode = audioSession.mode
+            let originalOptions = audioSession.categoryOptions
             
             // Enable Bluetooth options temporarily
             try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetooth, .allowBluetoothA2DP])
+            Thread.sleep(forTimeInterval: 0.05)
             
-            // Check available inputs
-            var foundBluetooth = false
-            if let availableInputs = audioSession.availableInputs {
-                for input in availableInputs {
+            // Check if BT now appears in currentRoute
+            var foundBluetoothDuringTempCategory = false
+            for output in audioSession.currentRoute.outputs {
+                if output.portType == .bluetoothHFP || output.portType == .bluetoothA2DP || output.portType == .bluetoothLE {
+                    self.sendPhoneCallEvents(description: "LOG|checkBluetoothAvailableFresh: BT found in route during temp category: \(output.portName)", isError: false)
+                    foundBluetoothDuringTempCategory = true
+                    break
+                }
+            }
+            if !foundBluetoothDuringTempCategory {
+                for input in audioSession.currentRoute.inputs {
                     if input.portType == .bluetoothHFP || input.portType == .bluetoothA2DP || input.portType == .bluetoothLE {
-                        self.sendPhoneCallEvents(description: "LOG|checkBluetoothAvailableFresh: Found device: \(input.portName)", isError: false)
-                        foundBluetooth = true
+                        self.sendPhoneCallEvents(description: "LOG|checkBluetoothAvailableFresh: BT found in inputs during temp category: \(input.portName)", isError: false)
+                        foundBluetoothDuringTempCategory = true
                         break
                     }
                 }
             }
             
-            // If Bluetooth found, keep the options enabled
-            if !foundBluetooth {
-                // Restore original settings if no Bluetooth found
-                try audioSession.setCategory(currentCategory, mode: currentMode, options: currentOptions)
+            if !foundBluetoothDuringTempCategory {
+                // No BT even with .allowBluetooth — restore and return false
+                try audioSession.setCategory(originalCategory, mode: originalMode, options: originalOptions)
+                self.sendPhoneCallEvents(description: "LOG|checkBluetoothAvailableFresh: No BT device found", isError: false)
+                return false
             }
             
-            return foundBluetooth
+            // VERIFICATION: Switch to clean category (NO BT options) to check
+            // if BT persists. Phantom BT only exists with .allowBluetooth.
+            try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [])
+            Thread.sleep(forTimeInterval: 0.05)
+            
+            var stillHasBluetooth = false
+            for output in audioSession.currentRoute.outputs {
+                if output.portType == .bluetoothHFP || output.portType == .bluetoothA2DP || output.portType == .bluetoothLE {
+                    stillHasBluetooth = true
+                    break
+                }
+            }
+            if !stillHasBluetooth {
+                for input in audioSession.currentRoute.inputs {
+                    if input.portType == .bluetoothHFP || input.portType == .bluetoothA2DP || input.portType == .bluetoothLE {
+                        stillHasBluetooth = true
+                        break
+                    }
+                }
+            }
+            
+            // Restore original category
+            try audioSession.setCategory(originalCategory, mode: originalMode, options: originalOptions)
+            
+            if stillHasBluetooth {
+                self.sendPhoneCallEvents(description: "LOG|checkBluetoothAvailableFresh: VERIFIED — BT persists without .allowBluetooth → REAL", isError: false)
+                return true
+            } else {
+                self.sendPhoneCallEvents(description: "LOG|checkBluetoothAvailableFresh: BT DISAPPEARED without .allowBluetooth → PHANTOM, rejecting", isError: false)
+                return false
+            }
         } catch {
             self.sendPhoneCallEvents(description: "LOG|checkBluetoothAvailableFresh: Error - \(error.localizedDescription)", isError: false)
             return false
         }
     }
 
+    /// Check whether a Bluetooth port represents a real external audio device.
+    /// On iOS, when Bluetooth radio is ON but no audio device is connected/paired,
+    /// some devices still list phantom .bluetoothHFP entries in availableInputs.
+    /// A real external device always has non-empty dataSources.
+    private func isRealBluetoothDevice(_ port: AVAudioSessionPortDescription) -> Bool {
+        // A real Bluetooth audio device (AirPods, headset, car kit, etc.) will have
+        // at least one data source. Phantom entries from the BT radio being on have none.
+        if let dataSources = port.dataSources, !dataSources.isEmpty {
+            return true
+        }
+        // Also accept if UID doesn't match the built-in mic UID pattern —
+        // external devices have unique UIDs different from built-in hardware
+        // Fallback: log what we see for debugging
+        self.sendPhoneCallEvents(description: "LOG|isRealBluetoothDevice: port=\(port.portType.rawValue), name=\(port.portName), uid=\(port.uid), dataSources=\(port.dataSources?.count ?? 0) — REJECTED (no dataSources)", isError: false)
+        return false
+    }
+
     /// Check if Bluetooth is available WITHOUT changing the AVAudioSession category.
     /// SAFE to call from handleAudioRouteChange — will NOT trigger cascading notifications.
-    /// Checks current route outputs and available inputs only.
-    /// When afterDisconnect is true (called after oldDeviceUnavailable), ONLY checks current
-    /// route outputs — availableInputs can still list AirPods that are in their case.
+    /// Only checks current route (outputs + inputs) — does NOT check availableInputs
+    /// because that can list phantom BT entries when radio is on but no device connected.
     private func isBluetoothAvailableSafe(afterDisconnect: Bool = false) -> Bool {
         let audioSession = AVAudioSession.sharedInstance()
         
@@ -1547,34 +1658,29 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             }
         }
         
-        // After a disconnect event, DON'T trust availableInputs.
-        // AirPods in their case still show up in availableInputs for several seconds
-        // but they can't actually receive audio. Only the current route output is reliable.
-        if afterDisconnect {
-            self.sendPhoneCallEvents(description: "LOG|isBluetoothAvailableSafe(afterDisconnect): BT not in current outputs → false", isError: false)
-            cachedBluetoothAvailable = false
-            return false
-        }
-        
-        // Check available inputs (doesn't require category change)
-        if let availableInputs = audioSession.availableInputs {
-            for input in availableInputs {
-                if input.portType == .bluetoothHFP || input.portType == .bluetoothA2DP || input.portType == .bluetoothLE {
-                    cachedBluetoothAvailable = true
-                    return true
-                }
+        // Check current route inputs — BT mic might be active
+        for input in audioSession.currentRoute.inputs {
+            if input.portType == .bluetoothHFP || input.portType == .bluetoothA2DP || input.portType == .bluetoothLE {
+                cachedBluetoothAvailable = true
+                return true
             }
         }
+        
+        // DO NOT trust desiredBluetoothState for AVAILABILITY — it can be set by phantom BT
+        // during checkBluetoothWithCategoryChange(). Only currentRoute is reliable.
+        // desiredBluetoothState is ONLY used for getAudioRoute() to report the desired route.
+        self.sendPhoneCallEvents(description: "LOG|isBluetoothAvailableSafe: No BT in currentRoute (desiredBT=\(desiredBluetoothState), afterDisconnect=\(afterDisconnect))", isError: false)
         
         cachedBluetoothAvailable = false
         return false
     }
 
     /// Deep check for Bluetooth availability using a temporary category change.
-    /// When forceEarpieceRoute sets category WITHOUT .allowBluetooth, BT devices are
-    /// hidden from availableInputs. This method temporarily adds .allowBluetooth to
-    /// reveal them, then restores the original category.
-    /// Used specifically in newDeviceAvailable when isBluetoothAvailableSafe() fails.
+    /// Used at call start and when a new device connects.
+    /// After temporarily adding .allowBluetooth to the category, checks if BT appears
+    /// in currentRoute. Then switches to a CLEAN category (NO BT options) to verify —
+    /// if BT disappears from currentRoute without BT options, it was a phantom entry.
+    /// Finally restores the original category.
     private func checkBluetoothWithCategoryChange() -> Bool {
         let audioSession = AVAudioSession.sharedInstance()
         
@@ -1583,147 +1689,205 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         defer { isChangingAudioRoute = false }
         
         do {
-            // Save current category settings
-            let currentCategory = audioSession.category
-            let currentMode = audioSession.mode
-            let currentOptions = audioSession.categoryOptions
+            // Save current category settings so we can restore them at the end
+            let originalCategory = audioSession.category
+            let originalMode = audioSession.mode
+            let originalOptions = audioSession.categoryOptions
             
-            // Temporarily set category with Bluetooth options to reveal BT devices
+            // Step 1: Temporarily set category WITH Bluetooth options to reveal BT devices
             try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetooth, .allowBluetoothA2DP])
             
-            // Now check available inputs — BT devices should appear
-            var foundBluetooth = false
-            if let availableInputs = audioSession.availableInputs {
-                for input in availableInputs {
+            // Give iOS a brief moment to update the route after category change
+            Thread.sleep(forTimeInterval: 0.05)
+            
+            // Step 2: Check if BT appears in currentRoute during temp category
+            var foundBluetoothDuringTempCategory = false
+            
+            for output in audioSession.currentRoute.outputs {
+                if output.portType == .bluetoothHFP || output.portType == .bluetoothA2DP || output.portType == .bluetoothLE {
+                    self.sendPhoneCallEvents(description: "LOG|checkBluetoothWithCategoryChange: BT found in outputs during temp category: \(output.portType.rawValue) - \(output.portName)", isError: false)
+                    foundBluetoothDuringTempCategory = true
+                    break
+                }
+            }
+            
+            if !foundBluetoothDuringTempCategory {
+                for input in audioSession.currentRoute.inputs {
                     if input.portType == .bluetoothHFP || input.portType == .bluetoothA2DP || input.portType == .bluetoothLE {
-                        self.sendPhoneCallEvents(description: "LOG|checkBluetoothWithCategoryChange: Found BT device: \(input.portType.rawValue) - \(input.portName)", isError: false)
-                        foundBluetooth = true
-                        cachedBluetoothAvailable = true
+                        self.sendPhoneCallEvents(description: "LOG|checkBluetoothWithCategoryChange: BT found in inputs during temp category: \(input.portType.rawValue) - \(input.portName)", isError: false)
+                        foundBluetoothDuringTempCategory = true
                         break
                     }
                 }
             }
             
-            // IMPORTANT: Restore original category settings immediately
-            // Don't apply any route — the caller (newDeviceAvailable) will handle that
-            try audioSession.setCategory(currentCategory, mode: currentMode, options: currentOptions)
-            
-            if !foundBluetooth {
-                self.sendPhoneCallEvents(description: "LOG|checkBluetoothWithCategoryChange: No BT device found even with category change", isError: false)
+            if !foundBluetoothDuringTempCategory {
+                // No BT found even with .allowBluetooth — definitely no BT device
+                // Log availableInputs for debugging
+                if let availableInputs = audioSession.availableInputs {
+                    let btInputs = availableInputs.filter {
+                        $0.portType == .bluetoothHFP || $0.portType == .bluetoothA2DP || $0.portType == .bluetoothLE
+                    }
+                    if !btInputs.isEmpty {
+                        self.sendPhoneCallEvents(description: "LOG|checkBluetoothWithCategoryChange: BT in availableInputs but NOT in currentRoute — PHANTOM: \(btInputs.map { "\($0.portType.rawValue):\($0.portName):ds=\($0.dataSources?.count ?? 0)" })", isError: false)
+                    } else {
+                        self.sendPhoneCallEvents(description: "LOG|checkBluetoothWithCategoryChange: No BT found anywhere", isError: false)
+                    }
+                }
+                
+                // Restore original category and return false
+                try audioSession.setCategory(originalCategory, mode: originalMode, options: originalOptions)
                 cachedBluetoothAvailable = false
+                return false
             }
             
-            return foundBluetooth
+            // Step 3: VERIFICATION — Switch to a CLEAN category with NO Bluetooth options.
+            // This is critical: we must NOT restore the original category for verification
+            // because the original might already have .allowBluetooth (from a previous
+            // applyBluetoothRoute call), which would keep phantom BT in the route.
+            // Instead, use a category that explicitly excludes BT to test if the device
+            // is truly connected or just a phantom that exists only with .allowBluetooth.
+            try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [])
+            
+            // Brief pause to let iOS update route after removing BT options
+            Thread.sleep(forTimeInterval: 0.05)
+            
+            var stillHasBluetooth = false
+            
+            for output in audioSession.currentRoute.outputs {
+                if output.portType == .bluetoothHFP || output.portType == .bluetoothA2DP || output.portType == .bluetoothLE {
+                    stillHasBluetooth = true
+                    break
+                }
+            }
+            
+            if !stillHasBluetooth {
+                for input in audioSession.currentRoute.inputs {
+                    if input.portType == .bluetoothHFP || input.portType == .bluetoothA2DP || input.portType == .bluetoothLE {
+                        stillHasBluetooth = true
+                        break
+                    }
+                }
+            }
+            
+            // Step 4: Restore original category settings
+            try audioSession.setCategory(originalCategory, mode: originalMode, options: originalOptions)
+            
+            if stillHasBluetooth {
+                self.sendPhoneCallEvents(description: "LOG|checkBluetoothWithCategoryChange: VERIFIED — BT persists even without .allowBluetooth → REAL device", isError: false)
+                cachedBluetoothAvailable = true
+                return true
+            } else {
+                self.sendPhoneCallEvents(description: "LOG|checkBluetoothWithCategoryChange: BT DISAPPEARED without .allowBluetooth → PHANTOM, rejecting", isError: false)
+                cachedBluetoothAvailable = false
+                return false
+            }
         } catch {
             self.sendPhoneCallEvents(description: "LOG|checkBluetoothWithCategoryChange: Error - \(error.localizedDescription)", isError: false)
             return false
         }
     }
 
-    /// Check if a Bluetooth device is available/connected
+    /// Check if a Bluetooth device is available/connected.
+    /// Called from method channel (Dart) to decide whether to show BT in audio popup.
+    ///
+    /// ONLY checks currentRoute — does NOT use availableInputs or category changes.
+    /// Phantom BT entries can appear in availableInputs with dataSources populated,
+    /// and can briefly appear in currentRoute during category changes with .allowBluetooth.
+    /// The only 100% reliable indicator is the CURRENT active audio route.
+    ///
+    /// This means BT only shows in popup when audio is actively routed through it.
+    /// If user switches to speaker/earpiece, BT won't show — this is acceptable
+    /// because the user explicitly chose a different route.
     func isBluetoothAvailable() -> Bool {
         let audioSession = AVAudioSession.sharedInstance()
         let currentRoute = audioSession.currentRoute
         
-        // First check: Are we currently using Bluetooth?
+        // Check outputs — most reliable indicator of active BT audio
         for output in currentRoute.outputs {
             if output.portType == .bluetoothHFP || output.portType == .bluetoothA2DP || output.portType == .bluetoothLE {
-                self.sendPhoneCallEvents(description: "LOG|Bluetooth found in current route: \(output.portType.rawValue)", isError: false)
+                self.sendPhoneCallEvents(description: "LOG|isBluetoothAvailable: BT in OUTPUT route: \(output.portType.rawValue) - \(output.portName)", isError: false)
                 cachedBluetoothAvailable = true
-                lastBluetoothDisconnectTime = nil  // Clear disconnect guard — BT is active
+                lastBluetoothDisconnectTime = nil
                 return true
             }
         }
         
-        // DISCONNECT GUARD: If a Bluetooth device was recently disconnected,
-        // don't trust availableInputs — AirPods in their case still appear there
-        // for several seconds. Only trust actual current route outputs (checked above).
-        if let disconnectTime = lastBluetoothDisconnectTime,
-           Date().timeIntervalSince(disconnectTime) < SwiftTwilioVoicePlugin.btDisconnectGuardDuration {
-            self.sendPhoneCallEvents(description: "LOG|isBluetoothAvailable: Within BT disconnect guard (\(String(format: "%.1f", Date().timeIntervalSince(disconnectTime)))s) — returning false", isError: false)
-            cachedBluetoothAvailable = false
-            return false
+        // Check inputs — BT mic might be active
+        for input in currentRoute.inputs {
+            if input.portType == .bluetoothHFP || input.portType == .bluetoothA2DP || input.portType == .bluetoothLE {
+                self.sendPhoneCallEvents(description: "LOG|isBluetoothAvailable: BT in INPUT route: \(input.portType.rawValue) - \(input.portName)", isError: false)
+                cachedBluetoothAvailable = true
+                lastBluetoothDisconnectTime = nil
+                return true
+            }
         }
         
-        // Second check: Check all available inputs with current settings
+        self.sendPhoneCallEvents(description: "LOG|isBluetoothAvailable: No BT in currentRoute → false", isError: false)
+        cachedBluetoothAvailable = false
+        return false
+    }
+    
+    /// Check if a REAL Bluetooth device is available — NON-DESTRUCTIVE.
+    /// This method NEVER changes the audio session category, so it's safe to call
+    /// at any time, including during an active call.
+    ///
+    /// How it works:
+    /// 1. Check currentRoute outputs/inputs — if BT is the active route, it's definitely real
+    /// 2. If BT is NOT in currentRoute, check availableInputs with isRealBluetoothDevice()
+    ///    filter — real devices have dataSources, phantom entries don't
+    /// 3. Also respect lastBluetoothDisconnectTime — after disconnect, stale BT entries
+    ///    can linger in availableInputs for a few seconds
+    func isBluetoothAvailableClean() -> Bool {
+        let audioSession = AVAudioSession.sharedInstance()
+        
+        // Check 1: Is BT currently the active output route? (most reliable)
+        for output in audioSession.currentRoute.outputs {
+            if output.portType == .bluetoothHFP || output.portType == .bluetoothA2DP || output.portType == .bluetoothLE {
+                self.sendPhoneCallEvents(description: "LOG|isBluetoothAvailableClean: BT in OUTPUT route: \(output.portType.rawValue) - \(output.portName) → true", isError: false)
+                cachedBluetoothAvailable = true
+                lastBluetoothDisconnectTime = nil
+                return true
+            }
+        }
+        
+        // Check 2: Is BT currently the active input route?
+        for input in audioSession.currentRoute.inputs {
+            if input.portType == .bluetoothHFP || input.portType == .bluetoothA2DP || input.portType == .bluetoothLE {
+                self.sendPhoneCallEvents(description: "LOG|isBluetoothAvailableClean: BT in INPUT route: \(input.portType.rawValue) - \(input.portName) → true", isError: false)
+                cachedBluetoothAvailable = true
+                lastBluetoothDisconnectTime = nil
+                return true
+            }
+        }
+        
+        // Check 3: BT is not the active route, but is a real device available?
+        // Use availableInputs + isRealBluetoothDevice() to distinguish real from phantom.
+        // Real devices have dataSources (e.g., AirPods have L/R sources), phantoms don't.
+        //
+        // GUARD: If BT was recently disconnected, don't trust availableInputs —
+        // stale BT entries can linger for several seconds after disconnect.
+        if let disconnectTime = lastBluetoothDisconnectTime {
+            let elapsed = Date().timeIntervalSince(disconnectTime)
+            if elapsed < 3.0 {
+                self.sendPhoneCallEvents(description: "LOG|isBluetoothAvailableClean: BT recently disconnected (\(String(format: "%.1f", elapsed))s ago), not trusting availableInputs → false", isError: false)
+                cachedBluetoothAvailable = false
+                return false
+            }
+        }
+        
         if let availableInputs = audioSession.availableInputs {
             for input in availableInputs {
-                if input.portType == .bluetoothHFP || input.portType == .bluetoothA2DP || input.portType == .bluetoothLE {
-                    self.sendPhoneCallEvents(description: "LOG|Bluetooth found in available inputs: \(input.portType.rawValue)", isError: false)
+                if (input.portType == .bluetoothHFP || input.portType == .bluetoothA2DP || input.portType == .bluetoothLE)
+                    && self.isRealBluetoothDevice(input) {
+                    self.sendPhoneCallEvents(description: "LOG|isBluetoothAvailableClean: Real BT device in availableInputs: \(input.portType.rawValue) - \(input.portName) (dataSources=\(input.dataSources?.count ?? 0)) → true", isError: false)
                     cachedBluetoothAvailable = true
                     return true
                 }
             }
         }
         
-        // Third check: If we've cached Bluetooth as available but switched away from it,
-        // trust the cached value (user might be on earpiece/speaker but BT is still connected)
-        // This avoids doing temporary category changes that could disrupt audio
-        if cachedBluetoothAvailable && hasCheckedBluetoothOnCallStart {
-            self.sendPhoneCallEvents(description: "LOG|Using cached Bluetooth availability: true", isError: false)
-            return true
-        }
-        
-        // Fourth check: For initial check at call start (or if not cached), 
-        // do a safe temporary check with temporary category change.
-        // Allow this check when:
-        // - We haven't checked on call start yet, OR
-        // - User hasn't explicitly changed audio route, OR
-        // - User is on speaker (category may have removed BT options, need to re-check)
-        if !hasCheckedBluetoothOnCallStart || !userExplicitlyChangedAudioRoute || desiredSpeakerState {
-            // Use reentrancy guard to prevent cascading route change notifications
-            isChangingAudioRoute = true
-            defer { isChangingAudioRoute = false }
-            
-            do {
-                let currentCategory = audioSession.category
-                let currentMode = audioSession.mode
-                let currentOptions = audioSession.categoryOptions
-                
-                // Temporarily set category with Bluetooth options to reveal Bluetooth devices
-                try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetooth, .allowBluetoothA2DP])
-                
-                // Now check available inputs - Bluetooth devices should appear
-                var foundBluetooth = false
-                if let availableInputs = audioSession.availableInputs {
-                    for input in availableInputs {
-                        if input.portType == .bluetoothHFP || input.portType == .bluetoothA2DP || input.portType == .bluetoothLE {
-                            self.sendPhoneCallEvents(description: "LOG|Bluetooth device detected (temp check): \(input.portType.rawValue) - \(input.portName)", isError: false)
-                            foundBluetooth = true
-                            cachedBluetoothAvailable = true
-                            break
-                        }
-                    }
-                }
-                
-                // IMPORTANT: Restore original category settings immediately
-                try audioSession.setCategory(currentCategory, mode: currentMode, options: currentOptions)
-                
-                // Re-apply current route preference to counter any auto-switch
-                if desiredSpeakerState {
-                    try audioSession.overrideOutputAudioPort(.speaker)
-                } else if !desiredBluetoothState {
-                    // Earpiece mode - set built-in mic as preferred
-                    if let availableInputs = audioSession.availableInputs {
-                        for input in availableInputs {
-                            if input.portType == .builtInMic {
-                                try audioSession.setPreferredInput(input)
-                                break
-                            }
-                        }
-                    }
-                    try audioSession.overrideOutputAudioPort(.none)
-                }
-                
-                if foundBluetooth {
-                    return true
-                }
-            } catch {
-                self.sendPhoneCallEvents(description: "LOG|Error in temporary Bluetooth check: \(error.localizedDescription)", isError: false)
-            }
-        }
-        
-        self.sendPhoneCallEvents(description: "LOG|No Bluetooth device found", isError: false)
+        self.sendPhoneCallEvents(description: "LOG|isBluetoothAvailableClean: No real BT found → false", isError: false)
         cachedBluetoothAvailable = false
         return false
     }
@@ -1762,15 +1926,23 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         // Cancel any previously scheduled audio route work items
         cancelPendingAudioRouteWorkItems()
         
-        // Ensure we're on the main thread for audio session changes
-        DispatchQueue.main.async {
+        // Track state immediately (just Bool flags, safe on any thread)
+        if bluetoothOn {
+            self.desiredBluetoothState = true
+            self.desiredSpeakerState = false
+        } else {
+            self.desiredBluetoothState = false
+            self.desiredSpeakerState = false
+            self.userExplicitlyChangedAudioRoute = true
+        }
+        
+        // Move ALL AVAudioSession operations to background queue to avoid blocking the main/UI thread
+        audioSessionQueue.async { [weak self] in
+            guard let self = self else { return }
             let audioSession = AVAudioSession.sharedInstance()
             
             if bluetoothOn {
                 // Enable Bluetooth
-                // Track that we're setting Bluetooth
-                self.desiredBluetoothState = true
-                self.desiredSpeakerState = false
                 self.logAudioSessionState(label: "BEFORE Bluetooth Toggle ON")
                 
                 do {
@@ -1794,7 +1966,8 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                                 
                                 var bluetoothFound = false
                                 for input in availableInputs {
-                                    if input.portType == .bluetoothHFP || input.portType == .bluetoothA2DP || input.portType == .bluetoothLE {
+                                    if (input.portType == .bluetoothHFP || input.portType == .bluetoothA2DP || input.portType == .bluetoothLE)
+                                        && self.isRealBluetoothDevice(input) {
                                         try audioSession.setPreferredInput(input)
                                         self.sendPhoneCallEvents(description: "LOG|Set preferred input to Bluetooth: \(input.portName) (\(input.portType.rawValue))", isError: false)
                                         bluetoothFound = true
@@ -1821,38 +1994,18 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                 }
             } else {
                 // Disable Bluetooth - route to earpiece
-                self.desiredBluetoothState = false
-                self.desiredSpeakerState = false
-                self.userExplicitlyChangedAudioRoute = true
-                
                 self.sendPhoneCallEvents(description: "LOG|=== EARPIECE SWITCH START ===", isError: false)
                 
-                // Force earpiece by setting category and preferred input multiple times
-                // This is a workaround for Twilio/iOS fighting over audio route
+                // Step 1: Immediate audio switch via setPreferredInput + overrideOutputAudioPort
                 self.forceEarpieceRoute()
                 
-                // Schedule multiple attempts to ensure earpiece sticks (cancellable on hangup)
-                self.scheduleAudioRouteWorkItem(delay: 0.3) { [weak self] in
+                // Step 2: Apply category options to lock in earpiece (deferred to avoid audio lag)
+                // NOTE: We do NOT restore BT options afterward — that would cause a second
+                // setCategory() which disrupts audio and exposes phantom BT ports.
+                // BT options are only added when the user explicitly selects Bluetooth.
+                self.scheduleAudioRouteWorkItem(delay: 0.5) { [weak self] in
                     guard let self = self, !self.calls.isEmpty else { return }
-                    self.sendPhoneCallEvents(description: "LOG|Earpiece attempt 2 (0.3s delay)...", isError: false)
-                    self.forceEarpieceRoute()
-                }
-                
-                self.scheduleAudioRouteWorkItem(delay: 0.7) { [weak self] in
-                    guard let self = self, !self.calls.isEmpty else { return }
-                    self.sendPhoneCallEvents(description: "LOG|Earpiece attempt 3 (0.7s delay)...", isError: false)
-                    self.forceEarpieceRoute()
-                }
-                
-                self.scheduleAudioRouteWorkItem(delay: 1.5) { [weak self] in
-                    guard let self = self, !self.calls.isEmpty else { return }
-                    let session = AVAudioSession.sharedInstance()
-                    self.sendPhoneCallEvents(description: "LOG|=== FINAL CHECK (1.5s) ===", isError: false)
-                    self.sendPhoneCallEvents(description: "LOG|Final outputs: \(session.currentRoute.outputs.map { "\($0.portType.rawValue)" })", isError: false)
-                    self.sendPhoneCallEvents(description: "LOG|Final inputs: \(session.currentRoute.inputs.map { "\($0.portType.rawValue)" })", isError: false)
-                    
-                    // Now restore Bluetooth options so user can switch back to BT if they want
-                    self.restoreBluetoothOptionsKeepingCurrentRoute()
+                    self.applyEarpieceCategoryOptions()
                 }
             }
         }
@@ -1862,6 +2015,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     
     /// Schedule a delayed audio route operation that can be cancelled on hangup.
     /// Each work item also checks if calls are still active before executing.
+    /// Runs on the dedicated audioSessionQueue to avoid blocking the main/UI thread.
     private func scheduleAudioRouteWorkItem(delay: TimeInterval, block: @escaping () -> Void) {
         let workItem = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
@@ -1873,7 +2027,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             block()
         }
         pendingAudioRouteWorkItems.append(workItem)
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+        audioSessionQueue.asyncAfter(deadline: .now() + delay, execute: workItem)
     }
     
     /// Cancel all pending delayed audio route operations.
@@ -1888,7 +2042,10 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         }
     }
     
-    /// Force audio to earpiece by temporarily removing Bluetooth options
+    /// Force audio to earpiece using overrideOutputAudioPort and setPreferredInput ONLY.
+    /// Does NOT call setCategory() because that tears down and rebuilds the entire audio
+    /// pipeline, causing a 1-4s lag where audio still comes from the old output device.
+    /// Category options (to remove BT) are changed separately in a delayed work item.
     private func forceEarpieceRoute() {
         isChangingAudioRoute = true
         defer { isChangingAudioRoute = false }
@@ -1899,14 +2056,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             // Log current state
             self.sendPhoneCallEvents(description: "LOG|forceEarpieceRoute: Current outputs = \(session.currentRoute.outputs.map { $0.portType.rawValue })", isError: false)
             
-            // Step 1: Set category WITHOUT Bluetooth options to force iOS to use built-in
-            try session.setCategory(
-                .playAndRecord,
-                mode: .voiceChat,
-                options: []  // NO Bluetooth - forces built-in devices
-            )
-            
-            // Step 2: Set built-in mic as preferred
+            // Step 1: Set built-in mic as preferred to steer away from Bluetooth
             if let availableInputs = session.availableInputs {
                 for input in availableInputs {
                     if input.portType == .builtInMic {
@@ -1917,12 +2067,47 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                 }
             }
             
-            // Step 3: Override to earpiece (not speaker)
+            // Step 2: Override to earpiece (not speaker) — takes effect immediately
             try session.overrideOutputAudioPort(.none)
             
             self.sendPhoneCallEvents(description: "LOG|forceEarpieceRoute: After - outputs = \(session.currentRoute.outputs.map { $0.portType.rawValue })", isError: false)
         } catch {
             self.sendPhoneCallEvents(description: "LOG|forceEarpieceRoute FAILED: \(error.localizedDescription)", isError: false)
+        }
+    }
+    
+    /// Set category options for earpiece mode (removes BT to prevent auto-switch back).
+    /// This is called with a delay AFTER forceEarpieceRoute() has already switched audio output.
+    /// Separating this from the route change prevents the setCategory() audio pipeline rebuild
+    /// from causing audible lag during the switch.
+    private func applyEarpieceCategoryOptions() {
+        isChangingAudioRoute = true
+        defer { isChangingAudioRoute = false }
+        
+        do {
+            let session = AVAudioSession.sharedInstance()
+            
+            // Set category WITHOUT Bluetooth options to prevent iOS auto-switching back to BT
+            try session.setCategory(
+                .playAndRecord,
+                mode: .voiceChat,
+                options: []  // NO Bluetooth - forces built-in devices
+            )
+            
+            // Re-apply earpiece route after category change (category change can reset route)
+            if let availableInputs = session.availableInputs {
+                for input in availableInputs {
+                    if input.portType == .builtInMic {
+                        try session.setPreferredInput(input)
+                        break
+                    }
+                }
+            }
+            try session.overrideOutputAudioPort(.none)
+            
+            self.sendPhoneCallEvents(description: "LOG|applyEarpieceCategoryOptions: category set, earpiece re-applied", isError: false)
+        } catch {
+            self.sendPhoneCallEvents(description: "LOG|applyEarpieceCategoryOptions FAILED: \(error.localizedDescription)", isError: false)
         }
     }
     
@@ -1974,7 +2159,8 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             // Update cache: check if BT is now visible in availableInputs
             if let availableInputs = session.availableInputs {
                 for input in availableInputs {
-                    if input.portType == .bluetoothHFP || input.portType == .bluetoothA2DP || input.portType == .bluetoothLE {
+                    if (input.portType == .bluetoothHFP || input.portType == .bluetoothA2DP || input.portType == .bluetoothLE)
+                        && isRealBluetoothDevice(input) {
                         cachedBluetoothAvailable = true
                         self.sendPhoneCallEvents(description: "LOG|restoreBluetoothOptions: BT device found in inputs after restore: \(input.portName)", isError: false)
                         return
@@ -2005,70 +2191,49 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         // Cancel any previously scheduled audio route work items
         cancelPendingAudioRouteWorkItems()
         
-        // Ensure we're on the main thread for audio session changes
-        DispatchQueue.main.async {
-            // Track the desired audio state
-            self.desiredSpeakerState = toSpeaker
-            self.desiredBluetoothState = false
-            self.userExplicitlyChangedAudioRoute = true
+        // Track the desired audio state immediately (these are just Bool flags, safe on any thread)
+        self.desiredSpeakerState = toSpeaker
+        self.desiredBluetoothState = false
+        self.userExplicitlyChangedAudioRoute = true
+        
+        // Move ALL AVAudioSession operations to background queue to avoid blocking the main/UI thread.
+        audioSessionQueue.async { [weak self] in
+            guard let self = self else { return }
             
             self.logAudioSessionState(label: "BEFORE applySpeakerSetting toSpeaker=\(toSpeaker)")
             
             if toSpeaker {
-                // For speaker: Use forceSpeakerRoute with multiple attempts
+                // === SPEAKER SWITCH ===
+                // Step 1: Immediate audio switch via overrideOutputAudioPort (no setCategory!)
+                // This takes effect within milliseconds — audio moves to speaker instantly.
                 self.sendPhoneCallEvents(description: "LOG|=== applySpeakerSetting SPEAKER START ===", isError: false)
-                
                 self.forceSpeakerRoute()
                 
-                // Multiple attempts to ensure it sticks (cancellable on hangup)
-                self.scheduleAudioRouteWorkItem(delay: 0.3) { [weak self] in
+                // Step 2: After a short delay, apply category options to lock in speaker.
+                // The setCategory() call rebuilds the audio pipeline, but since speaker
+                // override is already active, the user won't hear any route change.
+                // NOTE: We do NOT restore BT options afterward — that would cause a second
+                // setCategory() which disrupts audio and exposes phantom BT ports.
+                // BT options are only added when the user explicitly selects Bluetooth.
+                self.scheduleAudioRouteWorkItem(delay: 0.5) { [weak self] in
                     guard let self = self, !self.calls.isEmpty else { return }
-                    self.forceSpeakerRoute()
-                }
-                
-                self.scheduleAudioRouteWorkItem(delay: 0.7) { [weak self] in
-                    guard let self = self, !self.calls.isEmpty else { return }
-                    self.forceSpeakerRoute()
-                }
-                
-                // Final check and restore BT options
-                self.scheduleAudioRouteWorkItem(delay: 1.5) { [weak self] in
-                    guard let self = self, !self.calls.isEmpty else { return }
-                    let session = AVAudioSession.sharedInstance()
-                    self.sendPhoneCallEvents(description: "LOG|=== SPEAKER FINAL CHECK ===", isError: false)
-                    self.sendPhoneCallEvents(description: "LOG|Final outputs: \(session.currentRoute.outputs.map { "\($0.portType.rawValue)" })", isError: false)
-                    
-                    // Restore Bluetooth options
-                    self.restoreBluetoothOptionsKeepingCurrentRoute()
+                    self.applySpeakerCategoryOptions()
                 }
                 
                 self.sendPhoneCallEvents(description: "LOG|=== applySpeakerSetting SPEAKER COMPLETE ===", isError: false)
             } else {
-                // For earpiece: Use forceEarpieceRoute with multiple attempts
+                // === EARPIECE SWITCH ===
+                // Step 1: Immediate audio switch via setPreferredInput + overrideOutputAudioPort
                 self.sendPhoneCallEvents(description: "LOG|=== applySpeakerSetting EARPIECE START ===", isError: false)
-                
                 self.forceEarpieceRoute()
                 
-                // Multiple attempts to ensure it sticks (cancellable on hangup)
-                self.scheduleAudioRouteWorkItem(delay: 0.3) { [weak self] in
+                // Step 2: After a short delay, apply category options to remove BT.
+                // NOTE: We do NOT restore BT options afterward — that would cause a second
+                // setCategory() which disrupts audio and exposes phantom BT ports.
+                // BT options are only added when the user explicitly selects Bluetooth.
+                self.scheduleAudioRouteWorkItem(delay: 0.5) { [weak self] in
                     guard let self = self, !self.calls.isEmpty else { return }
-                    self.forceEarpieceRoute()
-                }
-                
-                self.scheduleAudioRouteWorkItem(delay: 0.7) { [weak self] in
-                    guard let self = self, !self.calls.isEmpty else { return }
-                    self.forceEarpieceRoute()
-                }
-                
-                // Final check and restore BT options
-                self.scheduleAudioRouteWorkItem(delay: 1.5) { [weak self] in
-                    guard let self = self, !self.calls.isEmpty else { return }
-                    let session = AVAudioSession.sharedInstance()
-                    self.sendPhoneCallEvents(description: "LOG|=== EARPIECE FINAL CHECK ===", isError: false)
-                    self.sendPhoneCallEvents(description: "LOG|Final outputs: \(session.currentRoute.outputs.map { "\($0.portType.rawValue)" })", isError: false)
-                    
-                    // Restore Bluetooth options
-                    self.restoreBluetoothOptionsKeepingCurrentRoute()
+                    self.applyEarpieceCategoryOptions()
                 }
                 
                 self.sendPhoneCallEvents(description: "LOG|=== applySpeakerSetting EARPIECE COMPLETE ===", isError: false)
@@ -2078,7 +2243,10 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         }
     }
     
-    /// Force audio to speaker by setting appropriate category options
+    /// Force audio to speaker using overrideOutputAudioPort ONLY.
+    /// Does NOT call setCategory() because that tears down and rebuilds the entire audio
+    /// pipeline, causing a 1-4s lag where audio still comes from the old output device.
+    /// Category options (to remove BT) are changed separately in a delayed work item.
     private func forceSpeakerRoute() {
         isChangingAudioRoute = true
         defer { isChangingAudioRoute = false }
@@ -2089,11 +2257,26 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             // Log current state
             self.sendPhoneCallEvents(description: "LOG|forceSpeakerRoute: Current outputs = \(session.currentRoute.outputs.map { $0.portType.rawValue })", isError: false)
             
-            // IMPORTANT: First override to speaker, THEN set category.
-            // overrideOutputAudioPort(.speaker) is the primary mechanism for forcing speaker.
-            // Setting category with .defaultToSpeaker alone is just a hint and unreliable.
-            // By overriding FIRST, we ensure audio goes to speaker immediately.
+            // overrideOutputAudioPort(.speaker) is the ONLY call needed for immediate speaker switch.
+            // It takes effect within milliseconds without rebuilding the audio pipeline.
             try session.overrideOutputAudioPort(.speaker)
+            
+            self.sendPhoneCallEvents(description: "LOG|forceSpeakerRoute: After - outputs = \(session.currentRoute.outputs.map { $0.portType.rawValue })", isError: false)
+        } catch {
+            self.sendPhoneCallEvents(description: "LOG|forceSpeakerRoute FAILED: \(error.localizedDescription)", isError: false)
+        }
+    }
+    
+    /// Set category options for speaker mode (removes BT to prevent auto-switch).
+    /// This is called with a delay AFTER forceSpeakerRoute() has already switched audio output.
+    /// Separating this from the override prevents the setCategory() audio pipeline rebuild
+    /// from causing audible lag during the switch.
+    private func applySpeakerCategoryOptions() {
+        isChangingAudioRoute = true
+        defer { isChangingAudioRoute = false }
+        
+        do {
+            let session = AVAudioSession.sharedInstance()
             
             // Set category WITHOUT Bluetooth to prevent iOS from auto-switching to BT
             try session.setCategory(
@@ -2105,9 +2288,9 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             // Re-apply override after category change (category change can reset override)
             try session.overrideOutputAudioPort(.speaker)
             
-            self.sendPhoneCallEvents(description: "LOG|forceSpeakerRoute: After - outputs = \(session.currentRoute.outputs.map { $0.portType.rawValue })", isError: false)
+            self.sendPhoneCallEvents(description: "LOG|applySpeakerCategoryOptions: category set, override re-applied", isError: false)
         } catch {
-            self.sendPhoneCallEvents(description: "LOG|forceSpeakerRoute FAILED: \(error.localizedDescription)", isError: false)
+            self.sendPhoneCallEvents(description: "LOG|applySpeakerCategoryOptions FAILED: \(error.localizedDescription)", isError: false)
         }
     }
     
@@ -2127,15 +2310,26 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         
         // Check if Bluetooth is available and apply it if we haven't customized the audio yet
         if !self.calls.isEmpty {
+            // Suppress AudioRoute events from handleAudioRouteChange during call setup.
+            // CallKit activates the audio session with .allowBluetooth, which can make
+            // phantom BT appear in currentRoute. We suppress until applyInitialAudioRoute
+            // sends the definitive AudioRoute event to Dart.
+            self.suppressAudioRouteEvents = true
+            
             // Add a small delay to ensure audio session is fully initialized and Bluetooth device is detected
             self.scheduleAudioRouteWorkItem(delay: 0.3) { [weak self] in
                 guard let self = self, !self.calls.isEmpty else { return }
                 self.applyInitialAudioRoute()
+                // NOTE: suppress is lifted INSIDE applyInitialAudioRoute's delayed
+                // notification callback — NOT here. This ensures Dart can't query
+                // native isBluetoothAvailable() while phantom BT may still be in route.
             }
         }
     }
     
-    /// Apply initial audio route based on available devices
+    /// Apply initial audio route based on available devices.
+    /// IMPORTANT: This method is responsible for lifting suppressAudioRouteEvents
+    /// after sending the definitive AudioRoute event to Dart.
     private func applyInitialAudioRoute() {
         let audioSession = AVAudioSession.sharedInstance()
         self.logAudioSessionState(label: "BEFORE applyInitialAudioRoute")
@@ -2160,6 +2354,8 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             } else {
                 self.sendPhoneCallEvents(description: "LOG|applyInitialAudioRoute: User chose earpiece, no action needed", isError: false)
             }
+            // Send definitive AudioRoute event and lift suppress for early-return path
+            self.sendDefinitiveAudioRouteAndLiftSuppress(delay: 0.5)
             return
         }
         
@@ -2167,35 +2363,69 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         if self.desiredSpeakerState {
             self.sendPhoneCallEvents(description: "LOG|applyInitialAudioRoute: User wants speaker, applying speaker", isError: false)
             self.applySpeakerRoute()
+            self.sendDefinitiveAudioRouteAndLiftSuppress(delay: 0.5)
             return
         }
         
         if self.desiredBluetoothState {
             self.sendPhoneCallEvents(description: "LOG|applyInitialAudioRoute: User wants bluetooth, applying bluetooth", isError: false)
             self.applyBluetoothRoute()
+            self.sendDefinitiveAudioRouteAndLiftSuppress(delay: 0.5)
             return
         }
         
-        // Check if Bluetooth is available
-        let bluetoothAvailable = self.isBluetoothAvailable()
+        // Check if a real BT device is available using non-destructive approach.
+        // Instead of stripping .allowBluetooth (which can confuse iOS routing),
+        // we check availableInputs with isRealBluetoothDevice() — real devices
+        // have dataSources, phantom entries don't.
+        let bluetoothInRoute = self.isBluetoothAvailableClean()
         
-        if bluetoothAvailable {
-            self.sendPhoneCallEvents(description: "LOG|applyInitialAudioRoute: Bluetooth available, applying Bluetooth route", isError: false)
+        if bluetoothInRoute {
+            self.sendPhoneCallEvents(description: "LOG|applyInitialAudioRoute: Real Bluetooth device found → applying Bluetooth route", isError: false)
             self.desiredBluetoothState = true
             self.applyBluetoothRoute()
         } else {
-            self.sendPhoneCallEvents(description: "LOG|applyInitialAudioRoute: No Bluetooth, using earpiece", isError: false)
+            self.sendPhoneCallEvents(description: "LOG|applyInitialAudioRoute: No Bluetooth in currentRoute after clean category, using earpiece", isError: false)
             // Default to earpiece - no action needed, it's the default
         }
         
         self.logAudioSessionState(label: "AFTER applyInitialAudioRoute")
         
-        // Notify Dart about the current audio route
-        let currentRoute = self.getAudioRoute()
-        self.sendPhoneCallEvents(
-            description: "AudioRoute|\(currentRoute)|bluetoothAvailable=\(bluetoothAvailable)",
-            isError: false
-        )
+        // Send definitive AudioRoute event and lift suppress
+        self.sendDefinitiveAudioRouteAndLiftSuppress(delay: 0.5)
+    }
+    
+    /// Send the definitive AudioRoute event to Dart and THEN lift suppressAudioRouteEvents.
+    /// This ensures Dart cannot query native isBluetoothAvailable() during the gap
+    /// between applyInitialAudioRoute returning and the delayed event firing.
+    private func sendDefinitiveAudioRouteAndLiftSuppress(delay: TimeInterval) {
+        self.scheduleAudioRouteWorkItem(delay: delay) { [weak self] in
+            guard let self = self, !self.calls.isEmpty else {
+                self?.suppressAudioRouteEvents = false
+                return
+            }
+            
+            // Use non-destructive BT check — no category changes during active call
+            let btAvailable = self.isBluetoothAvailableClean()
+            
+            let currentRoute = self.getAudioRoute()
+            // If currentRoute says bluetooth but check says no BT → phantom, report earpiece
+            let reportedRoute = (currentRoute == "bluetooth" && !btAvailable) ? "earpiece" : currentRoute
+            let reportedBtAvailable = btAvailable
+            
+            self.sendPhoneCallEvents(
+                description: "LOG|sendDefinitiveAudioRoute: route=\(currentRoute), btAvailable=\(btAvailable), reportedRoute=\(reportedRoute), reportedBT=\(reportedBtAvailable)",
+                isError: false
+            )
+            
+            self.sendPhoneCallEvents(
+                description: "AudioRoute|\(reportedRoute)|bluetoothAvailable=\(reportedBtAvailable)",
+                isError: false
+            )
+            
+            // NOW lift suppress — Dart has the definitive state
+            self.suppressAudioRouteEvents = false
+        }
     }
     
     /// Apply Bluetooth audio route
@@ -2227,7 +2457,8 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                     
                     var bluetoothFound = false
                     for input in availableInputs {
-                        if input.portType == .bluetoothHFP || input.portType == .bluetoothA2DP || input.portType == .bluetoothLE {
+                        if (input.portType == .bluetoothHFP || input.portType == .bluetoothA2DP || input.portType == .bluetoothLE)
+                            && self.isRealBluetoothDevice(input) {
                             try audioSession.setPreferredInput(input)
                             self.sendPhoneCallEvents(description: "LOG|applyBluetoothRoute: Set preferred input to: \(input.portName) (\(input.portType.rawValue))", isError: false)
                             bluetoothFound = true
@@ -2282,41 +2513,9 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         }
         isChangingAudioRoute = false
         
-        // Step 4: Restore Bluetooth options after delay (cancellable)
-        self.scheduleAudioRouteWorkItem(delay: 0.3) { [weak self] in
-            guard let self = self, !self.calls.isEmpty else { return }
-            self.isChangingAudioRoute = true
-            defer { self.isChangingAudioRoute = false }
-            do {
-                try audioSession.setCategory(
-                    AVAudioSession.Category.playAndRecord,
-                    options: [.defaultToSpeaker, .allowBluetoothA2DP, .allowBluetooth]
-                )
-                if let availableInputs = audioSession.availableInputs {
-                    for input in availableInputs {
-                        if input.portType == .builtInMic {
-                            try audioSession.setPreferredInput(input)
-                            break
-                        }
-                    }
-                }
-                try audioSession.overrideOutputAudioPort(.speaker)
-                self.sendPhoneCallEvents(description: "LOG|applySpeakerRoute: BT options restored", isError: false)
-                
-                // Update cache: check if BT devices are visible after restoring options
-                if let inputs = audioSession.availableInputs {
-                    for input in inputs {
-                        if input.portType == .bluetoothHFP || input.portType == .bluetoothA2DP || input.portType == .bluetoothLE {
-                            self.cachedBluetoothAvailable = true
-                            self.sendPhoneCallEvents(description: "LOG|applySpeakerRoute: BT device found after restore: \(input.portName)", isError: false)
-                            break
-                        }
-                    }
-                }
-            } catch {
-                self.sendPhoneCallEvents(description: "LOG|applySpeakerRoute: Failed to restore BT - \(error.localizedDescription)", isError: false)
-            }
-        }
+        // NOTE: We do NOT restore BT options. Adding .allowBluetooth to the category
+        // causes phantom BT ports to appear in availableInputs when BT radio is on
+        // but no device is connected. BT options are only added when user selects BT.
     }
     
     /// Apply Earpiece audio route
@@ -2350,30 +2549,9 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         }
         isChangingAudioRoute = false
         
-        // Step 4: Restore Bluetooth options after delay (cancellable)
-        self.scheduleAudioRouteWorkItem(delay: 0.3) { [weak self] in
-            guard let self = self, !self.calls.isEmpty else { return }
-            self.isChangingAudioRoute = true
-            defer { self.isChangingAudioRoute = false }
-            do {
-                try audioSession.setCategory(
-                    AVAudioSession.Category.playAndRecord,
-                    options: [.allowBluetoothA2DP, .allowBluetooth]
-                )
-                if let availableInputs = audioSession.availableInputs {
-                    for input in availableInputs {
-                        if input.portType == .builtInMic {
-                            try audioSession.setPreferredInput(input)
-                            break
-                        }
-                    }
-                }
-                try audioSession.overrideOutputAudioPort(.none)
-                self.sendPhoneCallEvents(description: "LOG|applyEarpieceRoute: BT options restored", isError: false)
-            } catch {
-                self.sendPhoneCallEvents(description: "LOG|applyEarpieceRoute: Failed to restore BT - \(error.localizedDescription)", isError: false)
-            }
-        }
+        // NOTE: We do NOT restore BT options. Adding .allowBluetooth to the category
+        // causes phantom BT ports to appear in availableInputs when BT radio is on
+        // but no device is connected. BT options are only added when user selects BT.
     }
 
     public func provider(_ provider: CXProvider, didDeactivate audioSession: AVAudioSession) {
@@ -2413,13 +2591,24 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         // Test2's data instead of Test1's.
         if let currentActiveUUID = self.activeCallUUID,
            let currentCall = self.calls[currentActiveUUID] {
-            self.sendPhoneCallEvents(description: "LOG|Holding current call \(currentActiveUUID) before answering new call", isError: false)
             
-            // 1. Set hold on Twilio SDK immediately
-            currentCall.isOnHold = true
-            
-            // 2. Send Hold event to Flutter IMMEDIATELY so BLoC saves caller data before Connected arrives
-            self.sendPhoneCallEvents(description: "Hold", isError: false)
+            // Only send Hold if the call isn't already on hold.
+            // When the user goes through the Flutter "Hold & Accept" flow,
+            // holdCall() already set isOnHold = true and sent "Hold" to Flutter.
+            // Sending a SECOND "Hold" here would cause the BLoC to re-save
+            // the held-call data AFTER Caller B's info has been emitted into
+            // state, corrupting the saved Caller A data.
+            if !currentCall.isOnHold {
+                self.sendPhoneCallEvents(description: "LOG|Holding current call \(currentActiveUUID) before answering new call", isError: false)
+                
+                // 1. Set hold on Twilio SDK immediately
+                currentCall.isOnHold = true
+                
+                // 2. Send Hold event to Flutter IMMEDIATELY so BLoC saves caller data before Connected arrives
+                self.sendPhoneCallEvents(description: "Hold", isError: false)
+            } else {
+                self.sendPhoneCallEvents(description: "LOG|Current call \(currentActiveUUID) already on hold, skipping duplicate Hold event", isError: false)
+            }
             
             // 3. Also request hold through CallKit for proper audio session management
             // The delegate will skip sending duplicate "Hold" since call.isOnHold is already true
@@ -2597,7 +2786,9 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         
         callKitCallController.request(transaction) { error in
             if let error = error {
-                self.sendPhoneCallEvents(description: "End Call Failed: \(error.localizedDescription).", isError: true)
+                // IMPORTANT: Send as normal LOG event, NOT isError:true.
+                // isError:true wraps in FlutterError which crashes the Dart event stream.
+                self.sendPhoneCallEvents(description: "LOG|End Call Failed: \(error.localizedDescription).", isError: false)
             } else {
                 // Don't send "Call Ended" here - let callDidDisconnect handle it
                 // It will check if other calls remain before sending
@@ -2607,6 +2798,17 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     }
     
     func performVoiceCall(uuid: UUID, client: String?, completionHandler: @escaping (Bool) -> Swift.Void) {
+        // Suppress audio route events during call setup (same as answer path)
+        self.suppressAudioRouteEvents = true
+        
+        // Safety: auto-lift suppress after 3s in case applyInitialAudioRoute never runs
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+            if self?.suppressAudioRouteEvents == true {
+                self?.sendPhoneCallEvents(description: "LOG|performVoiceCall: Safety timeout — lifting suppressAudioRouteEvents", isError: false)
+                self?.suppressAudioRouteEvents = false
+            }
+        }
+        
         guard let token = accessToken else {
             completionHandler(false)
             return
@@ -2633,6 +2835,21 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     }
     
     func performAnswerVoiceCall(uuid: UUID, completionHandler: @escaping (Bool) -> Swift.Void) {
+        // Suppress audio route events immediately when answering a call.
+        // CallKit will activate the audio session with .allowBluetooth which can
+        // create phantom BT in currentRoute. The suppress flag prevents both
+        // handleAudioRouteChange and method channel calls from reporting phantom BT.
+        // It will be lifted after applyInitialAudioRoute completes.
+        self.suppressAudioRouteEvents = true
+        
+        // Safety: auto-lift suppress after 3s in case applyInitialAudioRoute never runs
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+            if self?.suppressAudioRouteEvents == true {
+                self?.sendPhoneCallEvents(description: "LOG|performAnswerVoiceCall: Safety timeout — lifting suppressAudioRouteEvents", isError: false)
+                self?.suppressAudioRouteEvents = false
+            }
+        }
+        
         // Look up the call invite by UUID
         if let ci = self.callInvites[uuid] {
             let acceptOptions: AcceptOptions = AcceptOptions(callInvite: ci) { (builder) in
@@ -2640,7 +2857,9 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             }
             self.sendPhoneCallEvents(description: "LOG|performAnswerVoiceCall: answering call uuid=\(uuid)", isError: false)
             let theCall = ci.accept(options: acceptOptions, delegate: self)
-            self.sendPhoneCallEvents(description: "Answer|\(String(describing: extractUserNumber(from: theCall.from!)))|\(theCall.to!)|Incoming\(formatCustomParams(params: ci.customParameters))", isError:false)
+            let answerFrom = extractUserNumber(from: theCall.from ?? self.identity)
+            let answerTo = theCall.to ?? self.callTo
+            self.sendPhoneCallEvents(description: "Answer|\(answerFrom)|\(answerTo)|Incoming\(formatCustomParams(params: ci.customParameters))", isError:false)
             self.calls[uuid] = theCall
             self.activeCallUUID = uuid
             self.userExplicitlyChangedAudioRoute = false  // Reset for new call
