@@ -508,13 +508,104 @@ class IncomingCallActivity : AppCompatActivity() {
     
     private fun handleAnswerFromNotification() {
         android.util.Log.d(TAG, "handleAnswerFromNotification: STARTED - Activity launched from notification answer action")
-        // Mark as handled immediately to prevent any race conditions
-        callHandled = true
+        
         val sid = intent.getStringExtra(EXTRA_CALL_SID)
         // Try to get CallInvite from intent
         val invite: CallInvite? = intent.getParcelableExtra(EXTRA_CALL_INVITE)
         
         android.util.Log.d(TAG, "handleAnswerFromNotification: sid=$sid, hasCallInvite=${invite != null}")
+        
+        // Check if there's an active call — if so, we need to show the call waiting
+        // bottom sheet instead of answering directly, just like the full-screen UI does
+        val hasActiveCallFromIntent = intent.getBooleanExtra(EXTRA_HAS_ACTIVE_CALL, false)
+        android.util.Log.d(TAG, "handleAnswerFromNotification: hasActiveCallFromIntent=$hasActiveCallFromIntent")
+        
+        if (hasActiveCallFromIntent) {
+            // There's an active call — DON'T answer directly.
+            // Instead, populate the activity state and show the full incoming call UI
+            // with the call waiting bottom sheet so the user can choose an option.
+            android.util.Log.d(TAG, "handleAnswerFromNotification: Active call detected, showing full UI with bottom sheet instead of direct answer")
+            
+            // Store invite/sid for later use by the bottom sheet actions
+            if (invite != null) {
+                callInvite = invite
+            }
+            if (sid != null) {
+                callSid = sid
+            }
+            
+            // Extract caller info
+            callerName = intent.getStringExtra(EXTRA_CALLER_NAME) 
+                ?: invite?.customParameters?.get("client_name")
+                ?: extractUserNumber(invite?.from ?: "Unknown")
+            callerNumber = intent.getStringExtra(EXTRA_CALLER_NUMBER)
+                ?: extractUserNumber(invite?.from ?: "")
+            myNumber = intent.getStringExtra("extra_my_number")
+                ?: invite?.to ?: ""
+            
+            // Set active call info
+            hasActiveCall = true
+            activeCallerName = intent.getStringExtra(EXTRA_ACTIVE_CALLER_NAME)
+            activeCallerNumber = intent.getStringExtra(EXTRA_ACTIVE_CALLER_NUMBER)
+            activeCallHandle = intent.getStringExtra(EXTRA_ACTIVE_CALL_HANDLE)
+            
+            android.util.Log.d(TAG, "handleAnswerFromNotification: Setting up full UI - callerName=$callerName, callerNumber=$callerNumber, activeCallerName=$activeCallerName, activeCallerNumber=$activeCallerNumber")
+            
+            // Set the content view (the full incoming call layout)
+            setContentView(R.layout.activity_incoming_call_custom)
+            bringActivityToFront()
+            
+            // Set caller info in UI
+            findViewById<TextView>(R.id.callerName).text = callerName
+            val formattedNumber = formatPhoneNumber(callerNumber ?: "")
+            findViewById<TextView>(R.id.callerNumber).text = if (formattedNumber.isNotEmpty()) "Mobile  $formattedNumber" else "Mobile"
+            
+            val easifyLogo = findViewById<ImageView>(R.id.easifyLogo)
+            easifyLogo.elevation = 8f
+            
+            // Set up the accept button to show bottom sheet (call waiting mode)
+            val acceptButtonContainer = findViewById<FrameLayout>(R.id.acceptButton)
+            val acceptButtonBg = findViewById<View>(R.id.acceptButtonBg)
+            val acceptButtonCircle = findViewById<ImageView>(R.id.acceptButtonCircle)
+            acceptButtonContainer.elevation = 12f
+            acceptButtonBg.elevation = 10f
+            acceptButtonCircle.elevation = 14f
+            
+            setupButtonSwipeAnimation(acceptButtonContainer, acceptButtonBg, acceptButtonCircle) {
+                showCallWaitingBottomSheet()
+            }
+            
+            // Set up decline button
+            val declineButtonContainer = findViewById<FrameLayout>(R.id.declineButton)
+            val declineButtonBg = findViewById<View>(R.id.declineButtonBg)
+            val declineButtonCircle = findViewById<ImageView>(R.id.declineButtonCircle)
+            declineButtonContainer.elevation = 12f
+            declineButtonBg.elevation = 10f
+            declineButtonCircle.elevation = 14f
+            
+            setupButtonSwipeAnimation(declineButtonContainer, declineButtonBg, declineButtonCircle) {
+                declineCall()
+            }
+            
+            // Update label for call waiting
+            val callFromLabel = findViewById<TextView>(R.id.callFromLabel)
+            callFromLabel.text = "Another call from"
+            
+            // Register broadcast receiver
+            registerCallEndedReceiver()
+            
+            // Show the bottom sheet immediately since the user tapped "Answer"
+            // from the notification — they want to answer, so show them the options
+            acceptButtonContainer.post {
+                showCallWaitingBottomSheet()
+            }
+            
+            return  // Don't finish — user needs to interact with the bottom sheet
+        }
+        
+        // No active call — proceed with direct answer (original behavior)
+        // Mark as handled immediately to prevent any race conditions
+        callHandled = true
         
         // Store invite for permission callback
         if (invite != null) {
@@ -1411,7 +1502,23 @@ class IncomingCallActivity : AppCompatActivity() {
                     callerName = it.getStringExtra(EXTRA_CALLER_NAME) ?: callerName
                     callerNumber = it.getStringExtra(EXTRA_CALLER_NUMBER) ?: callerNumber
                     myNumber = it.getStringExtra("extra_my_number") ?: myNumber
-                    handleAnswerFromNotification()
+                    
+                    // Check if there's an active call (from intent extras or already known)
+                    val hasActiveCallFromIntent = it.getBooleanExtra(EXTRA_HAS_ACTIVE_CALL, false)
+                    if (hasActiveCallFromIntent || hasActiveCall) {
+                        // Activity is already showing the full UI — just show the bottom sheet
+                        android.util.Log.d(TAG, "onNewIntent: Active call detected, showing bottom sheet directly (hasActiveCall=$hasActiveCall, fromIntent=$hasActiveCallFromIntent)")
+                        // Update active call info from new intent if available
+                        if (hasActiveCallFromIntent) {
+                            hasActiveCall = true
+                            activeCallerName = it.getStringExtra(EXTRA_ACTIVE_CALLER_NAME) ?: activeCallerName
+                            activeCallerNumber = it.getStringExtra(EXTRA_ACTIVE_CALLER_NUMBER) ?: activeCallerNumber
+                            activeCallHandle = it.getStringExtra(EXTRA_ACTIVE_CALL_HANDLE) ?: activeCallHandle
+                        }
+                        showCallWaitingBottomSheet()
+                    } else {
+                        handleAnswerFromNotification()
+                    }
                 } else {
                     android.util.Log.d(TAG, "onNewIntent: IGNORING answer action for different call $newCallSid (current: $callSid)")
                 }

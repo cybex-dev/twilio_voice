@@ -2671,6 +2671,15 @@ class TVConnectionService : ConnectionService() {
             putExtra(IncomingCallActivity.EXTRA_CALLER_NUMBER, callerNumber)
             putExtra("extra_my_number", myNumber)
             putExtra("action", "answer")
+            // Pass active call info so handleAnswerFromNotification can show
+            // the call-waiting bottom sheet instead of answering directly
+            if (hasActiveCallDuringIncoming) {
+                putExtra(IncomingCallActivity.EXTRA_HAS_ACTIVE_CALL, true)
+                putExtra(IncomingCallActivity.EXTRA_ACTIVE_CALLER_NAME, activeCallCallerName)
+                putExtra(IncomingCallActivity.EXTRA_ACTIVE_CALLER_NUMBER, activeCallCallerNumber)
+                putExtra(IncomingCallActivity.EXTRA_ACTIVE_CALL_HANDLE, activeCallHandleDuringIncoming)
+                Log.d(TAG, "createIncomingCallNotification: Added active call extras to answerActivityIntent")
+            }
             // Add a unique data URI to ensure PendingIntent is unique and not cached
             data = android.net.Uri.parse("twilio://answer/${callInvite.callSid}")
         }
