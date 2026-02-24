@@ -1456,6 +1456,14 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     func callDisconnected(uuid: UUID) {
         self.sendPhoneCallEvents(description: "LOG|Call Disconnected uuid=\(uuid)", isError: false)
         
+        // Clear pending swap state if the disconnected call was part of a pending swap
+        if self.pendingSwapHoldUUID == uuid || self.pendingSwapHoldUUID != nil {
+            self.sendPhoneCallEvents(description: "LOG|callDisconnected: clearing pendingSwapHoldUUID (was \(String(describing: self.pendingSwapHoldUUID)))", isError: false)
+            self.pendingSwapHoldUUID = nil
+            self.pendingSwapSafetyTimer?.invalidate()
+            self.pendingSwapSafetyTimer = nil
+        }
+        
         // Remove this specific call from dictionaries
         self.calls.removeValue(forKey: uuid)
         self.callInvites.removeValue(forKey: uuid)
@@ -2800,24 +2808,74 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         action.fulfill()
     }
     
+    /// Tracks a pending hold UUID during a swap so the unhold action can detect
+    /// it's part of a swap and emit a single "Swap" event instead of separate Hold/Unhold.
+    private var pendingSwapHoldUUID: UUID? = nil
+    /// Safety timer: if Hold fires but Unhold never arrives, fall back to sending Hold
+    private var pendingSwapSafetyTimer: Timer? = nil
+    
     public func provider(_ provider: CXProvider, perform action: CXSetHeldCallAction) {
-        self.sendPhoneCallEvents(description: "LOG|provider:performSetHeldAction: uuid=\(action.callUUID) isOnHold=\(action.isOnHold)", isError: false)
+        self.sendPhoneCallEvents(description: "LOG|provider:performSetHeldAction: uuid=\(action.callUUID) isOnHold=\(action.isOnHold) callsCount=\(self.calls.count)", isError: false)
         if let call = self.calls[action.callUUID] {
             let wasAlreadyInTargetState = (call.isOnHold == action.isOnHold)
             call.isOnHold = action.isOnHold
             
-            // Only notify Flutter if the state actually changed
-            // Avoids duplicate Hold/Unhold events when we already sent one synchronously
-            // (e.g., in CXAnswerCallAction we send Hold immediately before the async CallKit request)
-            if !wasAlreadyInTargetState {
-                self.sendPhoneCallEvents(description: action.isOnHold ? "Hold" : "Unhold", isError: false)
+            if action.isOnHold {
+                // === HOLD ===
+                if wasAlreadyInTargetState {
+                    // Duplicate hold (e.g., CXAnswerCallAction already set isOnHold=true
+                    // synchronously, then the async CXSetHeldCallAction arrives). Ignore.
+                    self.sendPhoneCallEvents(description: "LOG|performSetHeldAction: skipping duplicate Hold event (already in target state)", isError: false)
+                } else {
+                    // Check if this is part of a swap: 2+ calls exist
+                    // (i.e., the user tapped "Swap" in CallKit, which holds the active call
+                    //  and then unholds the held call)
+                    let otherCallsExist = self.calls.values.contains(where: { $0.uuid != action.callUUID })
+                    if otherCallsExist {
+                        // This is the first half of a swap - remember this UUID
+                        // so the upcoming Unhold can detect it and emit a "Swap" event
+                        self.pendingSwapHoldUUID = action.callUUID
+                        self.pendingSwapSafetyTimer?.invalidate()
+                        self.pendingSwapSafetyTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { [weak self] _ in
+                            guard let self = self, self.pendingSwapHoldUUID != nil else { return }
+                            self.sendPhoneCallEvents(description: "LOG|performSetHeldAction: Swap safety timeout - Unhold never arrived, sending fallback Hold", isError: false)
+                            self.pendingSwapHoldUUID = nil
+                            self.sendPhoneCallEvents(description: "Hold", isError: false)
+                        }
+                        self.sendPhoneCallEvents(description: "LOG|performSetHeldAction: HOLD detected as swap (pendingSwapHoldUUID=\(action.callUUID)), deferring event", isError: false)
+                        // DON'T send "Hold" to Flutter - wait for the Unhold to send "Swap"
+                    } else {
+                        // Single call hold (e.g., user tapped hold button)
+                        self.sendPhoneCallEvents(description: "Hold", isError: false)
+                    }
+                }
             } else {
-                self.sendPhoneCallEvents(description: "LOG|performSetHeldAction: skipping duplicate \(action.isOnHold ? "Hold" : "Unhold") event (already in target state)", isError: false)
-            }
-            
-            // Update activeCallUUID
-            if !action.isOnHold {
+                // === UNHOLD ===
+                // Update activeCallUUID FIRST so self.call returns the correct call
                 self.activeCallUUID = action.callUUID
+                
+                if let heldUUID = self.pendingSwapHoldUUID {
+                    // This Unhold completes a swap! Send a single "Swap" event
+                    // with the now-active call's info so Flutter can do an atomic swap
+                    self.pendingSwapHoldUUID = nil
+                    self.pendingSwapSafetyTimer?.invalidate()
+                    self.pendingSwapSafetyTimer = nil
+                    
+                    let from = extractUserNumber(from: call.from ?? self.identity)
+                    let to = call.to ?? self.callTo
+                    // Determine direction: if this call's UUID was never in callOutgoing context,
+                    // we check if it was originally an incoming call by checking the from field
+                    // For swap, we include the now-active call's from/to so Dart can identify it
+                    self.sendPhoneCallEvents(description: "LOG|performSetHeldAction: SWAP completed - now active uuid=\(action.callUUID) from=\(from) to=\(to), held uuid=\(heldUUID)", isError: false)
+                    self.sendPhoneCallEvents(description: "Swap|\(from)|\(to)", isError: false)
+                } else {
+                    // Regular unhold (e.g., after held call ends and remaining call is restored)
+                    if !wasAlreadyInTargetState {
+                        self.sendPhoneCallEvents(description: "Unhold", isError: false)
+                    } else {
+                        self.sendPhoneCallEvents(description: "LOG|performSetHeldAction: skipping duplicate Unhold event (already in target state)", isError: false)
+                    }
+                }
             }
             
             action.fulfill()

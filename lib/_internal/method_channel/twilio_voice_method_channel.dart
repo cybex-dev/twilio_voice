@@ -385,6 +385,17 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
       return CallEvent.returningCall;
     } else if (state.startsWith("Reconnecting")) {
       return CallEvent.reconnecting;
+    } else if (state.startsWith("Swap|")) {
+      // Swap event from iOS CallKit native swap button: "Swap|from|to"
+      // The from/to are the now-active call's info
+      // We update activeCall so the BLoC can read the swapped-to call's details
+      List<String> tokens = state.split('|');
+      if (tokens.length >= 3) {
+        if (kDebugMode) {
+          printDebug('Swap - NowActive From: ${tokens[1]}, To: ${tokens[2]}');
+        }
+      }
+      return CallEvent.swap;
     }
     switch (state) {
       case 'Ringing':
