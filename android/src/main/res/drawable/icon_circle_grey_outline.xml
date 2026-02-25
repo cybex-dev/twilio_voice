@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="oval">
+            <size android:width="40dp" android:height="40dp" />
+            <solid android:color="#00000000" />
+            <stroke android:width="2dp" android:color="#9E9E9E" />
+        </shape>
+    </item>
+    <item android:left="3dp" android:top="3dp" android:right="3dp" android:bottom="3dp">
+        <shape android:shape="oval">
+            <!-- Inner fill tuned to match opaque dark sheet -->
+            <solid android:color="#181818" />
+        </shape>
+    </item>
+</layer-list>

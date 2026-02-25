@@ -17,6 +17,8 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <!-- Permission for showing incoming call notification on lock screen (Android 11 and below) -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- Permission for bringing activities to front (used by bringActivityToFront and REORDER_TO_FRONT flag) -->
+    <uses-permission android:name="android.permission.REORDER_TASKS" />
 
     <application>
         <!-- Incoming Call Activity for native call UI -->

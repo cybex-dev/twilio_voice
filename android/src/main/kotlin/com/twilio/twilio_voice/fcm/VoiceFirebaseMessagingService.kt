@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.PowerManager
+import android.telephony.TelephonyManager
 import android.util.Log
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.google.firebase.messaging.FirebaseMessagingService
@@ -18,6 +19,9 @@ import com.twilio.voice.MessageListener
 import com.twilio.voice.Voice
 
 class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageListener {
+    // Logging counters
+    private var log_fcmReceivedCounter: Int = 0
+    private var log_onCallInviteCounter: Int = 0
 
     companion object {
         private const val TAG = "VoiceFirebaseMessagingService"
@@ -53,14 +57,41 @@ class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageListene
      * @param remoteMessage Object representing the message received from Firebase Cloud Messaging.
      */
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
-        Log.d(TAG, "========== onMessageReceived START ==========")
-        Log.d(TAG, "Received onMessageReceived()")
+    log_fcmReceivedCounter++
+    Log.d(TAG, "[LOG] onMessageReceived CALLED. log_fcmReceivedCounter=$log_fcmReceivedCounter")
+        val msgTimestamp = System.currentTimeMillis()
+        Log.d(TAG, "╔════════════════════════════════════════════════════════════════════╗")
+        Log.d(TAG, "║ onMessageReceived START - Timestamp: $msgTimestamp")
+        Log.d(TAG, "║ Thread: ${Thread.currentThread().name} (${Thread.currentThread().id})")
+        Log.d(TAG, "╚════════════════════════════════════════════════════════════════════╝")
         Log.d(TAG, "Bundle data: " + remoteMessage.data)
         Log.d(TAG, "From: " + remoteMessage.from)
-        Log.d(TAG, "Priority: " + remoteMessage.priority)
-        Log.d(TAG, "Original Priority: " + remoteMessage.originalPriority)
-        Log.d(TAG, "TTL: " + remoteMessage.ttl)
-        Log.d(TAG, "Sent Time: " + remoteMessage.sentTime)
+        
+        // ============================================================
+        // EARLY CHECK: Before even handling the message, use ATOMIC 
+        // tryClaimFcmCall() to both CHECK and SET the processing flag
+        // in one synchronized operation. This prevents the race condition  
+        // where two FCM messages arrive simultaneously and both pass the
+        // check before either sets the flag.
+        // ============================================================
+        if (remoteMessage.data.containsKey("twi_message_type") && 
+            remoteMessage.data["twi_message_type"] == "twilio.voice.call") {
+            Log.d(TAG, "[FCM-EARLY] Detected Twilio Voice call message")
+            
+            // ATOMIC check-and-set: This will check if another call exists
+            // AND immediately set the processing flag if no other call exists.
+            // This prevents two simultaneous FCMs from both passing the check.
+            val claimed = TVConnectionService.tryClaimFcmMessage(applicationContext)
+            
+            if (!claimed) {
+                Log.w(TAG, "[FCM-EARLY] ❌ BLOCKING - Another call already exists or is being processed!")
+                Log.w(TAG, "[FCM-EARLY] ❌ NOT calling Voice.handleMessage for this FCM")
+                Log.d(TAG, "========== onMessageReceived END (early block) ==========")
+                return // Don't even let Twilio SDK process this message
+            }
+            Log.d(TAG, "[FCM-EARLY] ✓ CLAIMED FCM processing slot, proceeding with Voice.handleMessage")
+        }
+        // ============================================================
         
         // Check if this is a Twilio Voice message
         if (remoteMessage.data.isNotEmpty()) {
@@ -69,6 +100,8 @@ class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageListene
             Log.d(TAG, "Voice.handleMessage returned: $valid")
             if (!valid) {
                 Log.d(TAG, "onMessageReceived: The message was not a valid Twilio Voice SDK payload, forwarding to Flutter...")
+                // Not a Twilio message - release the FCM claim since no onCallInvite will follow
+                TVConnectionService.releaseFcmClaim()
                 // Forward non-Twilio messages to Flutter firebase_messaging plugin
                 forwardToFlutterFirebaseMessaging(remoteMessage)
             } else {
@@ -99,16 +132,71 @@ class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageListene
     //region MessageListener
     @SuppressLint("MissingPermission")
     override fun onCallInvite(callInvite: CallInvite) {
-        Log.d(TAG, "========== onCallInvite START ==========")
-        Log.d(
-            TAG,
-            "onCallInvite: {\n\t" +
-                    "CallSid: ${callInvite.callSid}, \n\t" +
-                    "From: ${callInvite.from}, \n\t" +
-                    "To: ${callInvite.to}, \n\t" +
-                    "Parameters: ${callInvite.customParameters.entries.joinToString { "${it.key}:${it.value}" }},\n\t" +
-                    "}"
-        )
+    log_onCallInviteCounter++
+    Log.d(TAG, "[LOG] onCallInvite CALLED. log_onCallInviteCounter=$log_onCallInviteCounter callSid=${callInvite.callSid}")
+        val currentThread = Thread.currentThread()
+        val timestamp = System.currentTimeMillis()
+        Log.d(TAG, "╔════════════════════════════════════════════════════════════════════╗")
+        Log.d(TAG, "║ FCM onCallInvite START - Thread: ${currentThread.name} (${currentThread.id})")
+        Log.d(TAG, "║ Timestamp: $timestamp")
+        Log.d(TAG, "║ CallSid: ${callInvite.callSid}")
+        Log.d(TAG, "║ From: ${callInvite.from}")
+        Log.d(TAG, "╚════════════════════════════════════════════════════════════════════╝")
+
+        // ============================================================
+        // SIMULTANEOUS INCOMING CALLS HANDLING - ATOMIC CHECK-AND-SET
+        // Use synchronized tryClaimIncomingCall() to atomically:
+        // 1. Check if there's already an active/pending call
+        // 2. If not, immediately mark THIS call as pending
+        // This prevents race conditions where two FCM callbacks run in parallel.
+        // ============================================================
+        Log.d(TAG, "[FCM-${callInvite.callSid.takeLast(6)}] Attempting to claim call...")
+        val claimed = TVConnectionService.tryClaimIncomingCall(applicationContext, callInvite.callSid)
+        
+        if (!claimed) {
+            // Another call already exists - reject this one immediately
+            Log.w(TAG, "[FCM-${callInvite.callSid.takeLast(6)}] ❌ FAILED to claim - another call exists!")
+            Log.w(TAG, "[FCM-${callInvite.callSid.takeLast(6)}] Rejecting this call at FCM level immediately")
+            
+            try {
+                callInvite.reject(applicationContext)
+                Log.d(TAG, "[FCM-${callInvite.callSid.takeLast(6)}] ✓ Successfully rejected at FCM level")
+            } catch (e: Exception) {
+                Log.e(TAG, "[FCM-${callInvite.callSid.takeLast(6)}] Failed to reject: ${e.message}", e)
+            }
+            
+            Log.d(TAG, "[FCM-${callInvite.callSid.takeLast(6)}] ════ FCM END (rejected) ════")
+            return // Exit immediately - don't start service, don't show UI
+        }
+        
+        // Successfully claimed this call - proceed with showing UI
+        Log.d(TAG, "[FCM-${callInvite.callSid.takeLast(6)}] ✓ CLAIMED successfully, proceeding with UI")
+        // ============================================================
+
+        // ============================================================
+        // SYSTEM CALL CHECK: Reject incoming Twilio call if the device
+        // is already on a system (cellular/SIM) phone call. This prevents
+        // the user seeing two calls ringing simultaneously.
+        // NOTE: If the active call is from OUR app (Twilio), the check
+        // above (tryClaimIncomingCall) handles it for call waiting.
+        // This check is specifically for non-Twilio system calls.
+        // ============================================================
+        val isDeviceOnSystemCall = isDeviceInSystemCall()
+        Log.d(TAG, "[FCM-${callInvite.callSid.takeLast(6)}] System call check: isDeviceOnSystemCall=$isDeviceOnSystemCall")
+        if (isDeviceOnSystemCall) {
+            Log.w(TAG, "[FCM-${callInvite.callSid.takeLast(6)}] ❌ Device is already on a system call - rejecting Twilio incoming call")
+            try {
+                callInvite.reject(applicationContext)
+                Log.d(TAG, "[FCM-${callInvite.callSid.takeLast(6)}] ✓ Successfully rejected (system call active)")
+            } catch (e: Exception) {
+                Log.e(TAG, "[FCM-${callInvite.callSid.takeLast(6)}] Failed to reject: ${e.message}", e)
+            }
+            // Clear the pending call claim so future calls can come through
+            TVConnectionService.clearPendingIncomingCallFromPrefs(applicationContext)
+            Log.d(TAG, "[FCM-${callInvite.callSid.takeLast(6)}] ════ FCM END (rejected - system call active) ════")
+            return
+        }
+        // ============================================================
 
         // Acquire a partial wake lock to ensure the CPU stays awake long enough
         // to start the foreground service and show the incoming call UI
@@ -168,10 +256,36 @@ class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageListene
         Intent(applicationContext, TVConnectionService::class.java).apply {
             action = TVConnectionService.ACTION_CANCEL_CALL_INVITE
             putExtra(TVConnectionService.EXTRA_CANCEL_CALL_INVITE, cancelledCallInvite)
-            // Use regular startService for cancel - foreground service is already running
-            // or will be stopped shortly. No need to start a new foreground service.
-            applicationContext.startService(this)
+            // IMPORTANT: Must use startForegroundService on Android O+ to avoid crash
+            // The service MUST call startForeground() immediately in onStartCommand
+            // This fixes: "Context.startForegroundService() did not then call Service.startForeground()"
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                applicationContext.startForegroundService(this)
+            } else {
+                applicationContext.startService(this)
+            }
         }
     }
     //endregion
+
+    /**
+     * Checks if the device is currently on a system (cellular/SIM) phone call.
+     * Uses TelephonyManager to detect active/ringing system calls.
+     * This does NOT detect Twilio VoIP calls - only native telephony calls.
+     * 
+     * @return true if the device has an active or ringing system call
+     */
+    private fun isDeviceInSystemCall(): Boolean {
+        return try {
+            val telephonyManager = getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
+            telephonyManager?.let {
+                val callState = it.callState
+                Log.d(TAG, "isDeviceInSystemCall: TelephonyManager.callState=$callState (IDLE=0, RINGING=1, OFFHOOK=2)")
+                callState != TelephonyManager.CALL_STATE_IDLE
+            } ?: false
+        } catch (e: Exception) {
+            Log.e(TAG, "isDeviceInSystemCall: Error checking call state: ${e.message}", e)
+            false
+        }
+    }
 }

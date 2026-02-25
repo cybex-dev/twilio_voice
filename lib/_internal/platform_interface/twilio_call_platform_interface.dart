@@ -26,6 +26,12 @@ abstract class TwilioCallPlatform extends SharedPlatformInterface {
   /// Sets active call
   set activeCall(ActiveCall? activeCall);
 
+  /// Gets the waiting call (incoming call during active call)
+  ActiveCall? get waitingCall => null;
+
+  /// Sets the waiting call
+  set waitingCall(ActiveCall? waitingCall) {}
+
   /// Places new call
   ///
   /// [extraOptions] will be added to the callPayload sent to your server
@@ -90,4 +96,11 @@ abstract class TwilioCallPlatform extends SharedPlatformInterface {
 
   //getActiveCallOnResumeFromTerminatedState
   Future<bool?> getActiveCallOnResumeFromTerminatedState();
+
+  /// Clears all local call state (_activeCall, _waitingCall).
+  /// Used when all calls have ended to prevent stale state.
+  void clearCallState() {
+    activeCall = null;
+    waitingCall = null;
+  }
 }

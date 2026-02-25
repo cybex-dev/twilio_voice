@@ -39,6 +39,12 @@ class TVBroadcastReceiver(private val plugin: TwilioVoicePlugin) : BroadcastRece
         const val ACTION_CALL_ENDED: String = "com.twilio.ACTION_CALL_ENDED"
 
         /**
+         * Action used to notify the [TwilioVoicePlugin] that the held call ended
+         * while another call is still active. Used to clear the "On Hold" banner in the UI.
+         */
+        const val ACTION_HELD_CALL_ENDED: String = "com.twilio.ACTION_HELD_CALL_ENDED"
+
+        /**
          * Action used to notify the [TwilioVoicePlugin] for any call state changes, includes hold, unhold, mute, unmute.
          */
         const val ACTION_CALL_STATE: String = "com.twilio.ACTION_CALL_STATE"

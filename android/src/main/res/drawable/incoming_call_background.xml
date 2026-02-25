@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Base: solid dark background #181818 -->
+    <item>
+        <shape>
+            <solid android:color="#181818" />
+        </shape>
+    </item>
+
+    <!-- Ellipse 1: Blue glow — left-center area (#346299)
+         Simulates the large blue ellipse positioned on the left side,
+         centered vertically around 40-60% of screen height -->
+    <item>
+        <shape>
+            <gradient
+                android:type="radial"
+                android:centerX="0.10"
+                android:centerY="0.52"
+                android:gradientRadius="420dp"
+                android:startColor="#40346299"
+                android:centerColor="#20346299"
+                android:endColor="#00000000" />
+        </shape>
+    </item>
+
+    <!-- Ellipse 1 inner: Stronger blue core for the left blob -->
+    <item>
+        <shape>
+            <gradient
+                android:type="radial"
+                android:centerX="0.05"
+                android:centerY="0.50"
+                android:gradientRadius="250dp"
+                android:startColor="#38346299"
+                android:endColor="#00000000" />
+        </shape>
+    </item>
+
+    <!-- Ellipse 2: Red glow — right-top area (#D11E28 at 44% opacity)
+         Positioned to the right side, upper portion -->
+    <item>
+        <shape>
+            <gradient
+                android:type="radial"
+                android:centerX="0.92"
+                android:centerY="0.35"
+                android:gradientRadius="380dp"
+                android:startColor="#38D11E28"
+                android:centerColor="#1CD11E28"
+                android:endColor="#00000000" />
+        </shape>
+    </item>
+
+    <!-- Ellipse 2 inner: Stronger red core -->
+    <item>
+        <shape>
+            <gradient
+                android:type="radial"
+                android:centerX="0.95"
+                android:centerY="0.32"
+                android:gradientRadius="200dp"
+                android:startColor="#30D11E28"
+                android:endColor="#00000000" />
+        </shape>
+    </item>
+
+    <!-- Ellipse 3: Amber/yellow glow — right-bottom area (#FBB217 at 44% opacity)
+         Positioned to the right side, lower portion -->
+    <item>
+        <shape>
+            <gradient
+                android:type="radial"
+                android:centerX="0.90"
+                android:centerY="0.72"
+                android:gradientRadius="380dp"
+                android:startColor="#38FBB217"
+                android:centerColor="#1CFBB217"
+                android:endColor="#00000000" />
+        </shape>
+    </item>
+
+    <!-- Ellipse 3 inner: Stronger amber core -->
+    <item>
+        <shape>
+            <gradient
+                android:type="radial"
+                android:centerX="0.93"
+                android:centerY="0.75"
+                android:gradientRadius="200dp"
+                android:startColor="#30FBB217"
+                android:endColor="#00000000" />
+        </shape>
+    </item>
+
+    <!-- Blend zone: Where red and amber meet on the right side,
+         creates the warm mixed tone visible in the design -->
+    <item>
+        <shape>
+            <gradient
+                android:type="radial"
+                android:centerX="0.88"
+                android:centerY="0.55"
+                android:gradientRadius="280dp"
+                android:startColor="#18E07020"
+                android:endColor="#00000000" />
+        </shape>
+    </item>
+
+    <!-- Bottom rectangle: Blue-tinted area at the bottom (#346299 at ~10% opacity)
+         Simulates the large blue-tinted rectangle at the bottom -->
+    <item>
+        <shape>
+            <gradient
+                android:type="linear"
+                android:angle="90"
+                android:startColor="#1A346299"
+                android:centerColor="#0D346299"
+                android:endColor="#00000000" />
+        </shape>
+    </item>
+
+    <!-- Top darkening: Keeps the top area dark/clean for the logo and caller info -->
+    <item>
+        <shape>
+            <gradient
+                android:type="linear"
+                android:angle="270"
+                android:startColor="#E0181818"
+                android:centerColor="#80181818"
+                android:endColor="#00181818" />
+        </shape>
+    </item>
+
+    <!-- Edge vignette: Subtle darkening at edges for depth -->
+    <item>
+        <shape>
+            <gradient
+                android:type="radial"
+                android:centerX="0.50"
+                android:centerY="0.55"
+                android:gradientRadius="600dp"
+                android:startColor="#00000000"
+                android:endColor="#30000000" />
+        </shape>
+    </item>
+
+</layer-list>

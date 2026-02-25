@@ -15,6 +15,12 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
   late final TwilioCallPlatform _call = MethodChannelTwilioCall();
   Stream<CallEvent>? _callEventsListener;
 
+  /// Cached audio route data from the latest native AudioRoute event.
+  AudioRouteData? _lastAudioRouteData;
+
+  @override
+  AudioRouteData? get lastAudioRouteData => _lastAudioRouteData;
+
   @override
   TwilioCallPlatform get call => _call;
 
@@ -23,7 +29,14 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
   Stream<CallEvent> get callEventsListener {
     _callEventsListener ??= _eventChannel
         .receiveBroadcastStream()
-        .map((dynamic event) => parseCallEvent(event));
+        .map((dynamic event) => parseCallEvent(event))
+        .handleError((error, stackTrace) {
+      // Gracefully handle FlutterError events from native (e.g., "Call Failed: ...")
+      // Without this, the error would kill the stream listener and crash the app.
+      if (kDebugMode) {
+        printDebug('Event stream error (handled gracefully): $error');
+      }
+    });
     return _callEventsListener!;
   }
 
@@ -222,6 +235,13 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
               2]; // 'bluetoothAvailable=true' or 'bluetoothAvailable=false'
           var isBluetoothAvailable = bluetoothAvailableStr.contains('true');
 
+          // Cache the parsed audio route data so callers can read it
+          // without an extra method channel round-trip.
+          _lastAudioRouteData = AudioRouteData(
+            route: route,
+            isBluetoothAvailable: isBluetoothAvailable,
+          );
+
           if (kDebugMode) {
             printDebug(
                 'Audio route updated: route=$route, bluetoothAvailable=$isBluetoothAvailable');
@@ -309,6 +329,21 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
             'Connected - From: ${call.activeCall!.from}, To: ${call.activeCall!.to}, StartOn: ${call.activeCall!.initiated}, Direction: ${call.activeCall!.callDirection}');
       }
       return CallEvent.connected;
+    } else if (state.startsWith("IncomingWhileActive|")) {
+      // Incoming call while another call is active
+      // Do NOT overwrite activeCall - store as waitingCall instead
+      final waitingCallData =
+          createCallFromState(state, callDirection: CallDirection.incoming);
+      if (call is MethodChannelTwilioCall) {
+        (call as MethodChannelTwilioCall).waitingCall = waitingCallData;
+      }
+
+      if (kDebugMode) {
+        printDebug(
+            'IncomingWhileActive - From: ${waitingCallData.from}, To: ${waitingCallData.to}, Direction: ${waitingCallData.callDirection}');
+      }
+
+      return CallEvent.incomingWhileActive;
     } else if (state.startsWith("Incoming|")) {
       // Added as temporary override for incoming calls, not breaking current (expected) Ringing behaviour
       call.activeCall =
@@ -350,6 +385,17 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
       return CallEvent.returningCall;
     } else if (state.startsWith("Reconnecting")) {
       return CallEvent.reconnecting;
+    } else if (state.startsWith("Swap|")) {
+      // Swap event from iOS CallKit native swap button: "Swap|from|to"
+      // The from/to are the now-active call's info
+      // We update activeCall so the BLoC can read the swapped-to call's details
+      List<String> tokens = state.split('|');
+      if (tokens.length >= 3) {
+        if (kDebugMode) {
+          printDebug('Swap - NowActive From: ${tokens[1]}, To: ${tokens[2]}');
+        }
+      }
+      return CallEvent.swap;
     }
     switch (state) {
       case 'Ringing':
@@ -365,6 +411,8 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
         return CallEvent.unhold;
       case 'Hold':
         return CallEvent.hold;
+      case 'Held Call Ended':
+        return CallEvent.heldCallEnded;
       case 'Unmute':
         return CallEvent.unmute;
       case 'Mute':
@@ -381,9 +429,9 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
         return CallEvent.reconnected;
       default:
         if (kDebugMode) {
-          printDebug('$state is not a valid CallState.');
+          printDebug('$state is not a valid CallState, treating as log.');
         }
-        throw ArgumentError('$state is not a valid CallState.');
+        return CallEvent.log;
     }
   }
 

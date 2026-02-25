@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <!-- Card color: solid darker color (no transparency) as requested -->
+    <solid android:color="#181818" />
+    <!-- Larger top radii for the pill-like sheet, small bottom radii so sheet sits flush on bottom edges -->
+    <!-- Make all corners equal so sheet reads as a rounded card -->
+    <corners android:radius="20dp" />
+    <!-- subtle stroke to lift the sheet slightly off background -->
+    <stroke android:width="1dp" android:color="#17000000" />
+    <padding android:left="16dp" android:top="14dp" android:right="16dp" android:bottom="18dp" />
+    <size android:height="240dp" />
+</shape>

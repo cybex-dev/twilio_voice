@@ -5,10 +5,23 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.app.Person
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.LinearGradient
+import android.graphics.Paint
+import android.graphics.RadialGradient
+import android.graphics.Rect
+import android.graphics.Shader
+import android.graphics.Typeface
+import android.graphics.drawable.Icon
 import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.media.Ringtone
 import android.media.RingtoneManager
 import android.net.Uri
@@ -20,6 +33,7 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import android.telecom.*
 import android.util.Log
+import android.widget.RemoteViews
 import androidx.annotation.RequiresApi
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.twilio.twilio_voice.R
@@ -58,6 +72,30 @@ class TVConnectionService : ConnectionService() {
         val TWI_SCHEME: String = "twi"
 
         val SERVICE_TYPE_MICROPHONE: Int = 100
+        
+        // Call waiting state - tracks active call info when a second call arrives
+        @Volatile
+    var hasActiveCallDuringIncoming: Boolean = false
+    @Volatile
+    var activeCallCallerName: String = ""
+    @Volatile
+    var activeCallCallerNumber: String = ""
+    @Volatile
+    var activeCallHandleDuringIncoming: String? = null
+    // Logging counters
+    @Volatile
+    var log_callClaimCounter: Int = 0
+    @Volatile
+    var log_incomingCallClaimCounter: Int = 0
+    @Volatile
+    var log_callWaitingCounter: Int = 0
+        
+        fun clearCallWaitingState() {
+            hasActiveCallDuringIncoming = false
+            activeCallCallerName = ""
+            activeCallCallerNumber = ""
+            activeCallHandleDuringIncoming = null
+        }
         
         val INCOMING_CALL_NOTIFICATION_ID: Int = 101
         
@@ -109,6 +147,16 @@ class TVConnectionService : ConnectionService() {
          * Action used to answer an incoming call connection.
          */
         const val ACTION_ANSWER: String = "ACTION_ANSWER"
+
+        /**
+         * Action used to answer an incoming call while putting the active call on hold.
+         */
+        const val ACTION_ANSWER_WITH_HOLD: String = "ACTION_ANSWER_WITH_HOLD"
+
+        /**
+         * Action used to answer an incoming call after ending the active call.
+         */
+        const val ACTION_ANSWER_WITH_END_FIRST: String = "ACTION_ANSWER_WITH_END_FIRST"
 
         /**
          * Action used to answer an incoming call connection.
@@ -196,6 +244,370 @@ class TVConnectionService : ConnectionService() {
         const val EXTRA_MUTE_STATE: String = "EXTRA_MUTE_STATE"
         //endregion
 
+        /**
+         * SharedPreferences key for tracking pending incoming call.
+         * Using SharedPreferences instead of static variable for reliability across threads/processes.
+         */
+        private const val PREFS_NAME = "twilio_voice_call_state"
+        private const val PREF_PENDING_CALL_SID = "pending_incoming_call_sid"
+        private const val PREF_PENDING_CALL_TIMESTAMP = "pending_incoming_call_timestamp"
+        private const val PENDING_CALL_TIMEOUT_MS = 60000L // 60 seconds timeout for pending calls
+
+        /**
+         * Tracks pending incoming call invite that is being processed but not yet fully connected.
+         * This is used to detect and reject simultaneous incoming calls before the connection
+         * is added to activeConnections.
+         * Also kept in memory for faster access within same process.
+         */
+        @Volatile
+        private var pendingIncomingCallSid: String? = null
+
+        /**
+         * Check if there's an active call OR a pending incoming call being processed.
+         * This prevents race conditions where a second call arrives before the first
+         * call's connection is added to activeConnections.
+         * Also checks the isProcessingIncomingCall flag for very fast checks.
+         */
+        fun hasActiveOrPendingCall(): Boolean {
+            val hasActive = activeConnections.isNotEmpty()
+            val hasPending = pendingIncomingCallSid != null
+            val isProcessing = isProcessingIncomingCall && 
+                (System.currentTimeMillis() - processingStartTime) < PROCESSING_TIMEOUT_MS
+            
+            Log.d(TAG, "hasActiveOrPendingCall: hasActive=$hasActive, hasPending=$hasPending, isProcessing=$isProcessing")
+            return hasActive || hasPending || isProcessing
+        }
+        
+        /**
+         * ATOMIC check-and-set for FCM-level call processing.
+         * Called from onMessageReceived BEFORE Voice.handleMessage().
+         * This immediately sets the processing flag so that a second FCM 
+         * arriving near-simultaneously will see it and be blocked.
+         * 
+         * @return true if this FCM should be processed (no other call in progress)
+         *         false if this FCM should be blocked (another call exists)
+         */
+        @Synchronized
+        fun tryClaimFcmMessage(context: Context): Boolean {
+            log_callClaimCounter++
+            Log.d(TAG, "[LOG] tryClaimFcmMessage CALLED. log_callClaimCounter=$log_callClaimCounter")
+            synchronized(incomingCallLock) {
+                val timestamp = System.currentTimeMillis()
+                Log.d(TAG, "[tryClaimFcmMessage] Checking at $timestamp on thread ${Thread.currentThread().name}")
+                
+                // Check if there's a truly answered/connected call (not just ringing)
+                val hasAnsweredCall = activeConnections.values.any { 
+                    it.state == Connection.STATE_ACTIVE || it.state == Connection.STATE_HOLDING 
+                }
+                
+                // Block only if there's an answered call AND a pending ringing call
+                // (= already 2 calls in progress, can't handle a 3rd)
+                if (hasAnsweredCall && pendingIncomingCallSid != null) {
+                    Log.w(TAG, "[tryClaimFcmMessage] ❌ Answered call AND pending call both exist - blocking 3rd call")
+                    return false
+                }
+                
+                // For all other cases, let the FCM through to Voice.handleMessage → onCallInvite.
+                // The tryClaimIncomingCall() in onCallInvite will properly handle:
+                //   - Ringing call + new call → reject with callInvite.reject() (caller hears busy)
+                //   - Answered call + new call → allow for call waiting (bottom sheet)
+                //   - Same call re-claim → allow
+                //   - No existing call → claim normally
+                
+                // Set processing flag if not already set (for the first call)
+                if (!isProcessingIncomingCall) {
+                    isProcessingIncomingCall = true
+                    processingStartTime = timestamp
+                    Log.d(TAG, "[tryClaimFcmMessage] ✓ CLAIMED FCM processing slot at $timestamp")
+                } else {
+                    Log.d(TAG, "[tryClaimFcmMessage] ℹ️ Processing flag already set, allowing through for proper handling in onCallInvite")
+                }
+                return true
+            }
+        }
+        
+        /**
+         * Release the FCM processing claim if Voice.handleMessage returned false
+         * (meaning it wasn't a valid Twilio message, so no onCallInvite will follow).
+         */
+        fun releaseFcmClaim() {
+            synchronized(incomingCallLock) {
+                // Only release if no pending call has been set yet
+                // (if pendingIncomingCallSid is set, onCallInvite already ran)
+                if (pendingIncomingCallSid == null) {
+                    Log.d(TAG, "[releaseFcmClaim] Releasing FCM claim (no pending call)")
+                    isProcessingIncomingCall = false
+                    processingStartTime = 0
+                } else {
+                    Log.d(TAG, "[releaseFcmClaim] Not releasing - pending call exists: $pendingIncomingCallSid")
+                }
+            }
+        }
+        
+        /**
+         * Lock object for synchronizing simultaneous call handling.
+         * This ensures only ONE call can pass through the check-and-set at a time.
+         */
+        private val incomingCallLock = Any()
+        
+        /**
+         * Global flag to track if we're currently processing an incoming call.
+         * Set to true immediately when first call arrives, prevents any second call.
+         */
+        @Volatile
+        private var isProcessingIncomingCall = false
+        
+        /**
+         * Timestamp when we started processing current incoming call.
+         * Used to auto-reset if processing takes too long (e.g., crash recovery).
+         */
+        @Volatile
+        private var processingStartTime: Long = 0
+        
+        /**
+         * Maximum time to consider an incoming call as "being processed" before auto-reset.
+         */
+        private const val PROCESSING_TIMEOUT_MS = 30000L // 30 seconds
+        
+        /**
+         * ATOMIC check-and-set operation for handling simultaneous incoming calls.
+         * This combines checking for existing calls AND setting the pending call into
+         * a single synchronized operation to prevent race conditions.
+         * 
+         * @return true if this call should be processed (no existing call), 
+         *         false if this call should be rejected (another call exists)
+         */
+        @Synchronized
+        fun tryClaimIncomingCall(context: Context, callSid: String): Boolean {
+            log_incomingCallClaimCounter++
+            Log.d(TAG, "[LOG] tryClaimIncomingCall CALLED. log_incomingCallClaimCounter=$log_incomingCallClaimCounter callSid=$callSid")
+            Log.d(TAG, "[LOG] handleActionIncomingCall CALLED. log_callWaitingCounter=$log_callWaitingCounter hasActiveCallDuringIncoming=$hasActiveCallDuringIncoming")
+            synchronized(incomingCallLock) {
+                val currentThread = Thread.currentThread()
+                val timestamp = System.currentTimeMillis()
+                val shortSid = callSid.takeLast(6)
+                
+                Log.d(TAG, "┌─────────────────────────────────────────────────────────────────┐")
+                Log.d(TAG, "│ tryClaimIncomingCall - Thread: ${currentThread.name} (${currentThread.id})")
+                Log.d(TAG, "│ Timestamp: $timestamp")
+                Log.d(TAG, "│ CallSid: $callSid (short: $shortSid)")
+                Log.d(TAG, "├─────────────────────────────────────────────────────────────────┤")
+                
+                // FIRST CHECK: Is another call currently being processed?
+                Log.d(TAG, "│ Check 0 - Processing Flag:")
+                Log.d(TAG, "│   isProcessingIncomingCall = $isProcessingIncomingCall")
+                Log.d(TAG, "│   processingStartTime = $processingStartTime")
+                if (isProcessingIncomingCall) {
+                    val elapsed = timestamp - processingStartTime
+                    Log.d(TAG, "│   elapsed since processing start = ${elapsed}ms")
+                    
+                    // Check if current pending call is the SAME call (re-entry is OK)
+                    if (pendingIncomingCallSid == callSid) {
+                        Log.d(TAG, "│   ✓ Same call re-claiming - allowing")
+                    } else if (pendingIncomingCallSid == null) {
+                        // Processing flag is set (likely by tryClaimFcmMessage), but no pending SID yet.
+                        // This is the transition from FCM claim to Call Invite processing for the SAME call.
+                        // Since tryClaimFcmMessage guards against multiple FCMs, this is safe.
+                        Log.d(TAG, "│   ✓ FCM claim -> Call claim transition - allowing")
+                    } else if (elapsed < PROCESSING_TIMEOUT_MS) {
+                        Log.w(TAG, "│ ❌ REJECTED - Another call is being processed!")
+                        Log.w(TAG, "│   Current pending: $pendingIncomingCallSid")
+                        Log.d(TAG, "└─────────────────────────────────────────────────────────────────┘")
+                        return false
+                    } else {
+                        Log.w(TAG, "│ ⚠ Processing flag timeout - resetting and allowing new call")
+                        isProcessingIncomingCall = false
+                    }
+                }
+                
+                // Check 1: Active connections (already answered calls)
+                // Allow through for call waiting feature - the second call will be
+                // handled by IncomingCallActivity with a bottom sheet
+                Log.d(TAG, "│ Check 1 - Active Connections:")
+                Log.d(TAG, "│   activeConnections.isEmpty = ${activeConnections.isEmpty()}")
+                Log.d(TAG, "│   activeConnections.size = ${activeConnections.size}")
+                if (activeConnections.isNotEmpty()) {
+                    Log.d(TAG, "│   activeConnections.keys = ${activeConnections.keys}")
+                    // Check if there's ALSO a pending call - if so, reject (can't have 3 calls)
+                    if (pendingIncomingCallSid != null && pendingIncomingCallSid != callSid) {
+                        Log.w(TAG, "│ ❌ REJECTED - Active connection AND different pending call both exist!")
+                        Log.d(TAG, "└─────────────────────────────────────────────────────────────────┘")
+                        return false
+                    }
+                    Log.d(TAG, "│   ℹ️ Active connection exists but allowing for call waiting")
+                } else {
+                    Log.d(TAG, "│   ✓ No active connections")
+                }
+                
+                // Check 2: Memory-based pending call
+                Log.d(TAG, "│ Check 2 - Memory Pending Call:")
+                Log.d(TAG, "│   pendingIncomingCallSid = $pendingIncomingCallSid")
+                if (pendingIncomingCallSid != null && pendingIncomingCallSid != callSid) {
+                    Log.w(TAG, "│ ❌ REJECTED - Different pending call in memory: $pendingIncomingCallSid")
+                    Log.d(TAG, "└─────────────────────────────────────────────────────────────────┘")
+                    return false
+                }
+                if (pendingIncomingCallSid == callSid) {
+                    Log.d(TAG, "│   ✓ Same call already pending - allow (re-claim)")
+                }
+                Log.d(TAG, "│   ✓ Memory check passed")
+                
+                // Check 3: SharedPreferences-based pending call (cross-process)
+                Log.d(TAG, "│ Check 3 - SharedPreferences Pending Call:")
+                val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                val savedCallSid = prefs.getString(PREF_PENDING_CALL_SID, null)
+                val savedTimestamp = prefs.getLong(PREF_PENDING_CALL_TIMESTAMP, 0)
+                Log.d(TAG, "│   prefs.savedCallSid = $savedCallSid")
+                Log.d(TAG, "│   prefs.savedTimestamp = $savedTimestamp")
+                
+                if (!savedCallSid.isNullOrEmpty() && savedCallSid != callSid) {
+                    val elapsed = System.currentTimeMillis() - savedTimestamp
+                    Log.d(TAG, "│   elapsed since prefs save = ${elapsed}ms")
+                    if (elapsed < PENDING_CALL_TIMEOUT_MS) {
+                        Log.w(TAG, "│ ❌ REJECTED - Different pending call in prefs: $savedCallSid (${elapsed}ms ago)")
+                        Log.d(TAG, "└─────────────────────────────────────────────────────────────────┘")
+                        return false
+                    }
+                    // Expired - can proceed
+                    Log.d(TAG, "│   ⚠ Expired pending call in prefs - proceeding")
+                }
+                Log.d(TAG, "│   ✓ SharedPreferences check passed")
+                
+                // ========== CLAIM THE CALL ==========
+                // Set processing flag FIRST (fastest check for next call)
+                isProcessingIncomingCall = true
+                processingStartTime = timestamp
+                
+                // No existing call - CLAIM this call atomically
+                Log.d(TAG, "├─────────────────────────────────────────────────────────────────┤")
+                Log.d(TAG, "│ CLAIMING CALL NOW...")
+                pendingIncomingCallSid = callSid
+                val committed = prefs.edit()
+                    .putString(PREF_PENDING_CALL_SID, callSid)
+                    .putLong(PREF_PENDING_CALL_TIMESTAMP, System.currentTimeMillis())
+                    .commit()
+                
+                Log.d(TAG, "│   pendingIncomingCallSid = $pendingIncomingCallSid")
+                Log.d(TAG, "│   SharedPreferences commit = $committed")
+                Log.d(TAG, "│ ✓ CLAIMED call $shortSid successfully!")
+                Log.d(TAG, "└─────────────────────────────────────────────────────────────────┘")
+                return true
+            }
+        }
+        
+        /**
+         * Check using SharedPreferences - more reliable across processes/threads.
+         * Use this in FCM service which might run in a different process.
+         */
+        fun hasActiveOrPendingCallFromPrefs(context: Context): Boolean {
+            if (activeConnections.isNotEmpty()) return true
+            if (pendingIncomingCallSid != null) return true
+            
+            // Also check SharedPreferences for cross-process reliability
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val savedCallSid = prefs.getString(PREF_PENDING_CALL_SID, null)
+            val savedTimestamp = prefs.getLong(PREF_PENDING_CALL_TIMESTAMP, 0)
+            
+            // Check if there's a valid pending call (not expired)
+            if (!savedCallSid.isNullOrEmpty()) {
+                val elapsed = System.currentTimeMillis() - savedTimestamp
+                if (elapsed < PENDING_CALL_TIMEOUT_MS) {
+                    Log.d(TAG, "hasActiveOrPendingCallFromPrefs: Found pending call in prefs: $savedCallSid (${elapsed}ms ago)")
+                    return true
+                } else {
+                    // Expired, clear it
+                    Log.d(TAG, "hasActiveOrPendingCallFromPrefs: Expired pending call in prefs: $savedCallSid (${elapsed}ms ago)")
+                    clearPendingIncomingCallFromPrefs(context)
+                }
+            }
+            return false
+        }
+
+        fun setPendingIncomingCall(callSid: String?) {
+            pendingIncomingCallSid = callSid
+            Log.d(TAG, "setPendingIncomingCall: callSid=$callSid")
+        }
+        
+        /**
+         * Set pending call in both memory and SharedPreferences for cross-process reliability.
+         * Uses commit() instead of apply() for synchronous write - critical for race condition prevention.
+         */
+        fun setPendingIncomingCallWithPrefs(context: Context, callSid: String?) {
+            pendingIncomingCallSid = callSid
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            if (callSid != null) {
+                val committed = prefs.edit()
+                    .putString(PREF_PENDING_CALL_SID, callSid)
+                    .putLong(PREF_PENDING_CALL_TIMESTAMP, System.currentTimeMillis())
+                    .commit() // Use commit() for synchronous write - critical!
+                Log.d(TAG, "setPendingIncomingCallWithPrefs: callSid=$callSid, committed=$committed")
+            } else {
+                prefs.edit()
+                    .remove(PREF_PENDING_CALL_SID)
+                    .remove(PREF_PENDING_CALL_TIMESTAMP)
+                    .commit()
+                Log.d(TAG, "setPendingIncomingCallWithPrefs: cleared")
+            }
+        }
+
+        fun getPendingIncomingCallSid(): String? {
+            return pendingIncomingCallSid
+        }
+        
+        fun getPendingIncomingCallSidFromPrefs(context: Context): String? {
+            if (pendingIncomingCallSid != null) return pendingIncomingCallSid
+            
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val savedCallSid = prefs.getString(PREF_PENDING_CALL_SID, null)
+            val savedTimestamp = prefs.getLong(PREF_PENDING_CALL_TIMESTAMP, 0)
+            
+            if (!savedCallSid.isNullOrEmpty()) {
+                val elapsed = System.currentTimeMillis() - savedTimestamp
+                if (elapsed < PENDING_CALL_TIMEOUT_MS) {
+                    return savedCallSid
+                }
+            }
+            return null
+        }
+
+        /**
+         * Application context for SharedPreferences access.
+         * Set when the service is created.
+         */
+        @Volatile
+        private var appContext: Context? = null
+        
+        fun setAppContext(context: Context) {
+            appContext = context.applicationContext
+        }
+
+        fun clearPendingIncomingCall() {
+            Log.d(TAG, "clearPendingIncomingCall: was=$pendingIncomingCallSid, isProcessing=$isProcessingIncomingCall")
+            pendingIncomingCallSid = null
+            isProcessingIncomingCall = false
+            processingStartTime = 0
+            // Also clear from SharedPreferences if context is available
+            appContext?.let { ctx ->
+                val prefs = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                prefs.edit()
+                    .remove(PREF_PENDING_CALL_SID)
+                    .remove(PREF_PENDING_CALL_TIMESTAMP)
+                    .commit() // Use commit() for synchronous write
+            }
+        }
+        
+        fun clearPendingIncomingCallFromPrefs(context: Context) {
+            Log.d(TAG, "clearPendingIncomingCallFromPrefs: was=$pendingIncomingCallSid, isProcessing=$isProcessingIncomingCall")
+            pendingIncomingCallSid = null
+            isProcessingIncomingCall = false
+            processingStartTime = 0
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            prefs.edit()
+                .remove(PREF_PENDING_CALL_SID)
+                .remove(PREF_PENDING_CALL_TIMESTAMP)
+                .commit() // Use commit() for synchronous write
+        }
+
         fun hasActiveCalls(): Boolean {
             return activeConnections.isNotEmpty()
         }
@@ -238,6 +650,60 @@ class TVConnectionService : ConnectionService() {
     private var ringtone: Ringtone? = null
     private var vibrator: Vibrator? = null
     private var isRinging = false
+
+    /**
+     * Detect the current audio route from AudioManager.
+     * Returns "speaker", "bluetooth", or "earpiece".
+     * Called BEFORE a connection disconnects so we can restore the route later.
+     */
+    private fun detectCurrentAudioRoute(am: AudioManager): String {
+        // Android 12+: use communicationDevice for accurate detection
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try {
+                val commDevice = am.communicationDevice
+                if (commDevice != null) {
+                    return when (commDevice.type) {
+                        AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> "speaker"
+                        AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+                        AudioDeviceInfo.TYPE_BLE_HEADSET,
+                        AudioDeviceInfo.TYPE_HEARING_AID,
+                        AudioDeviceInfo.TYPE_BLE_SPEAKER -> {
+                            if (am.isBluetoothScoOn) "bluetooth" else "earpiece"
+                        }
+                        else -> "earpiece"
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "detectCurrentAudioRoute: Error", e)
+            }
+        }
+        // Fallback for older Android
+        if (am.isBluetoothScoOn) return "bluetooth"
+        if (am.isSpeakerphoneOn) return "speaker"
+        return "earpiece"
+    }
+
+    /**
+     * Check if a Bluetooth audio device is available for voice communication.
+     * Uses communicationDevices on Android 12+, falls back to BluetoothAdapter check.
+     */
+    private fun isBluetoothDeviceAvailable(am: AudioManager?): Boolean {
+        if (am == null) return false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try {
+                return am.availableCommunicationDevices.any {
+                    it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                    it.type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
+                    it.type == AudioDeviceInfo.TYPE_HEARING_AID ||
+                    it.type == AudioDeviceInfo.TYPE_BLE_SPEAKER
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "isBluetoothDeviceAvailable: Error", e)
+            }
+        }
+        // Fallback: check if BT SCO is on
+        return am.isBluetoothScoOn
+    }
 
     @SuppressLint("WakelockTimeout")
     private fun wakeScreen() {
@@ -295,6 +761,8 @@ class TVConnectionService : ConnectionService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "========== onStartCommand START ==========")
         Log.d(TAG, "onStartCommand: action=${intent?.action}, flags=$flags, startId=$startId")
+        // Set app context for SharedPreferences access
+        setAppContext(applicationContext)
         Thread.currentThread().contextClassLoader = CallInvite::class.java.classLoader
         super.onStartCommand(intent, flags, startId)
         intent?.let {
@@ -316,11 +784,38 @@ class TVConnectionService : ConnectionService() {
                 }
 
                 ACTION_CANCEL_CALL_INVITE -> {
+                    // CRITICAL: Start foreground IMMEDIATELY to avoid crash on Android O+
+                    // "Context.startForegroundService() did not then call Service.startForeground()"
+                    // This must happen within 5 seconds of startForegroundService() being called
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        try {
+                            val channel = getOrCreateIncomingCallChannel()
+                            val notification = Notification.Builder(this, channel.id).apply {
+                                setSmallIcon(R.drawable.ic_transparent)
+                                setContentTitle("Call Cancelled")
+                                setContentText("The call was cancelled")
+                                setCategory(Notification.CATEGORY_CALL)
+                                setAutoCancel(true)
+                            }.build()
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                startForeground(INCOMING_CALL_NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
+                            } else {
+                                startForeground(INCOMING_CALL_NOTIFICATION_ID, notification)
+                            }
+                            Log.d(TAG, "ACTION_CANCEL_CALL_INVITE: Started foreground to avoid ANR")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "ACTION_CANCEL_CALL_INVITE: Failed to start foreground: ${e.message}", e)
+                        }
+                    }
+                    
                     // Load CancelledCallInvite class loader
                     // See: https://github.com/twilio/voice-quickstart-android/issues/561#issuecomment-1678613170
                     it.setExtrasClassLoader(CallInvite::class.java.classLoader)
                     val cancelledCallInvite = it.getParcelableExtraSafe<CancelledCallInvite>(EXTRA_CANCEL_CALL_INVITE) ?: run {
                         Log.e(TAG, "onStartCommand: ACTION_CANCEL_CALL_INVITE is missing parcelable EXTRA_CANCEL_CALL_INVITE")
+                        // Still stop foreground and self even if we can't get the invite
+                        stopForegroundService()
+                        stopSelfSafe()
                         return@let
                     }
 
@@ -329,53 +824,163 @@ class TVConnectionService : ConnectionService() {
                     // Cancel the incoming call notification
                     cancelIncomingCallNotification()
                     
+                    // Clear pending call if this was the pending one
+                    if (getPendingIncomingCallSid() == callHandle) {
+                        clearPendingIncomingCall()
+                    }
+                    
                     getConnection(callHandle)?.onAbort() ?: run {
                         Log.e(TAG, "onStartCommand: [ACTION_CANCEL_CALL_INVITE] could not find connection for callHandle: $callHandle")
                     }
+                    activeConnections.remove(callHandle)
                     
-                    // Stop foreground and self if no active calls
-                    stopForegroundService()
-                    stopSelfSafe()
+                    // Always clear call waiting state
+                    clearCallWaitingState()
+                    
+                    // Only stop service if no other calls remain
+                    if (hasActiveCalls()) {
+                        Log.d(TAG, "[ACTION_CANCEL_CALL_INVITE] Other calls still active, not stopping service")
+                        // Re-show ongoing notification for remaining call
+                        val remainingHandle = getActiveCallHandle()
+                        if (remainingHandle != null) {
+                            val remainingConn = getConnection(remainingHandle)
+                            val remainingNumber = remainingConn?.address?.schemeSpecificPart 
+                                ?: remainingConn?.extras?.getString("caller_number") ?: ""
+                            showOngoingCallNotification(remainingHandle, remainingNumber)
+                        }
+                    } else {
+                        stopForegroundService()
+                        stopSelfSafe()
+                    }
                 }
 
                 ACTION_INCOMING_CALL -> {
-                    Log.d(TAG, "========== ACTION_INCOMING_CALL START ==========")
+                    val serviceTimestamp = System.currentTimeMillis()
+                    val currentThread = Thread.currentThread()
+                    Log.d(TAG, "╔════════════════════════════════════════════════════════════════════╗")
+                    Log.d(TAG, "║ ACTION_INCOMING_CALL START - Thread: ${currentThread.name} (${currentThread.id})")
+                    Log.d(TAG, "║ Service Timestamp: $serviceTimestamp")
+                    Log.d(TAG, "╚════════════════════════════════════════════════════════════════════╝")
+                    
                     // Load CallInvite class loader & get callInvite
                     try {
                         it.setExtrasClassLoader(CallInvite::class.java.classLoader)
-                        Log.d(TAG, "ACTION_INCOMING_CALL: ClassLoader set successfully")
+                        Log.d(TAG, "[SVC] ClassLoader set successfully")
                     } catch (e: Exception) {
-                        Log.e(TAG, "ACTION_INCOMING_CALL: Failed to set ClassLoader: ${e.message}", e)
+                        Log.e(TAG, "[SVC] Failed to set ClassLoader: ${e.message}", e)
                     }
                     
                     val callInvite = it.getParcelableExtraSafe<CallInvite>(EXTRA_INCOMING_CALL_INVITE) ?: run {
-                        Log.e(TAG, "onStartCommand: 'ACTION_INCOMING_CALL' is missing parcelable 'EXTRA_INCOMING_CALL_INVITE'")
+                        Log.e(TAG, "[SVC] 'ACTION_INCOMING_CALL' is missing parcelable 'EXTRA_INCOMING_CALL_INVITE'")
                         // Even if we can't get the CallInvite, try to start foreground to avoid ANR
                         try {
                             val channel = getOrCreateIncomingCallChannel()
                             val notification = Notification.Builder(this, channel.id).apply {
-                                setSmallIcon(R.drawable.ic_microphone)
+                                setSmallIcon(R.drawable.ic_transparent)
                                 setContentTitle("Incoming Call")
                                 setContentText("Connecting...")
                                 setCategory(Notification.CATEGORY_CALL)
                             }.build()
                             startForeground(INCOMING_CALL_NOTIFICATION_ID, notification)
-                            Log.d(TAG, "ACTION_INCOMING_CALL: Started fallback foreground notification")
+                            Log.d(TAG, "[SVC] Started fallback foreground notification")
                         } catch (e2: Exception) {
-                            Log.e(TAG, "ACTION_INCOMING_CALL: Failed to start fallback foreground: ${e2.message}", e2)
+                            Log.e(TAG, "[SVC] Failed to start fallback foreground: ${e2.message}", e2)
                         }
                         return@let
                     }
-                    Log.d(TAG, "ACTION_INCOMING_CALL: Got CallInvite - callSid=${callInvite.callSid}")
+                    
+                    val currentCallSid = callInvite.callSid
+                    val shortSid = currentCallSid.takeLast(6)
+                    Log.d(TAG, "[SVC-$shortSid] Got CallInvite - fullSid=${currentCallSid}")
+
+                    // ============================================================
+                    // SIMULTANEOUS INCOMING CALLS HANDLING:
+                    // If there's already an active call OR a DIFFERENT pending incoming call,
+                    // reject this call immediately without showing any UI.
+                    // 
+                    // IMPORTANT: We need to check if this call is the SAME as the pending call
+                    // (which is valid - it was set by FCM service) vs a DIFFERENT call
+                    // (which should be rejected as a duplicate).
+                    // ============================================================
+                    val pendingCallSid = getPendingIncomingCallSidFromPrefs(applicationContext)
+                    val activeCallHandle = getActiveCallHandle()
+                    
+                    Log.d(TAG, "[SVC-$shortSid] ┌─ State Check ─────────────────────────────────────┐")
+                    Log.d(TAG, "[SVC-$shortSid] │ currentCallSid = $currentCallSid")
+                    Log.d(TAG, "[SVC-$shortSid] │ pendingCallSid (prefs) = $pendingCallSid")
+                    Log.d(TAG, "[SVC-$shortSid] │ pendingIncomingCallSid (mem) = $pendingIncomingCallSid")
+                    Log.d(TAG, "[SVC-$shortSid] │ activeCallHandle = $activeCallHandle")
+                    Log.d(TAG, "[SVC-$shortSid] │ activeConnections.size = ${activeConnections.size}")
+                    Log.d(TAG, "[SVC-$shortSid] └────────────────────────────────────────────────────┘")
+                    
+                    // Check 1: If there's an active call (already answered/connected),
+                    // allow the new call through so IncomingCallActivity can show
+                    // a bottom sheet with hold/merge/end options
+                    if (activeCallHandle != null) {
+                        log_callWaitingCounter++
+                        Log.d(TAG, "[LOG] Call waiting region HIT. log_callWaitingCounter=$log_callWaitingCounter activeCallCallerName=$activeCallCallerName activeCallCallerNumber=$activeCallCallerNumber activeCallHandleDuringIncoming=$activeCallHandleDuringIncoming")
+                        Log.d(TAG, "[SVC-$shortSid] ℹ️ Active call exists (handle=$activeCallHandle)")
+                        Log.d(TAG, "[SVC-$shortSid] ℹ️ Allowing second call - will show call waiting options")
+                        // Store active caller info to pass to IncomingCallActivity
+                        val activeConnection = activeConnections[activeCallHandle]
+                        val activeCallerName = activeConnection?.extras?.getString("caller_name") ?: ""
+                        val activeCallerNumber = activeConnection?.address?.schemeSpecificPart ?: activeConnection?.extras?.getString("caller_number") ?: ""
+                        
+                        // Store active call info in static vars for IncomingCallActivity to access
+                        hasActiveCallDuringIncoming = true
+                        activeCallCallerName = activeCallerName
+                        activeCallCallerNumber = activeCallerNumber
+                        activeCallHandleDuringIncoming = activeCallHandle
+                    }
+                    
+                    // Check 2: If there's a DIFFERENT pending call, reject this new call
+                    // But if THIS call is the pending call, that's fine - it's the expected flow
+                    if (pendingCallSid != null && pendingCallSid != currentCallSid) {
+                        Log.w(TAG, "[SVC-$shortSid] ❌ Already have a DIFFERENT pending call!")
+                        Log.w(TAG, "[SVC-$shortSid] ❌ pending=$pendingCallSid != current=$currentCallSid")
+                        Log.w(TAG, "[SVC-$shortSid] ❌ Rejecting second incoming call NOW")
+                        try {
+                            callInvite.reject(applicationContext)
+                            Log.d(TAG, "[SVC-$shortSid] ✓ Successfully rejected second incoming call")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "[SVC-$shortSid] Failed to reject second incoming call: ${e.message}", e)
+                        }
+                        
+                        // Send broadcast to notify Flutter about the rejected call
+                        sendBroadcastEvent(
+                            applicationContext, 
+                            TVBroadcastReceiver.ACTION_CALL_ENDED, 
+                            currentCallSid, 
+                            Bundle().apply {
+                                putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, currentCallSid)
+                                putString("rejection_reason", "simultaneous_call_rejected")
+                            }
+                        )
+                        Log.d(TAG, "[SVC-$shortSid] ════ ACTION_INCOMING_CALL END (rejected - different pending) ════")
+                        return@let
+                    }
+                    
+                    Log.d(TAG, "[SVC-$shortSid] ✓ This is the first/valid incoming call")
+                    Log.d(TAG, "[SVC-$shortSid] ✓ pendingCallSid=$pendingCallSid matches or is null, currentCallSid=$currentCallSid")
+                    
+                    // ============================================================
+                    // Safety net: Ensure pending call is set (normally already set in FCM service)
+                    // This handles edge cases where service might be started from other sources
+                    // ============================================================
+                    if (getPendingIncomingCallSidFromPrefs(applicationContext) != callInvite.callSid) {
+                        Log.d(TAG, "[SVC-$shortSid] Setting pending call (safety net)")
+                        setPendingIncomingCallWithPrefs(applicationContext, callInvite.callSid)
+                    }
+                    // ============================================================
 
                     // Wake the screen first - this is critical for terminated state
-                    Log.d(TAG, "ACTION_INCOMING_CALL: Waking screen...")
+                    Log.d(TAG, "[SVC-$shortSid] Waking screen...")
                     wakeScreen()
 
                     // Start foreground service first for Android O+
-                    Log.d(TAG, "ACTION_INCOMING_CALL: Starting foreground service...")
+                    Log.d(TAG, "[SVC-$shortSid] Starting foreground service (will launch IncomingCallActivity)...")
                     startIncomingCallForegroundService(callInvite)
-                    Log.d(TAG, "ACTION_INCOMING_CALL: Foreground service started")
+                    Log.d(TAG, "[SVC-$shortSid] Foreground service started")
 
                     // Bypass TelecomManager - handle incoming call directly without PhoneAccount
                     val mStorage: Storage = StorageImpl(applicationContext)
@@ -400,11 +1005,39 @@ class TVConnectionService : ConnectionService() {
                         if (activeConnections.containsKey(callSid)) {
                             activeConnections.remove(callSid)
                         }
-                        sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, callSid, connection.extras)
+                        // Clear pending call if this was the pending one
+                        if (getPendingIncomingCallSidFromPrefs(applicationContext) == callSid) {
+                            clearPendingIncomingCallFromPrefs(applicationContext)
+                        }
                         cancelIncomingCallNotification()
                         releaseWakeLock()
-                        stopForegroundService()
-                        stopSelfSafe()
+                        // Only send ACTION_CALL_ENDED and stop service if no other calls remain
+                        if (!hasActiveCalls()) {
+                            sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, callSid, connection.extras)
+                            stopForegroundService()
+                            stopSelfSafe()
+                        } else {
+                            Log.d(TAG, "[ACTION_INCOMING_CALL onDisconnected] Call $callSid ended but other calls still active (${activeConnections.size} remaining), suppressing ACTION_CALL_ENDED")
+                            // Unhold remaining call if it was on hold
+                            val remainingHandle = getActiveCallHandle()
+                            if (remainingHandle != null) {
+                                val remainingConn = getConnection(remainingHandle)
+                                val remainingNumber = remainingConn?.address?.schemeSpecificPart 
+                                    ?: remainingConn?.extras?.getString("caller_number") ?: ""
+                                showOngoingCallNotification(remainingHandle, remainingNumber)
+                                if (remainingConn?.state == Connection.STATE_HOLDING) {
+                                    // The remaining call is ON HOLD → the ACTIVE call ended.
+                                    // Do NOT send ACTION_HELD_CALL_ENDED — the held call is still alive.
+                                    remainingConn.toggleHold(false)
+                                    Log.d(TAG, "[ACTION_INCOMING_CALL onDisconnected] Unholding remaining call $remainingHandle")
+                                } else {
+                                    // The remaining call is NOT on hold → the HELD call ended.
+                                    // Notify Flutter to clear the held call banner.
+                                    sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_HELD_CALL_ENDED, callSid, connection.extras)
+                                }
+                                bringMainActivityToFront()
+                            }
+                        }
                     }
                     connection.setOnCallDisconnected(onCallDisconnectedListener)
                     
@@ -421,6 +1054,10 @@ class TVConnectionService : ConnectionService() {
                 ACTION_ANSWER -> {
                     // Set classloader for CallInvite deserialization
                     it.setExtrasClassLoader(CallInvite::class.java.classLoader)
+                    
+                    // Check if IncomingCallActivity is handling the MainActivity launch
+                    // If true, we should NOT launch MainActivity from the service (avoids dual onNewIntent)
+                    val launchedFromActivity = it.getBooleanExtra("LAUNCHED_FROM_ACTIVITY", false)
                     
                     val callHandle = it.getStringExtra(EXTRA_CALL_HANDLE) ?: getIncomingCallHandle()
                     var connection = if (callHandle != null) getConnection(callHandle) else null
@@ -447,11 +1084,33 @@ class TVConnectionService : ConnectionService() {
                                 if (activeConnections.containsKey(callSid)) {
                                     activeConnections.remove(callSid)
                                 }
-                                sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, callSid, newConnection.extras)
                                 cancelIncomingCallNotification()
                                 releaseWakeLock()
-                                stopForegroundService()
-                                stopSelfSafe()
+                                if (!hasActiveCalls()) {
+                                    sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, callSid, newConnection.extras)
+                                    stopForegroundService()
+                                    stopSelfSafe()
+                                } else {
+                                    Log.d(TAG, "[ACTION_ANSWER onDisconnected] Call $callSid ended but other calls still active, suppressing ACTION_CALL_ENDED")
+                                    val remainingHandle = getActiveCallHandle()
+                                    if (remainingHandle != null) {
+                                        val remainingConn = getConnection(remainingHandle)
+                                        val remainingNumber = remainingConn?.address?.schemeSpecificPart 
+                                            ?: remainingConn?.extras?.getString("caller_number") ?: ""
+                                        showOngoingCallNotification(remainingHandle, remainingNumber)
+                                        if (remainingConn?.state == Connection.STATE_HOLDING) {
+                                            // The remaining call is ON HOLD → the ACTIVE call ended.
+                                            // Do NOT send ACTION_HELD_CALL_ENDED — the held call is still alive.
+                                            remainingConn.toggleHold(false)
+                                            Log.d(TAG, "[ACTION_ANSWER onDisconnected] Unholding remaining call $remainingHandle")
+                                        } else {
+                                            // The remaining call is NOT on hold → the HELD call ended.
+                                            // Notify Flutter to clear the held call banner.
+                                            sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_HELD_CALL_ENDED, callSid, newConnection.extras)
+                                        }
+                                        bringMainActivityToFront()
+                                    }
+                                }
                             }
                             newConnection.setOnCallDisconnected(onCallDisconnectedListener)
                             
@@ -502,6 +1161,12 @@ class TVConnectionService : ConnectionService() {
                         
                         connection.acceptInvite()
                         
+                        // Clear pending call state now that the call has been answered.
+                        // This is critical: if we don't clear it, tryClaimFcmMessage will
+                        // see both an active connection AND a pending call, and block any
+                        // subsequent incoming calls (e.g. call waiting).
+                        clearPendingIncomingCall()
+                        
                         // Get call info from the CallInvite (this is immediately available)
                         val callInvite = (connection as TVCallInviteConnection).callInvite
                         val callSid = callInvite.callSid
@@ -519,59 +1184,222 @@ class TVConnectionService : ConnectionService() {
                         // Show ongoing call notification
                         showOngoingCallNotification(callSid, callerNumber)
                         
-                        // Launch main activity IMMEDIATELY with call data from callInvite
-                        // No delay needed since callInvite data is available immediately
-                        try {
-                            val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
-                            launchIntent?.let { intent ->
-                                // Use flags that work well from lock screen
-                                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
-                                               Intent.FLAG_ACTIVITY_CLEAR_TOP or 
-                                               Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                                               Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
-                                intent.putExtra("fromIncomingCall", true)
-                                intent.putExtra("callHandle", callSid)
-                                intent.putExtra("callAnswered", true)
-                                // Add extras that MainActivity expects for call data
-                                intent.putExtra("SHOW_OVER_LOCK_SCREEN", true)
-                                intent.putExtra("CALL_ANSWERED", true)
-                                intent.putExtra("CALL_SID", callSid)
-                                intent.putExtra("CALLER_NAME", callerNumber) // Use number as name for now
-                                intent.putExtra("CALLER_NUMBER", callerNumber)
-                                intent.putExtra("MY_NUMBER", myNumber)
-                                intent.putExtra("CALL_DIRECTION", "incoming")
-                                startActivity(intent)
-                                Log.d(TAG, "Launched main activity with call data from callInvite - caller: $callerNumber")
+                        // Only launch MainActivity from the service if IncomingCallActivity is NOT
+                        // already handling it. When answering from the swipe UI or notification button
+                        // in IncomingCallActivity, it sets LAUNCHED_FROM_ACTIVITY=true and handles
+                        // the MainActivity launch itself. Launching here too causes dual onNewIntent
+                        // calls which confuse Flutter and destroy/recreate the activity unnecessarily.
+                        if (!launchedFromActivity) {
+                            // Launch main activity IMMEDIATELY with call data from callInvite
+                            // This path is used when answering from notification action button
+                            // that goes directly to the service (without IncomingCallActivity)
+                            try {
+                                val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+                                launchIntent?.let { intent ->
+                                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
+                                                   Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                                                   Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                                    intent.putExtra("fromIncomingCall", true)
+                                    intent.putExtra("callHandle", callSid)
+                                    intent.putExtra("callAnswered", true)
+                                    // Add extras that MainActivity expects for call data
+                                    intent.putExtra("SHOW_OVER_LOCK_SCREEN", true)
+                                    intent.putExtra("CALL_ANSWERED", true)
+                                    intent.putExtra("CALL_SID", callSid)
+                                    intent.putExtra("CALLER_NAME", callerNumber)
+                                    intent.putExtra("CALLER_NUMBER", callerNumber)
+                                    intent.putExtra("MY_NUMBER", myNumber)
+                                    intent.putExtra("CALL_DIRECTION", "incoming")
+                                    startActivity(intent)
+                                    Log.d(TAG, "Launched main activity with call data from callInvite - caller: $callerNumber")
+                                }
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Could not launch main activity after answering: ${e.message}")
                             }
-                        } catch (e: Exception) {
-                            Log.w(TAG, "Could not launch main activity after answering: ${e.message}")
+                        } else {
+                            Log.d(TAG, "ACTION_ANSWER: Skipping MainActivity launch - IncomingCallActivity is handling it")
                         }
                     } else {
                         Log.e(TAG, "onStartCommand: [ACTION_ANSWER] connection is not TVCallInviteConnection")
                     }
                 }
 
+                ACTION_ANSWER_WITH_HOLD -> {
+                    // Answer the incoming call while putting the active call on hold
+                    it.setExtrasClassLoader(CallInvite::class.java.classLoader)
+                    Log.d(TAG, "onStartCommand: ACTION_ANSWER_WITH_HOLD")
+                    
+                    val activeHandle = it.getStringExtra("EXTRA_ACTIVE_CALL_HANDLE") ?: activeCallHandleDuringIncoming
+                    val newCallHandle = it.getStringExtra(EXTRA_CALL_HANDLE) ?: getIncomingCallHandle()
+                    
+                    // Step 1: Put active call on hold
+                    if (activeHandle != null) {
+                        getConnection(activeHandle)?.toggleHold(true)
+                        Log.d(TAG, "[ACTION_ANSWER_WITH_HOLD] Active call $activeHandle put on hold")
+                    }
+                    
+                    // Step 2: Answer the new call (same logic as ACTION_ANSWER)
+                    var connection = if (newCallHandle != null) getConnection(newCallHandle) else null
+                    if (connection == null) {
+                        val callInvite = it.getParcelableExtraSafe<CallInvite>(EXTRA_INCOMING_CALL_INVITE)
+                        if (callInvite != null) {
+                            Log.i(TAG, "[ACTION_ANSWER_WITH_HOLD] Recovering connection from CallInvite")
+                            startIncomingCallForegroundService(callInvite)
+                            val mStorage: Storage = StorageImpl(applicationContext)
+                            val callParams = TVCallInviteParametersImpl(mStorage, callInvite)
+                            val newConnection = TVCallInviteConnection(applicationContext, callInvite, callParams)
+                            val callSid = callInvite.callSid
+                            applyParameters(newConnection, callParams, callInvite.from ?: "")
+                            attachCallEventListeners(newConnection, callSid)
+                            val onCallDisconnectedListener: CompletionHandler<DisconnectCause> = CompletionHandler {
+                                if (activeConnections.containsKey(callSid)) {
+                                    activeConnections.remove(callSid)
+                                }
+                                // When second call ends, unhold the first call and restore its UI
+                                if (activeHandle != null && hasActiveCalls()) {
+                                    val heldConnection = getConnection(activeHandle)
+                                    heldConnection?.toggleHold(false)
+                                    Log.d(TAG, "[ACTION_ANSWER_WITH_HOLD] Second call ended, unholding first call $activeHandle")
+                                    // Re-show ongoing notification and bring back call UI for the held call
+                                    val heldNumber = heldConnection?.address?.schemeSpecificPart 
+                                        ?: heldConnection?.extras?.getString("caller_number") ?: ""
+                                    showOngoingCallNotification(activeHandle, heldNumber)
+                                    // Bring back the main activity to show the held call's UI
+                                    // Use bringMainActivityToFront() to avoid resetting Flutter call state
+                                    bringMainActivityToFront()
+                                    // Don't send ACTION_CALL_ENDED to Flutter - the held call is still active
+                                    // Flutter would close the call screen if it received "Call Ended"
+                                    Log.d(TAG, "[ACTION_ANSWER_WITH_HOLD] Skipping ACTION_CALL_ENDED broadcast - held call still active")
+                                } else {
+                                    // No remaining calls, send the call ended event normally
+                                    sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, callSid, newConnection.extras)
+                                }
+                                cancelIncomingCallNotification()
+                            }
+                            newConnection.setOnCallDisconnected(onCallDisconnectedListener)
+                            connection = newConnection
+                        }
+                    }
+                    
+                    cancelIncomingCallNotification()
+                    releaseWakeLock()
+                    
+                    if (connection is TVCallInviteConnection) {
+                        if (applicationContext.hasMicrophoneAccess()) {
+                            connection.acceptInvite()
+                            clearPendingIncomingCall() // Clear pending state so future calls can come through
+                            val callInvite = connection.callInvite
+                            val callSid = callInvite.callSid
+                            val callerNumber = extractUserNumber(callInvite.from ?: "Unknown")
+                            showOngoingCallNotification(callSid, callerNumber)
+                            launchMainActivityWithCallData(callSid, callerNumber, callInvite.to ?: "")
+                        }
+                    }
+                    clearCallWaitingState()
+                }
+
+                ACTION_ANSWER_WITH_END_FIRST -> {
+                    // End the active call first, then answer the incoming call
+                    it.setExtrasClassLoader(CallInvite::class.java.classLoader)
+                    Log.d(TAG, "onStartCommand: ACTION_ANSWER_WITH_END_FIRST")
+                    
+                    val activeHandle = it.getStringExtra("EXTRA_ACTIVE_CALL_HANDLE") ?: activeCallHandleDuringIncoming
+                    val newCallHandle = it.getStringExtra(EXTRA_CALL_HANDLE) ?: getIncomingCallHandle()
+                    
+                    // Step 1: Hang up the active call
+                    if (activeHandle != null) {
+                        val activeConnection = getConnection(activeHandle)
+                        activeConnection?.forceDisconnectWithLogging()
+                        activeConnections.remove(activeHandle)
+                        sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, activeHandle, activeConnection?.extras)
+                        Log.d(TAG, "[ACTION_ANSWER_WITH_END_FIRST] Active call $activeHandle ended")
+                    }
+                    
+                    // Step 2: Answer the new call (same logic as ACTION_ANSWER)
+                    var connection = if (newCallHandle != null) getConnection(newCallHandle) else null
+                    if (connection == null) {
+                        val callInvite = it.getParcelableExtraSafe<CallInvite>(EXTRA_INCOMING_CALL_INVITE)
+                        if (callInvite != null) {
+                            Log.i(TAG, "[ACTION_ANSWER_WITH_END_FIRST] Recovering connection from CallInvite")
+                            startIncomingCallForegroundService(callInvite)
+                            val mStorage: Storage = StorageImpl(applicationContext)
+                            val callParams = TVCallInviteParametersImpl(mStorage, callInvite)
+                            val newConnection = TVCallInviteConnection(applicationContext, callInvite, callParams)
+                            val callSid = callInvite.callSid
+                            applyParameters(newConnection, callParams, callInvite.from ?: "")
+                            attachCallEventListeners(newConnection, callSid)
+                            val onCallDisconnectedListener: CompletionHandler<DisconnectCause> = CompletionHandler {
+                                if (activeConnections.containsKey(callSid)) {
+                                    activeConnections.remove(callSid)
+                                }
+                                cancelIncomingCallNotification()
+                                releaseWakeLock()
+                                if (!hasActiveCalls()) {
+                                    sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, callSid, newConnection.extras)
+                                    stopForegroundService()
+                                    stopSelfSafe()
+                                } else {
+                                    Log.d(TAG, "[ACTION_ANSWER_WITH_END_FIRST onDisconnected] Call $callSid ended but other calls still active, suppressing ACTION_CALL_ENDED")
+                                }
+                            }
+                            newConnection.setOnCallDisconnected(onCallDisconnectedListener)
+                            connection = newConnection
+                        }
+                    }
+                    
+                    cancelIncomingCallNotification()
+                    releaseWakeLock()
+                    
+                    if (connection is TVCallInviteConnection) {
+                        if (applicationContext.hasMicrophoneAccess()) {
+                            connection.acceptInvite()
+                            clearPendingIncomingCall() // Clear pending state so future calls can come through
+                            val callInvite = connection.callInvite
+                            val callSid = callInvite.callSid
+                            val callerNumber = extractUserNumber(callInvite.from ?: "Unknown")
+                            showOngoingCallNotification(callSid, callerNumber)
+                            launchMainActivityWithCallData(callSid, callerNumber, callInvite.to ?: "")
+                        }
+                    }
+                    clearCallWaitingState()
+                }
+
                 ACTION_HANGUP -> {
                     // Set classloader for CallInvite deserialization
                     it.setExtrasClassLoader(CallInvite::class.java.classLoader)
                     
-                    // Cancel ongoing call notification
-                    cancelOngoingCallNotification()
-                    
                     val callHandle = it.getStringExtra(EXTRA_CALL_HANDLE) ?: getActiveCallHandle() ?: run {
                         Log.e(TAG, "onStartCommand: ACTION_HANGUP is missing String EXTRA_CALL_HANDLE")
-                        activeConnections.clear()
-                        sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, null, null)
-                        stopForegroundService()
-                        stopSelfSafe()
+                        // Don't clear all connections - there may be valid calls still active
+                        clearPendingIncomingCall()
+                        clearCallWaitingState()
+                        cancelOngoingCallNotification()
+                        if (!hasActiveCalls()) {
+                            activeConnections.clear()
+                            sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, null, null)
+                            stopForegroundService()
+                            stopSelfSafe()
+                        } else {
+                            Log.d(TAG, "[ACTION_HANGUP] No handle but active calls exist (${activeConnections.keys}), not clearing")
+                        }
                         return@let
                     }
 
                     Log.i(TAG, "[Decline] Received ACTION_HANGUP for callHandle: $callHandle. Active connections: ${activeConnections.keys}")
                     cancelIncomingCallNotification()
                     releaseWakeLock()
+                    
+                    // Clear pending call if this matches
+                    if (getPendingIncomingCallSid() == callHandle) {
+                        clearPendingIncomingCall()
+                    }
 
                     var connection = getConnection(callHandle)
+                    
+                    // ── Save current audio route BEFORE any disconnect resets it ──
+                    // Declared here so it's in scope for the restoration code below,
+                    // regardless of whether the connection was found or recovered.
+                    var savedAudioRoute = "earpiece"
                     
                     // If connection not found, try to recover from CallInvite in intent (terminated state case)
                     if (connection == null) {
@@ -580,23 +1408,136 @@ class TVConnectionService : ConnectionService() {
                             Log.i(TAG, "[Decline] Recovering CallInvite from intent for terminated state reject")
                             // Directly reject the invite without creating a connection
                             callInvite.reject(applicationContext)
-                            sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, callHandle, null)
-                            stopForegroundService()
-                            stopSelfSafe()
-                            return@let
+                            // Clear pending call for the callInvite's SID as well
+                            if (getPendingIncomingCallSid() == callInvite.callSid) {
+                                clearPendingIncomingCall()
+                            }
+                            // Only broadcast call ended to Flutter if no other active calls remain
+                            // Otherwise Flutter will close the active call's UI
+                            if (!hasActiveCalls()) {
+                                sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, callHandle, null)
+                            } else {
+                                Log.d(TAG, "[Decline] Skipping ACTION_CALL_ENDED broadcast - other calls still active")
+                            }
                         } else {
-                            Log.e(TAG, "[Decline] No connection found and no CallInvite in intent for $callHandle. Forcing cleanup.")
-                            activeConnections.clear()
-                            sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, callHandle, null)
+                            Log.e(TAG, "[Decline] No connection found and no CallInvite in intent for $callHandle. Active connections: ${activeConnections.keys}")
+                            // Only remove the specific handle, NOT all connections
+                            activeConnections.remove(callHandle)
+                            clearPendingIncomingCall()
+                            if (!hasActiveCalls()) {
+                                sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, callHandle, null)
+                            } else {
+                                Log.d(TAG, "[Decline] Skipping ACTION_CALL_ENDED - other calls still active after removing stale handle")
+                            }
                         }
                     } else {
                         Log.i(TAG, "[Decline] Found connection for $callHandle, state=${connection.state}")
-                        connection.forceDisconnectWithLogging()
-                        sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, callHandle, connection.extras)
+                        // Remove from activeConnections BEFORE disconnecting so hasActiveCalls() 
+                        // reflects the correct state during disconnect callbacks
                         activeConnections.remove(callHandle)
+                        
+                        // Check if other calls remain BEFORE disconnecting
+                        // If other calls are active, clear event/disconnect listeners to prevent
+                        // the disconnect flow from sending "Call Ended" events to Flutter
+                        // which would close the active call's UI
+                        val otherCallsRemain = hasActiveCalls()
+                        if (otherCallsRemain) {
+                            Log.d(TAG, "[Decline] Other calls still active, clearing listeners before disconnect to prevent Flutter state reset")
+                            connection.onEvent = null
+                            connection.onDisconnected = null
+                            connection.onAction = null
+                        }
+                        
+                        // ── Snapshot the audio route before disconnect resets it ──
+                        // forceDisconnectWithLogging → releaseAudioFocus clears speaker,
+                        // stops BT SCO, and resets MODE to NORMAL.  We snapshot the route
+                        // here so we can restore it on the remaining connection.
+                        if (otherCallsRemain) {
+                            val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                            if (am != null) {
+                                savedAudioRoute = detectCurrentAudioRoute(am)
+                                Log.d(TAG, "[Decline] Saved audio route before disconnect: $savedAudioRoute")
+                            }
+                        }
+                        
+                        connection.forceDisconnectWithLogging()
+                        
+                        // Only broadcast call ended to Flutter if no other active calls remain
+                        if (!otherCallsRemain) {
+                            sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, callHandle, connection.extras)
+                        } else {
+                            Log.d(TAG, "[Decline] Skipping ACTION_CALL_ENDED broadcast - other calls still active")
+                        }
                     }
-                    stopForegroundService()
-                    stopSelfSafe()
+                    
+                    // Always clear call waiting state after any hangup
+                    clearCallWaitingState()
+                    
+                    // Check if there are remaining active calls
+                    if (hasActiveCalls()) {
+                        // Other calls still active - DON'T stop the service
+                        // Re-show ongoing call notification for the remaining call
+                        val remainingHandle = getActiveCallHandle()
+                        if (remainingHandle != null) {
+                            val remainingConnection = getConnection(remainingHandle)
+                            val remainingNumber = remainingConnection?.address?.schemeSpecificPart 
+                                ?: remainingConnection?.extras?.getString("caller_number") ?: ""
+                            Log.d(TAG, "[Decline] Other call still active: $remainingHandle, showing ongoing notification")
+                            showOngoingCallNotification(remainingHandle, remainingNumber)
+                            
+                            // Unhold the remaining call if it was on hold
+                            if (remainingConnection?.state == Connection.STATE_HOLDING) {
+                                remainingConnection.toggleHold(false)
+                                Log.d(TAG, "[Decline] Unholding remaining call $remainingHandle")
+                            }
+
+                            // Re-request audio focus for the remaining call.
+                            // The disconnected call's forceDisconnectWithLogging() released audio focus
+                            // which reset MODE to NORMAL, cleared communication device, and stopped BT SCO.
+                            // Without re-requesting, audio toggles (speaker/earpiece/bluetooth) won't work.
+                            remainingConnection?.let { conn ->
+                                Log.d(TAG, "[Decline] Restoring audio focus for remaining call $remainingHandle")
+                                conn.restoreAudioFocus()
+                                
+                                // ── Restore the audio route the user had selected ──
+                                // restoreAudioFocus() always routes to earpiece (or BT if
+                                // connected).  If the user had speaker ON we must re-apply it.
+                                // For Bluetooth we only restore if the device is still available.
+                                Log.d(TAG, "[Decline] Restoring saved audio route: $savedAudioRoute")
+                                when (savedAudioRoute) {
+                                    "speaker" -> {
+                                        Log.d(TAG, "[Decline] Re-applying speaker route")
+                                        conn.toggleSpeaker(true)
+                                    }
+                                    "bluetooth" -> {
+                                        // Check if BT device is still available before restoring
+                                        val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                                        val btAvailable = am?.isBluetoothScoOn == true || isBluetoothDeviceAvailable(am)
+                                        if (btAvailable) {
+                                            Log.d(TAG, "[Decline] Re-applying bluetooth route (device still available)")
+                                            conn.toggleBluetooth(true)
+                                        } else {
+                                            Log.d(TAG, "[Decline] Bluetooth device no longer available, staying on earpiece")
+                                        }
+                                    }
+                                    else -> {
+                                        // earpiece - already the default after restoreAudioFocus
+                                        Log.d(TAG, "[Decline] Earpiece is already the default, no action needed")
+                                    }
+                                }
+                            }
+                            
+                            // Bring back the main activity to show the remaining call's UI
+                            // Use bringMainActivityToFront() instead of launchMainActivityWithCallData()
+                            // to avoid resetting Flutter call state (timer, connecting status)
+                            bringMainActivityToFront()
+                        }
+                    } else {
+                        // No more active calls - clean up everything
+                        cancelOngoingCallNotification()
+                        stopForegroundService()
+                        stopSelfSafe()
+                    }
                 }
 
                 ACTION_PLACE_OUTGOING_CALL -> {
@@ -707,9 +1648,31 @@ class TVConnectionService : ConnectionService() {
                             if (activeConnections.containsKey(call.sid)) {
                                 activeConnections.remove(call.sid)
                             }
-                            sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, call.sid ?: "", connection.extras)
-                            stopForegroundService()
-                            stopSelfSafe()
+                            if (!hasActiveCalls()) {
+                                sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, call.sid ?: "", connection.extras)
+                                stopForegroundService()
+                                stopSelfSafe()
+                            } else {
+                                Log.d(TAG, "[Outgoing onDisconnected] Call ${call.sid} ended but other calls still active, suppressing ACTION_CALL_ENDED")
+                                val remainingHandle = getActiveCallHandle()
+                                if (remainingHandle != null) {
+                                    val remainingConn = getConnection(remainingHandle)
+                                    val remainingNumber = remainingConn?.address?.schemeSpecificPart 
+                                        ?: remainingConn?.extras?.getString("caller_number") ?: ""
+                                    showOngoingCallNotification(remainingHandle, remainingNumber)
+                                    if (remainingConn?.state == Connection.STATE_HOLDING) {
+                                        // The remaining call is ON HOLD → the ACTIVE call ended.
+                                        // Do NOT send ACTION_HELD_CALL_ENDED — the held call is still alive.
+                                        remainingConn.toggleHold(false)
+                                        Log.d(TAG, "[Outgoing onDisconnected] Unholding remaining call $remainingHandle")
+                                    } else {
+                                        // The remaining call is NOT on hold → the HELD call ended.
+                                        // Notify Flutter to clear the held call banner.
+                                        sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_HELD_CALL_ENDED, call.sid ?: "", connection.extras)
+                                    }
+                                    bringMainActivityToFront()
+                                }
+                            }
                         }
                     }
 
@@ -916,9 +1879,25 @@ class TVConnectionService : ConnectionService() {
                 if (activeConnections.containsKey(it.sid)) {
                     activeConnections.remove(it.sid)
                 }
-                sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, it.sid ?: "", connection.extras)
-                stopForegroundService()
-                stopSelfSafe()
+                if (!hasActiveCalls()) {
+                    sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, it.sid ?: "", connection.extras)
+                    stopForegroundService()
+                    stopSelfSafe()
+                } else {
+                    Log.d(TAG, "[onCallInitializingDisconnected] Call ${it.sid} ended but other calls still active, suppressing ACTION_CALL_ENDED")
+                    val remainingHandle = getActiveCallHandle()
+                    if (remainingHandle != null) {
+                        val remainingConn = getConnection(remainingHandle)
+                        val remainingNumber = remainingConn?.address?.schemeSpecificPart 
+                            ?: remainingConn?.extras?.getString("caller_number") ?: ""
+                        showOngoingCallNotification(remainingHandle, remainingNumber)
+                        if (remainingConn?.state == Connection.STATE_HOLDING) {
+                            remainingConn.toggleHold(false)
+                            Log.d(TAG, "[onCallInitializingDisconnected] Unholding remaining call $remainingHandle")
+                        }
+                        bringMainActivityToFront()
+                    }
+                }
             }
         }
 
@@ -962,6 +1941,17 @@ class TVConnectionService : ConnectionService() {
         }
 
         val onEvent: ValueBundleChanged<String> = ValueBundleChanged { event: String?, extra: Bundle? ->
+            // Don't forward disconnect events to Flutter if other calls are still active
+            // Otherwise Flutter will close the active call's UI when a secondary call ends
+            // NOTE: When onEvent fires, the current connection is still in activeConnections,
+            // so we check if there are OTHER connections besides this one
+            val isDisconnectEvent = event == TVNativeCallEvents.EVENT_DISCONNECTED_LOCAL || 
+                                   event == TVNativeCallEvents.EVENT_DISCONNECTED_REMOTE
+            val otherCallsExist = activeConnections.keys.any { it != callSid }
+            if (isDisconnectEvent && otherCallsExist) {
+                Log.d(TAG, "[onEvent] Suppressing disconnect event '$event' for $callSid - other calls still active (${activeConnections.keys.filter { it != callSid }})")
+                return@ValueBundleChanged
+            }
             sendBroadcastEvent(applicationContext, event ?: "", callSid, extra)
             // This is a temporary solution since `isOnCall` returns true when there is an active ConnectionService, regardless of the source app. This also applies to SIM/Telecom calls.
             sendBroadcastCallHandle(applicationContext, extra?.getString(TVBroadcastReceiver.EXTRA_CALL_HANDLE))
@@ -970,21 +1960,75 @@ class TVConnectionService : ConnectionService() {
             if (activeConnections.containsKey(callSid)) {
                 activeConnections.remove(callSid)
             }
-            stopForegroundService()
-            stopSelfSafe()
+            // Clear pending call if this was the pending one
+            if (getPendingIncomingCallSid() == callSid) {
+                clearPendingIncomingCall()
+            }
+            // Only stop service if no other calls remain
+            if (!hasActiveCalls()) {
+                clearCallWaitingState()
+                stopForegroundService()
+                stopSelfSafe()
+            } else {
+                Log.d(TAG, "[onDisconnect] Call $callSid ended but other calls still active (${activeConnections.size} remaining)")
+                // Re-show ongoing notification for remaining call
+                val remainingHandle = getActiveCallHandle()
+                if (remainingHandle != null) {
+                    val remainingConn = getConnection(remainingHandle)
+                    val remainingNumber = remainingConn?.address?.schemeSpecificPart 
+                        ?: remainingConn?.extras?.getString("caller_number") ?: ""
+                    showOngoingCallNotification(remainingHandle, remainingNumber)
+                    // Unhold remaining call if it was on hold
+                    if (remainingConn?.state == Connection.STATE_HOLDING) {
+                        remainingConn.toggleHold(false)
+                        Log.d(TAG, "[onDisconnect] Unholding remaining call $remainingHandle")
+                    }
+                    // Bring back the main activity to show the remaining call's UI
+                    bringMainActivityToFront()
+                }
+            }
         }
         val onCallState: CompletionHandler<Call.State> = CompletionHandler { state ->
             if (state == Call.State.DISCONNECTED) {
                 if (activeConnections.containsKey(callSid)) {
                     activeConnections.remove(callSid)
                 }
-                stopForegroundService()
-                stopSelfSafe()
+                // Clear pending call if this was the pending one
+                if (getPendingIncomingCallSid() == callSid) {
+                    clearPendingIncomingCall()
+                }
+                // Only stop service if no other calls remain
+                if (!hasActiveCalls()) {
+                    clearCallWaitingState()
+                    stopForegroundService()
+                    stopSelfSafe()
+                } else {
+                    Log.d(TAG, "[onCallState] Call $callSid disconnected but other calls still active (${activeConnections.size} remaining)")
+                    val remainingHandle = getActiveCallHandle()
+                    if (remainingHandle != null) {
+                        val remainingConn = getConnection(remainingHandle)
+                        val remainingNumber = remainingConn?.address?.schemeSpecificPart 
+                            ?: remainingConn?.extras?.getString("caller_number") ?: ""
+                        showOngoingCallNotification(remainingHandle, remainingNumber)
+                        if (remainingConn?.state == Connection.STATE_HOLDING) {
+                            remainingConn.toggleHold(false)
+                            Log.d(TAG, "[onCallState] Unholding remaining call $remainingHandle")
+                        }
+                        // Bring back the main activity to show the remaining call's UI
+                        bringMainActivityToFront()
+                    }
+                }
             }
         }
 
         // Add to local connection cache
         activeConnections[callSid] = connection
+        
+        // NOTE: Do NOT clear pendingIncomingCallSid here!
+        // The IncomingCallActivity.onCreate() checks pendingCallSid to validate the call.
+        // If we clear it here, the activity (launched 200ms later) will see null and
+        // reject the call as orphaned. The pending state will be cleared when the call
+        // is actually answered (ACTION_ANSWER) or ended (onDisconnect).
 
         // attach listeners
         connection.setOnCallActionListener(onAction)
@@ -1080,8 +2124,8 @@ class TVConnectionService : ConnectionService() {
 
 
     private fun sendBroadcastEvent(ctx: Context, event: String, callSid: String?, extras: Bundle? = null) {
-        // Cancel ongoing call notification when call ends
-        if (event == TVBroadcastReceiver.ACTION_CALL_ENDED) {
+        // Cancel ongoing call notification when call ends, but ONLY if no other calls remain
+        if (event == TVBroadcastReceiver.ACTION_CALL_ENDED && !hasActiveCalls()) {
             cancelOngoingCallNotification()
         }
         
@@ -1144,7 +2188,7 @@ class TVConnectionService : ConnectionService() {
             setContentTitle("Voice Calls")
             setCategory(Notification.CATEGORY_SERVICE)
             setContentIntent(pendingIntent)
-            setSmallIcon(R.drawable.ic_microphone)
+            setSmallIcon(R.drawable.ic_transparent)
         }.build()
     }
 
@@ -1206,9 +2250,11 @@ class TVConnectionService : ConnectionService() {
         
         // Create intent to launch main app when notification is tapped
         val launchIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+            // Use SINGLE_TOP + REORDER_TO_FRONT to preserve existing Flutter activity state
+            // CLEAR_TOP was destroying and recreating MainActivity on notification tap during calls
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
-                    Intent.FLAG_ACTIVITY_CLEAR_TOP or 
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
             putExtra("fromOngoingCall", true)
             putExtra("callHandle", callSid)
         }
@@ -1239,47 +2285,11 @@ class TVConnectionService : ConnectionService() {
         
         val displayName = callerName ?: "Unknown"
         
-        // Get app icon as a rounded bitmap for the caller icon
-        val appIconBitmap = try {
-            val appInfo = packageManager.getApplicationInfo(packageName, 0)
-            val drawable = packageManager.getApplicationIcon(appInfo)
-            
-            // Convert to bitmap
-            val originalBitmap = if (drawable is android.graphics.drawable.BitmapDrawable) {
-                drawable.bitmap
-            } else {
-                val bitmap = android.graphics.Bitmap.createBitmap(
-                    drawable.intrinsicWidth.coerceAtLeast(1),
-                    drawable.intrinsicHeight.coerceAtLeast(1),
-                    android.graphics.Bitmap.Config.ARGB_8888
-                )
-                val canvas = android.graphics.Canvas(bitmap)
-                drawable.setBounds(0, 0, canvas.width, canvas.height)
-                drawable.draw(canvas)
-                bitmap
-            }
-            
-            // Create a circular/rounded bitmap
-            val size = minOf(originalBitmap.width, originalBitmap.height)
-            val output = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
-            val canvas = android.graphics.Canvas(output)
-            val paint = android.graphics.Paint().apply {
-                isAntiAlias = true
-                shader = android.graphics.BitmapShader(originalBitmap, android.graphics.Shader.TileMode.CLAMP, android.graphics.Shader.TileMode.CLAMP)
-            }
-            val radius = size / 2f
-            canvas.drawCircle(radius, radius, radius, paint)
-            output
-        } catch (e: Exception) {
-            Log.w(TAG, "Could not get app icon: ${e.message}")
-            null
-        }
-        
         // Store the call start time for duration tracking
         val callStartTime = System.currentTimeMillis()
         
         // Start a handler to update the call duration in subtitle
-        startOngoingCallDurationUpdater(callSid, displayName, appIconBitmap, callStartTime, channel, contentIntent, hangupPendingIntent)
+        startOngoingCallDurationUpdater(callSid, displayName, callStartTime, channel, contentIntent, hangupPendingIntent)
     }
     
     // Handler for updating ongoing call notification duration
@@ -1289,7 +2299,6 @@ class TVConnectionService : ConnectionService() {
     private fun startOngoingCallDurationUpdater(
         callSid: String,
         displayName: String,
-        appIconBitmap: android.graphics.Bitmap?,
         callStartTime: Long,
         channel: NotificationChannel,
         contentIntent: PendingIntent,
@@ -1307,7 +2316,7 @@ class TVConnectionService : ConnectionService() {
                 
                 // Build and update notification
                 val notification = buildOngoingCallNotification(
-                    displayName, durationText, appIconBitmap, channel, contentIntent, hangupPendingIntent
+                    displayName, durationText, channel, contentIntent, hangupPendingIntent
                 )
                 
                 try {
@@ -1324,7 +2333,7 @@ class TVConnectionService : ConnectionService() {
         
         // Build initial notification and start foreground
         val initialNotification = buildOngoingCallNotification(
-            displayName, "00:00", appIconBitmap, channel, contentIntent, hangupPendingIntent
+            displayName, "00:00", channel, contentIntent, hangupPendingIntent
         )
         
         try {
@@ -1373,7 +2382,6 @@ class TVConnectionService : ConnectionService() {
     private fun buildOngoingCallNotification(
         displayName: String,
         durationText: String,
-        appIconBitmap: android.graphics.Bitmap?,
         channel: NotificationChannel,
         contentIntent: PendingIntent,
         hangupPendingIntent: PendingIntent
@@ -1392,14 +2400,16 @@ class TVConnectionService : ConnectionService() {
         
         return Notification.Builder(this, channel.id).apply {
             setOngoing(true)
-            setSmallIcon(R.drawable.ic_microphone)
+            setSmallIcon(R.drawable.ic_transparent)
             setContentIntent(contentIntent)
             setCategory(Notification.CATEGORY_CALL)
             setVisibility(Notification.VISIBILITY_PUBLIC)
-            setColor(0xFFFF0000.toInt())
-            
-            // Set the large icon which will appear in the header
-            appIconBitmap?.let { setLargeIcon(it) }
+            setShowWhen(false)
+            setColorized(true)
+            setColor(Color.parseColor("#1C1C1E"))
+            setContentTitle("")
+            setContentText("")
+            style = Notification.DecoratedMediaCustomViewStyle()
             
             // Use custom view for the notification content
             setCustomContentView(remoteViews)
@@ -1428,13 +2438,18 @@ class TVConnectionService : ConnectionService() {
     }
 
     private fun getOrCreateIncomingCallChannel(): NotificationChannel {
-        val id = "${applicationContext.packageName}_incoming_calls_v2"
+        val id = "${applicationContext.packageName}_incoming_calls_v7"
         val name = "Incoming Calls"
         val descriptionText = "Incoming Voice Calls"
         val notificationManager: NotificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         
-        // Delete old channel if exists (in case importance was wrong)
+        // Delete old channels if exists (in case importance or settings were cached)
         notificationManager.deleteNotificationChannel("${applicationContext.packageName}_incoming_calls")
+        notificationManager.deleteNotificationChannel("${applicationContext.packageName}_incoming_calls_v2")
+        notificationManager.deleteNotificationChannel("${applicationContext.packageName}_incoming_calls_v3")
+        notificationManager.deleteNotificationChannel("${applicationContext.packageName}_incoming_calls_v4")
+        notificationManager.deleteNotificationChannel("${applicationContext.packageName}_incoming_calls_v5")
+        notificationManager.deleteNotificationChannel("${applicationContext.packageName}_incoming_calls_v6")
         
         // IMPORTANCE_HIGH is required for full-screen intent to work in terminated state
         val importance = NotificationManager.IMPORTANCE_HIGH
@@ -1449,13 +2464,126 @@ class TVConnectionService : ConnectionService() {
         return channel
     }
 
+    /**
+     * Creates a circular gradient bitmap for the caller avatar.
+     * If callerName is a real name (not "Unknown Caller"), shows the initials.
+     * Otherwise, draws a person icon silhouette.
+     * The gradient goes from a lighter dark gray to a deeper dark,
+     * with a subtle ring border — matching the metallic look from the design.
+     */
+    private fun createCallerAvatarBitmap(callerName: String, sizeDp: Int = 64): Bitmap {
+        val density = resources.displayMetrics.density
+        val sizePx = (sizeDp * density).toInt()
+        val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val cx = sizePx / 2f
+        val cy = sizePx / 2f
+        val radius = sizePx / 2f
+
+        // Outer ring: subtle gray gradient border
+        val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = LinearGradient(
+                0f, 0f, sizePx.toFloat(), sizePx.toFloat(),
+                Color.parseColor("#5A5A5A"),
+                Color.parseColor("#3A3A3A"),
+                Shader.TileMode.CLAMP
+            )
+        }
+        canvas.drawCircle(cx, cy, radius, ringPaint)
+
+        // Inner fill: dark radial gradient for metallic/3D look
+        val innerRadius = radius - (2 * density) // 2dp border
+        val innerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = RadialGradient(
+                cx * 0.8f, cy * 0.7f, innerRadius * 1.2f,
+                Color.parseColor("#4A4A4A"),
+                Color.parseColor("#1A1A1A"),
+                Shader.TileMode.CLAMP
+            )
+        }
+        canvas.drawCircle(cx, cy, innerRadius, innerPaint)
+
+        val hasName = callerName != "Unknown Caller" && callerName.isNotBlank()
+
+        if (hasName) {
+            // Draw initials
+            val initials = callerName.split(" ")
+                .filter { it.isNotBlank() }
+                .take(2)
+                .joinToString("") { it.first().uppercase() }
+
+            val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.WHITE
+                textSize = sizePx * 0.35f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                textAlign = Paint.Align.CENTER
+            }
+            val textBounds = Rect()
+            textPaint.getTextBounds(initials, 0, initials.length, textBounds)
+            val textY = cy + textBounds.height() / 2f
+            canvas.drawText(initials, cx, textY, textPaint)
+        } else {
+            // Draw person icon silhouette
+            val iconPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.parseColor("#CCCCCC")
+                style = Paint.Style.FILL
+            }
+            // Head circle
+            val headRadius = sizePx * 0.15f
+            val headCy = cy - sizePx * 0.08f
+            canvas.drawCircle(cx, headCy, headRadius, iconPaint)
+
+            // Body arc (shoulders)
+            val bodyTop = headCy + headRadius + sizePx * 0.06f
+            val bodyRect = android.graphics.RectF(
+                cx - sizePx * 0.28f,
+                bodyTop,
+                cx + sizePx * 0.28f,
+                bodyTop + sizePx * 0.36f
+            )
+            canvas.drawOval(bodyRect, iconPaint)
+        }
+
+        return bitmap
+    }
+
+    /**
+     * Extracts caller initials from a name string.
+     * E.g., "John Doe" → "JD", "Alice" → "A", "Unknown Caller" → ""
+     */
+    private fun getCallerInitials(callerName: String): String {
+        if (callerName == "Unknown Caller" || callerName.isBlank()) return ""
+        return callerName.split(" ")
+            .filter { it.isNotBlank() }
+            .take(2)
+            .joinToString("") { it.first().uppercase() }
+    }
+
     private fun createIncomingCallNotification(callInvite: CallInvite): Notification {
+        val shortSid = callInvite.callSid.takeLast(6)
+        Log.d(TAG, "[SVC-$shortSid] ┌─ createIncomingCallNotification ────────────────────┐")
+        
         val channel = getOrCreateIncomingCallChannel()
         
         // Create full-screen intent for incoming call activity
         // Use unique request code to avoid PendingIntent caching
         val fullScreenRequestCode = (callInvite.callSid.hashCode() and 0x7FFFFFFF) % 10000 + 1000
         val fullScreenIntent = IncomingCallActivity.createIntent(applicationContext, callInvite)
+        
+        // IMPORTANT: Include active call extras in fullScreenIntent so that if the system
+        // fires the fullScreenIntent (e.g. lock screen), the IncomingCallActivity knows
+        // about the active call and shows the call-waiting bottom sheet instead of
+        // answering directly. Without this, the fullScreenIntent fires first WITHOUT
+        // active call info, then launchIncomingCallActivity fires 200ms later WITH it,
+        // causing a "double bottom sheet" flash.
+        if (hasActiveCallDuringIncoming) {
+            fullScreenIntent.putExtra(IncomingCallActivity.EXTRA_HAS_ACTIVE_CALL, true)
+            fullScreenIntent.putExtra(IncomingCallActivity.EXTRA_ACTIVE_CALLER_NAME, activeCallCallerName)
+            fullScreenIntent.putExtra(IncomingCallActivity.EXTRA_ACTIVE_CALLER_NUMBER, activeCallCallerNumber)
+            fullScreenIntent.putExtra(IncomingCallActivity.EXTRA_ACTIVE_CALL_HANDLE, activeCallHandleDuringIncoming)
+            Log.d(TAG, "[SVC-$shortSid] │ Added active call extras to fullScreenIntent")
+        }
+        
         val fullScreenPendingIntent = PendingIntent.getActivity(
             applicationContext,
             fullScreenRequestCode,
@@ -1465,7 +2593,8 @@ class TVConnectionService : ConnectionService() {
             else 
                 PendingIntent.FLAG_UPDATE_CURRENT
         )
-        Log.d(TAG, "createIncomingCallNotification: fullScreenRequestCode=$fullScreenRequestCode")
+        Log.d(TAG, "[SVC-$shortSid] │ Created fullScreenPendingIntent (requestCode=$fullScreenRequestCode)")
+        Log.d(TAG, "[SVC-$shortSid] │ CallSid in fullScreenIntent: ${callInvite.callSid}")
 
         // Use unique request codes based on callSid hash to avoid PendingIntent caching issues
         val answerServiceRequestCode = (callInvite.callSid.hashCode() and 0x7FFFFFFF) % 10000 + 2000
@@ -1542,6 +2671,15 @@ class TVConnectionService : ConnectionService() {
             putExtra(IncomingCallActivity.EXTRA_CALLER_NUMBER, callerNumber)
             putExtra("extra_my_number", myNumber)
             putExtra("action", "answer")
+            // Pass active call info so handleAnswerFromNotification can show
+            // the call-waiting bottom sheet instead of answering directly
+            if (hasActiveCallDuringIncoming) {
+                putExtra(IncomingCallActivity.EXTRA_HAS_ACTIVE_CALL, true)
+                putExtra(IncomingCallActivity.EXTRA_ACTIVE_CALLER_NAME, activeCallCallerName)
+                putExtra(IncomingCallActivity.EXTRA_ACTIVE_CALLER_NUMBER, activeCallCallerNumber)
+                putExtra(IncomingCallActivity.EXTRA_ACTIVE_CALL_HANDLE, activeCallHandleDuringIncoming)
+                Log.d(TAG, "createIncomingCallNotification: Added active call extras to answerActivityIntent")
+            }
             // Add a unique data URI to ensure PendingIntent is unique and not cached
             data = android.net.Uri.parse("twilio://answer/${callInvite.callSid}")
         }
@@ -1562,75 +2700,83 @@ class TVConnectionService : ConnectionService() {
         val displayName = if (hasCallerName) callerName else formattedCallerNumber.ifEmpty { "Unknown Number" }
         val displaySubtext = if (hasCallerName && formattedCallerNumber.isNotEmpty()) formattedCallerNumber else null
         
+        // Generate the circular gradient avatar bitmap
+        val avatarBitmap = createCallerAvatarBitmap(callerName)
+        
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            // Android 12+ - Use CallStyle for proper call notification
-            val person = android.app.Person.Builder()
+            // Android 12+ — use CallStyle for native incoming call UI
+            // Note: CallStyle renders system-controlled text, so custom fonts are not possible here
+            val callerPerson = Person.Builder()
                 .setName(displayName)
+                .setIcon(Icon.createWithBitmap(avatarBitmap))
                 .setImportant(true)
                 .build()
             
+            val callStyle = Notification.CallStyle.forIncomingCall(
+                callerPerson,
+                declinePendingIntent,
+                answerActivityPendingIntent
+            )
+            
             Notification.Builder(this, channel.id).apply {
-                setSmallIcon(R.drawable.ic_microphone)
-                setContentTitle("Incoming Call")
-                if (displaySubtext != null) {
-                    setContentText(displaySubtext)
-                }
-                setCategory(Notification.CATEGORY_CALL)
+                setSmallIcon(R.drawable.ic_transparent)
                 setVisibility(Notification.VISIBILITY_PUBLIC)
                 setOngoing(true)
                 setAutoCancel(false)
+                setShowWhen(false)
                 setFullScreenIntent(fullScreenPendingIntent, true)
                 setContentIntent(fullScreenPendingIntent)
                 setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
-                // Use CallStyle for proper incoming call notification
-                // Use activity-based answerActivityPendingIntent to bring app to foreground first
-                // This is required for Android 14+ because foreground services started from background
-                // cannot access microphone. The activity brings app to foreground, then starts service.
-                style = Notification.CallStyle.forIncomingCall(
-                    person,
-                    declinePendingIntent,
-                    answerActivityPendingIntent  // Use activity-based intent to bring app to foreground first for microphone access
-                )
+                setCategory(Notification.CATEGORY_CALL)
+                setContentTitle(displayName)
+                setContentText(displaySubtext ?: "Incoming Call")
+                style = callStyle
             }
         } else {
-            // Pre-Android 12 - Use regular notification with actions
+            // Pre-Android 12 — use custom RemoteViews for full control over fonts/colors
+            val customView = RemoteViews(packageName, R.layout.notification_incoming_call)
+            customView.setTextViewText(R.id.notification_caller_name, displayName)
+            customView.setTextViewText(R.id.notification_caller_number, displaySubtext ?: "Incoming Call")
+            customView.setImageViewBitmap(R.id.notification_avatar, avatarBitmap)
+            customView.setOnClickPendingIntent(R.id.notification_decline_button, declinePendingIntent)
+            customView.setOnClickPendingIntent(R.id.notification_answer_button, answerActivityPendingIntent)
+            
             Notification.Builder(this, channel.id).apply {
                 setOngoing(true)
-                setContentTitle(displayName)
-                if (displaySubtext != null) {
-                    setContentText(displaySubtext)
-                }
-                setCategory(Notification.CATEGORY_CALL)
-                setSmallIcon(R.drawable.ic_microphone)
+                setSmallIcon(R.drawable.ic_transparent)
                 setFullScreenIntent(fullScreenPendingIntent, true)
                 setContentIntent(fullScreenPendingIntent)
                 setVisibility(Notification.VISIBILITY_PUBLIC)
                 setAutoCancel(false)
-                // Add answer and decline actions
-                // Use activity-based intent to bring app to foreground first for microphone access
-                addAction(Notification.Action.Builder(
-                    android.R.drawable.ic_menu_call,
-                    "Answer",
-                    answerActivityPendingIntent  // Use activity-based intent for microphone access
-                ).build())
-                addAction(Notification.Action.Builder(
-                    android.R.drawable.ic_menu_close_clear_cancel,
-                    "Decline",
-                    declinePendingIntent
-                ).build())
-                // Priority for pre-Oreo devices
+                setShowWhen(false)
+                setCategory(Notification.CATEGORY_CALL)
+                setColorized(true)
+                setColor(Color.parseColor("#1C1C1E"))
+                setContentTitle("")
+                setContentText("")
+                style = Notification.DecoratedMediaCustomViewStyle()
+                setCustomContentView(customView)
+                setCustomBigContentView(customView)
+                setCustomHeadsUpContentView(customView)
                 if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
                     @Suppress("DEPRECATION")
                     setPriority(Notification.PRIORITY_MAX)
                 }
             }
         }
+        
         return builder.build()
     }
 
     private fun startIncomingCallForegroundService(callInvite: CallInvite) {
+        val shortSid = callInvite.callSid.takeLast(6)
+        Log.d(TAG, "[SVC-$shortSid] ┌─ startIncomingCallForegroundService ─────────────┐")
+        Log.d(TAG, "[SVC-$shortSid] │ Creating notification...")
+        
         val notification = createIncomingCallNotification(callInvite)
-        Log.d(TAG, "[VoiceConnectionService] Starting incoming call foreground service")
+        Log.d(TAG, "[SVC-$shortSid] │ Notification created")
+        Log.d(TAG, "[SVC-$shortSid] │ Starting foreground service...")
+        
         try {
             // For incoming call notification (before answering), use PHONE_CALL type only
             // MICROPHONE type requires RECORD_AUDIO permission to be granted at runtime
@@ -1639,21 +2785,27 @@ class TVConnectionService : ConnectionService() {
                 // Android 14+ - use PHONE_CALL type
                 startForeground(INCOMING_CALL_NOTIFICATION_ID, notification, 
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
+                Log.d(TAG, "[SVC-$shortSid] │ Started foreground with PHONE_CALL type (Android 14+)")
             } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 // Android 10-13 - use SHORT_SERVICE or default
                 startForeground(INCOMING_CALL_NOTIFICATION_ID, notification)
+                Log.d(TAG, "[SVC-$shortSid] │ Started foreground (Android 10-13)")
             } else {
                 startForeground(INCOMING_CALL_NOTIFICATION_ID, notification)
+                Log.d(TAG, "[SVC-$shortSid] │ Started foreground (pre-Android 10)")
             }
             
             // Start ringtone and vibration for incoming call
+            Log.d(TAG, "[SVC-$shortSid] │ Starting ringtone...")
             startRinging()
             
             // Wake up screen and show incoming call activity over lock screen
+            Log.d(TAG, "[SVC-$shortSid] │ Calling showIncomingCallOverLockScreen...")
             showIncomingCallOverLockScreen(callInvite)
+            Log.d(TAG, "[SVC-$shortSid] └────────────────────────────────────────────────────┘")
             
         } catch (e: Exception) {
-            Log.w(TAG, "[VoiceConnectionService] Can't start incoming call foreground service : $e")
+            Log.w(TAG, "[SVC-$shortSid] Can't start incoming call foreground service : $e")
             // Fallback: try without specific service type
             try {
                 startForeground(INCOMING_CALL_NOTIFICATION_ID, notification)
@@ -1662,13 +2814,36 @@ class TVConnectionService : ConnectionService() {
                 // Try to launch activity on fallback too
                 showIncomingCallOverLockScreen(callInvite)
             } catch (e2: Exception) {
-                Log.e(TAG, "[VoiceConnectionService] Fallback foreground service also failed: $e2")
+                Log.e(TAG, "[SVC-$shortSid] Fallback foreground service also failed: $e2")
             }
         }
     }
     
     @SuppressLint("WakelockTimeout")
     private fun showIncomingCallOverLockScreen(callInvite: CallInvite) {
+        val shortSid = callInvite.callSid.takeLast(6)
+        Log.d(TAG, "[SVC-$shortSid] ┌─ showIncomingCallOverLockScreen ───────────────────┐")
+        
+        // ============================================================
+        // FINAL CHECK: Verify this call is still the claimed/pending call
+        // This is a safety net in case any race condition slipped through
+        // ============================================================
+        val pendingCallSid = getPendingIncomingCallSidFromPrefs(applicationContext)
+        val currentCallSid = callInvite.callSid
+        
+        Log.d(TAG, "[SVC-$shortSid] │ FINAL SAFETY CHECK:")
+        Log.d(TAG, "[SVC-$shortSid] │   pendingCallSid = $pendingCallSid")
+        Log.d(TAG, "[SVC-$shortSid] │   currentCallSid = $currentCallSid")
+        
+        if (pendingCallSid != null && pendingCallSid != currentCallSid) {
+            Log.w(TAG, "[SVC-$shortSid] ❌ BLOCKED! This call ($currentCallSid) is NOT the pending call ($pendingCallSid)")
+            Log.w(TAG, "[SVC-$shortSid] ❌ NOT launching IncomingCallActivity")
+            Log.d(TAG, "[SVC-$shortSid] └────────────────────────────────────────────────────┘")
+            return
+        }
+        Log.d(TAG, "[SVC-$shortSid] ✓ Safety check passed, proceeding...")
+        // ============================================================
+        
         try {
             val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
             val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as? android.app.KeyguardManager
@@ -1676,7 +2851,7 @@ class TVConnectionService : ConnectionService() {
             val isScreenOff = powerManager?.isInteractive == false
             val isDeviceLocked = keyguardManager?.isKeyguardLocked == true
             
-            Log.d(TAG, "[VoiceConnectionService] showIncomingCallOverLockScreen: isScreenOff=$isScreenOff, isDeviceLocked=$isDeviceLocked")
+            Log.d(TAG, "[SVC-$shortSid] │ isScreenOff=$isScreenOff, isDeviceLocked=$isDeviceLocked")
             
             // Step 1: Always acquire wake lock to ensure screen turns on
             // Use FULL_WAKE_LOCK for maximum compatibility
@@ -1687,15 +2862,23 @@ class TVConnectionService : ConnectionService() {
             
             incomingCallWakeLock = powerManager?.newWakeLock(wakeLockFlags, "TwilioVoice:IncomingCallWakeLock")
             incomingCallWakeLock?.acquire(60000) // 60 seconds for incoming call
-            Log.d(TAG, "[VoiceConnectionService] Acquired FULL wake lock to turn on screen")
+            Log.d(TAG, "[SVC-$shortSid] │ Acquired FULL wake lock")
             
             // Step 2: Launch the activity after a short delay to let wake lock take effect
+            // BUT skip if the activity is already alive (fullScreenIntent already opened it)
+            Log.d(TAG, "[SVC-$shortSid] │ Scheduling launchIncomingCallActivity in 200ms...")
             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                launchIncomingCallActivity(callInvite)
+                if (IncomingCallActivity.isActivityAlive) {
+                    Log.d(TAG, "[SVC-$shortSid] │ Handler fired - IncomingCallActivity already alive, SKIPPING duplicate launch")
+                } else {
+                    Log.d(TAG, "[SVC-$shortSid] │ Handler fired - calling launchIncomingCallActivity NOW")
+                    launchIncomingCallActivity(callInvite)
+                }
             }, 200)
             
+            Log.d(TAG, "[SVC-$shortSid] └────────────────────────────────────────────────────┘")
         } catch (e: Exception) {
-            Log.w(TAG, "[VoiceConnectionService] Failed to show incoming call over lock screen: $e")
+            Log.w(TAG, "[SVC-$shortSid] Failed to show incoming call over lock screen: $e")
         }
     }
     
@@ -1721,10 +2904,80 @@ class TVConnectionService : ConnectionService() {
         }
     }
     
+    /**
+     * Bring the main activity to the front WITHOUT passing call data extras.
+     * Used when returning to an active call (e.g. after declining a second incoming call).
+     * This avoids resetting Flutter's call state/timer by not sending CALL_ANSWERED/fromIncomingCall.
+     */
+    private fun bringMainActivityToFront() {
+        try {
+            val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+            launchIntent?.let { intent ->
+                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
+                               Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                               Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                startActivity(intent)
+                Log.d(TAG, "bringMainActivityToFront: Brought main activity to front (no call data)")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "bringMainActivityToFront: Failed: ${e.message}")
+        }
+    }
+    
+    private fun launchMainActivityWithCallData(callSid: String, callerNumber: String, myNumber: String) {
+        try {
+            val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+            launchIntent?.let { intent ->
+                // Use SINGLE_TOP + REORDER_TO_FRONT to preserve existing Flutter activity
+                // CLEAR_TOP destroys and recreates MainActivity, killing Flutter engine state
+                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
+                               Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                               Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                intent.putExtra("fromIncomingCall", true)
+                intent.putExtra("callHandle", callSid)
+                intent.putExtra("callAnswered", true)
+                intent.putExtra("SHOW_OVER_LOCK_SCREEN", true)
+                intent.putExtra("CALL_ANSWERED", true)
+                intent.putExtra("CALL_SID", callSid)
+                intent.putExtra("CALLER_NAME", callerNumber)
+                intent.putExtra("CALLER_NUMBER", callerNumber)
+                intent.putExtra("MY_NUMBER", myNumber)
+                intent.putExtra("CALL_DIRECTION", "incoming")
+                startActivity(intent)
+                Log.d(TAG, "launchMainActivityWithCallData: Launched with caller=$callerNumber")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "launchMainActivityWithCallData: Failed: ${e.message}")
+        }
+    }
+    
     private fun launchIncomingCallActivity(callInvite: CallInvite) {
+        val shortSid = callInvite.callSid.takeLast(6)
+        Log.d(TAG, "[SVC-$shortSid] ┌─ launchIncomingCallActivity ────────────────────────┐")
+        
+        // ============================================================
+        // FINAL CHECK BEFORE LAUNCH: Verify this call is still valid
+        // This prevents launching activity for a call that was rejected
+        // ============================================================
+        val pendingCallSid = getPendingIncomingCallSidFromPrefs(applicationContext)
+        val currentCallSid = callInvite.callSid
+        
+        Log.d(TAG, "[SVC-$shortSid] │ FINAL CHECK BEFORE LAUNCH:")
+        Log.d(TAG, "[SVC-$shortSid] │   pendingCallSid = $pendingCallSid")
+        Log.d(TAG, "[SVC-$shortSid] │   currentCallSid = $currentCallSid")
+        
+        if (pendingCallSid != null && pendingCallSid != currentCallSid) {
+            Log.w(TAG, "[SVC-$shortSid] ❌ BLOCKED! This call is NOT the pending call")
+            Log.w(TAG, "[SVC-$shortSid] ❌ NOT launching activity - call may have been rejected")
+            Log.d(TAG, "[SVC-$shortSid] └────────────────────────────────────────────────────┘")
+            return
+        }
+        Log.d(TAG, "[SVC-$shortSid] ✓ Check passed, launching activity...")
+        // ============================================================
+        
         try {
             val isMiui = isMiuiDevice()
-            Log.d(TAG, "[VoiceConnectionService] launchIncomingCallActivity: isMiui=$isMiui")
+            Log.d(TAG, "[SVC-$shortSid] │ isMiui=$isMiui")
             
             // The activity is configured with showWhenLocked, turnScreenOn flags in theme and manifest
             val intent = IncomingCallActivity.createIntent(applicationContext, callInvite).apply {
@@ -1737,9 +2990,19 @@ class TVConnectionService : ConnectionService() {
                     Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
                 )
                 
-                // For MIUI, also add CLEAR_TASK to ensure fresh start
-                if (isMiui) {
-                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                // NOTE: Removed FLAG_ACTIVITY_CLEAR_TASK for MIUI.
+                // That flag combined with singleInstance launchMode was destroying
+                // the existing activity and recreating it, causing a double bottom
+                // sheet flash. The singleInstance mode + REORDER_TO_FRONT is sufficient
+                // to bring the activity to front on all devices including MIUI.
+                
+                // Pass active call info if there's an active call during this incoming call
+                if (hasActiveCallDuringIncoming) {
+                    putExtra(IncomingCallActivity.EXTRA_HAS_ACTIVE_CALL, true)
+                    putExtra(IncomingCallActivity.EXTRA_ACTIVE_CALLER_NAME, activeCallCallerName)
+                    putExtra(IncomingCallActivity.EXTRA_ACTIVE_CALLER_NUMBER, activeCallCallerNumber)
+                    putExtra(IncomingCallActivity.EXTRA_ACTIVE_CALL_HANDLE, activeCallHandleDuringIncoming)
+                    Log.d(TAG, "[SVC-$shortSid] │ Passing active call info: name=$activeCallCallerName, number=$activeCallCallerNumber")
                 }
             }
             
@@ -1764,7 +3027,8 @@ class TVConnectionService : ConnectionService() {
             }
             
             startActivity(intent)
-            Log.d(TAG, "[VoiceConnectionService] Started IncomingCallActivity")
+            Log.d(TAG, "[SVC-$shortSid] ✓ Started IncomingCallActivity via startActivity()")
+            Log.d(TAG, "[SVC-$shortSid] └────────────────────────────────────────────────────┘")
             
             // Note: Removed MIUI retry that was causing duplicate activity instances.
             // The activity uses singleInstance launchMode, so repeated starts should

@@ -236,4 +236,8 @@ abstract class TwilioVoicePlatform extends SharedPlatformInterface {
 
   /// Sends call events
   CallEvent parseCallEvent(String state);
+
+  /// Cached audio route data from the latest native AudioRoute event.
+  /// Returns the route + Bluetooth availability without an extra method channel round-trip.
+  AudioRouteData? get lastAudioRouteData;
 }
