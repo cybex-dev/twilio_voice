@@ -12,6 +12,7 @@ import com.twilio.twilio_voice.R
 /**
  * Manages ringback tone playback for outgoing calls.
  * The ringback tone plays when the callee's phone is ringing (before they answer).
+ * Supports speaker, earpiece, and Bluetooth audio routing.
  */
 class RingbackManager(private val context: Context) {
 
@@ -31,20 +32,23 @@ class RingbackManager(private val context: Context) {
     private var mediaPlayer: MediaPlayer? = null
     private var isPlaying: Boolean = false
     private var desiredSpeakerState: Boolean = false
+    private var desiredBluetoothState: Boolean = false
     private val audioManager: AudioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
     /**
      * Starts playing the ringback tone.
      * @param useSpeaker Whether to play through speaker (true) or earpiece (false)
+     * @param useBluetooth Whether to play through Bluetooth (takes priority over speaker if true)
      */
     @Synchronized
-    fun startRingback(useSpeaker: Boolean = false) {
+    fun startRingback(useSpeaker: Boolean = false, useBluetooth: Boolean = false) {
         if (isPlaying) {
             Log.d(TAG, "Ringback already playing")
             return
         }
 
         desiredSpeakerState = useSpeaker
+        desiredBluetoothState = useBluetooth
 
         try {
             // Try to find the ringback audio file
@@ -78,11 +82,11 @@ class RingbackManager(private val context: Context) {
             }
 
             // Configure audio routing before playing
-            configureAudioRouting(useSpeaker)
+            configureAudioRouting()
 
             mediaPlayer?.start()
             isPlaying = true
-            Log.d(TAG, "Started ringback tone, speaker: $useSpeaker")
+            Log.d(TAG, "Started ringback tone, speaker: $useSpeaker, bluetooth: $useBluetooth")
 
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start ringback: ${e.message}")
@@ -123,14 +127,37 @@ class RingbackManager(private val context: Context) {
     @Synchronized
     fun updateAudioRoute(useSpeaker: Boolean) {
         desiredSpeakerState = useSpeaker
+        if (useSpeaker) {
+            desiredBluetoothState = false
+        }
         
         if (!isPlaying) {
             Log.d(TAG, "Not playing, storing speaker preference: $useSpeaker")
             return
         }
 
-        configureAudioRouting(useSpeaker)
+        configureAudioRouting()
         Log.d(TAG, "Updated ringback audio route, speaker: $useSpeaker")
+    }
+
+    /**
+     * Updates the audio routing when Bluetooth state changes.
+     * @param useBluetooth Whether to route audio to Bluetooth (true) or not
+     */
+    @Synchronized
+    fun updateBluetoothRoute(useBluetooth: Boolean) {
+        desiredBluetoothState = useBluetooth
+        if (useBluetooth) {
+            desiredSpeakerState = false
+        }
+
+        if (!isPlaying) {
+            Log.d(TAG, "Not playing, storing bluetooth preference: $useBluetooth")
+            return
+        }
+
+        configureAudioRouting()
+        Log.d(TAG, "Updated ringback audio route, bluetooth: $useBluetooth")
     }
 
     /**
@@ -144,17 +171,93 @@ class RingbackManager(private val context: Context) {
     fun isSpeakerOn(): Boolean = desiredSpeakerState
 
     /**
-     * Configures audio routing for ringback playback.
+     * Returns the current Bluetooth state preference.
      */
-    private fun configureAudioRouting(useSpeaker: Boolean) {
+    fun isBluetoothOn(): Boolean = desiredBluetoothState
+
+    /**
+     * Configures audio routing for ringback playback based on desired state.
+     * Priority: Bluetooth > Speaker > Earpiece
+     */
+    private fun configureAudioRouting() {
         try {
             // Set mode for voice communication
             audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+
+            when {
+                desiredBluetoothState -> {
+                    // Route to Bluetooth
+                    audioManager.isSpeakerphoneOn = false
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        try {
+                            val availableDevices = audioManager.availableCommunicationDevices
+                            val bluetoothDevice = availableDevices.firstOrNull {
+                                it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                                it.type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
+                                it.type == AudioDeviceInfo.TYPE_HEARING_AID ||
+                                it.type == AudioDeviceInfo.TYPE_BLE_SPEAKER
+                            }
+                            if (bluetoothDevice != null) {
+                                audioManager.setCommunicationDevice(bluetoothDevice)
+                                Log.d(TAG, "Audio routed to Bluetooth via setCommunicationDevice")
+                            } else {
+                                // Fallback to legacy
+                                audioManager.startBluetoothSco()
+                                audioManager.isBluetoothScoOn = true
+                                Log.d(TAG, "Audio routed to Bluetooth via legacy SCO")
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed to route to Bluetooth via communication device: ${e.message}")
+                            audioManager.startBluetoothSco()
+                            audioManager.isBluetoothScoOn = true
+                        }
+                    } else {
+                        audioManager.startBluetoothSco()
+                        audioManager.isBluetoothScoOn = true
+                        Log.d(TAG, "Audio routed to Bluetooth via legacy SCO")
+                    }
+                }
+                desiredSpeakerState -> {
+                    // Route to Speaker
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        try {
+                            audioManager.clearCommunicationDevice()
+                            val availableDevices = audioManager.availableCommunicationDevices
+                            val speakerDevice = availableDevices.firstOrNull {
+                                it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+                            }
+                            if (speakerDevice != null) {
+                                audioManager.setCommunicationDevice(speakerDevice)
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed to route to speaker via communication device: ${e.message}")
+                        }
+                    }
+                    audioManager.isSpeakerphoneOn = true
+                    Log.d(TAG, "Audio routed to speaker")
+                }
+                else -> {
+                    // Route to Earpiece (default)
+                    audioManager.isSpeakerphoneOn = false
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        try {
+                            audioManager.clearCommunicationDevice()
+                            val availableDevices = audioManager.availableCommunicationDevices
+                            val earpieceDevice = availableDevices.firstOrNull {
+                                it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
+                            }
+                            if (earpieceDevice != null) {
+                                audioManager.setCommunicationDevice(earpieceDevice)
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed to route to earpiece via communication device: ${e.message}")
+                        }
+                    }
+                    Log.d(TAG, "Audio routed to earpiece")
+                }
+            }
             
-            // Toggle speaker
-            audioManager.isSpeakerphoneOn = useSpeaker
-            
-            Log.d(TAG, "Audio routing configured: speaker=$useSpeaker, mode=${audioManager.mode}")
+            Log.d(TAG, "Audio routing configured: speaker=$desiredSpeakerState, bluetooth=$desiredBluetoothState, mode=${audioManager.mode}")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to configure audio routing: ${e.message}")
         }
