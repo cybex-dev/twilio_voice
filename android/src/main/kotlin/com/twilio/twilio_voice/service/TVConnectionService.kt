@@ -433,6 +433,13 @@ class TVConnectionService : ConnectionService() {
                 Log.d(TAG, "│   activeConnections.size = ${activeConnections.size}")
                 if (activeConnections.isNotEmpty()) {
                     Log.d(TAG, "│   activeConnections.keys = ${activeConnections.keys}")
+                    // If 2+ calls already exist (e.g. one active + one on hold),
+                    // reject the 3rd call immediately — we don't support 3-way calling
+                    if (activeConnections.size >= 2) {
+                        Log.w(TAG, "│ ❌ REJECTED - Already have ${activeConnections.size} active calls (hold/unhold), cannot accept a 3rd!")
+                        Log.d(TAG, "└─────────────────────────────────────────────────────────────────┘")
+                        return false
+                    }
                     // Check if there's ALSO a pending call - if so, reject (can't have 3 calls)
                     if (pendingIncomingCallSid != null && pendingIncomingCallSid != callSid) {
                         Log.w(TAG, "│ ❌ REJECTED - Active connection AND different pending call both exist!")
