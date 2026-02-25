@@ -666,6 +666,27 @@ class IncomingCallActivity : AppCompatActivity() {
             }
             
             android.util.Log.d(TAG, "handleAnswerFromNotification: Launching main Flutter activity")
+            
+            // Dismiss the keyguard — user answered the call, need to unlock for main app
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+                keyguardManager?.requestDismissKeyguard(this, object : KeyguardManager.KeyguardDismissCallback() {
+                    override fun onDismissSucceeded() {
+                        android.util.Log.d(TAG, "handleAnswerFromNotification: Keyguard dismissed")
+                    }
+                    override fun onDismissCancelled() {
+                        android.util.Log.d(TAG, "handleAnswerFromNotification: Keyguard dismiss cancelled")
+                    }
+                    override fun onDismissError() {
+                        android.util.Log.d(TAG, "handleAnswerFromNotification: Keyguard dismiss error")
+                    }
+                })
+            } else {
+                @Suppress("DEPRECATION")
+                val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+                keyguardManager?.newKeyguardLock("IncomingCallActivity")?.disableKeyguard()
+            }
+            
             // Launch the main Flutter activity
             launchMainActivity()
         } else {
@@ -718,13 +739,18 @@ class IncomingCallActivity : AppCompatActivity() {
         android.util.Log.d(TAG, "showOverLockScreen: isMiuiDevice=$isMiui")
         
         // STEP 1: Add all window flags FIRST before anything else
+        // NOTE: FLAG_DISMISS_KEYGUARD is intentionally NOT included here.
+        // It triggers a system unlock dialog on secure lock screens (PIN/pattern/fingerprint)
+        // that steals focus and blocks ALL touch events on the activity — the user can see
+        // the incoming call UI but cannot interact with answer/decline buttons.
+        // Instead, we use FLAG_SHOW_WHEN_LOCKED to show the activity OVER the lock screen
+        // and only dismiss the keyguard when the user answers (in proceedWithAnswer()).
         @Suppress("DEPRECATION")
         window.addFlags(
             WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
             WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
             WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
             WindowManager.LayoutParams.FLAG_ALLOW_LOCK_WHILE_SCREEN_ON or
-            WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
             WindowManager.LayoutParams.FLAG_FULLSCREEN
         )
         
@@ -741,28 +767,12 @@ class IncomingCallActivity : AppCompatActivity() {
                 WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
         
-        // STEP 4: Disable the keyguard to show over lock screen
-        val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
-        if (keyguardManager != null) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                // Request to dismiss the keyguard (important for MIUI/Xiaomi devices)
-                keyguardManager.requestDismissKeyguard(this, object : KeyguardManager.KeyguardDismissCallback() {
-                    override fun onDismissSucceeded() {
-                        android.util.Log.d(TAG, "showOverLockScreen: Keyguard dismissed successfully")
-                    }
-                    override fun onDismissCancelled() {
-                        android.util.Log.d(TAG, "showOverLockScreen: Keyguard dismiss cancelled")
-                    }
-                    override fun onDismissError() {
-                        android.util.Log.d(TAG, "showOverLockScreen: Keyguard dismiss error")
-                    }
-                })
-            } else {
-                // For older devices, use deprecated method
-                @Suppress("DEPRECATION")
-                keyguardManager.newKeyguardLock("IncomingCallActivity").disableKeyguard()
-            }
-        }
+        // STEP 4: Keyguard dismissal is NOT done here.
+        // requestDismissKeyguard() triggers a system unlock prompt on secure lock screens
+        // (PIN/pattern/fingerprint) that blocks all touch events on the incoming call UI.
+        // The keyguard is only dismissed when the user answers the call (see proceedWithAnswer()).
+        // setShowWhenLocked(true) + FLAG_SHOW_WHEN_LOCKED already make the activity
+        // visible and interactive over the lock screen.
         
         // STEP 5: MIUI-specific handling - use system overlay window type
         // ONLY when device is locked — on unlocked devices, this creates a visible
@@ -845,24 +855,10 @@ class IncomingCallActivity : AppCompatActivity() {
             // Approach 2: Request window focus
             window.decorView.requestFocus()
             
-            // Approach 3: For MIUI - try to dismiss keyguard again
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as android.app.KeyguardManager
-                keyguardManager.requestDismissKeyguard(this, object : android.app.KeyguardManager.KeyguardDismissCallback() {
-                    override fun onDismissSucceeded() {
-                        android.util.Log.d(TAG, "bringActivityToFront: Keyguard dismissed")
-                        runOnUiThread {
-                            moveTaskToFront()
-                        }
-                    }
-                    override fun onDismissCancelled() {
-                        android.util.Log.d(TAG, "bringActivityToFront: Keyguard dismiss cancelled")
-                    }
-                    override fun onDismissError() {
-                        android.util.Log.d(TAG, "bringActivityToFront: Keyguard dismiss error")
-                    }
-                })
-            }
+            // NOTE: requestDismissKeyguard() was intentionally removed here.
+            // It triggers a system unlock dialog on secure lock screens that blocks
+            // all touch events on the incoming call UI. Keyguard is only dismissed
+            // when the user answers the call (see proceedWithAnswer()).
             
             android.util.Log.d(TAG, "bringActivityToFront: Activity brought to front")
         } catch (e: Exception) {
@@ -890,12 +886,12 @@ class IncomingCallActivity : AppCompatActivity() {
         android.util.Log.d(TAG, "onAttachedToWindow: Window attached")
         
         // This is critical for MIUI - set flags again when window is attached
+        // NOTE: FLAG_DISMISS_KEYGUARD intentionally omitted — it blocks touch events
         @Suppress("DEPRECATION")
         window.addFlags(
             WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
             WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
-            WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
-            WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
+            WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
         )
         
         // For MIUI, try to use a higher window priority
@@ -1344,6 +1340,31 @@ class IncomingCallActivity : AppCompatActivity() {
                 startService(answerIntent)
             }
             
+            // Dismiss the keyguard NOW — the user answered the call, so we need to
+            // unlock the device to transition to the main Flutter activity.
+            // This is the only place where keyguard dismissal should happen.
+            // Doing it earlier (in showOverLockScreen/bringActivityToFront) triggers
+            // a system unlock dialog that blocks touch events on the incoming call UI.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+                keyguardManager?.requestDismissKeyguard(this, object : KeyguardManager.KeyguardDismissCallback() {
+                    override fun onDismissSucceeded() {
+                        android.util.Log.d(TAG, "proceedWithAnswer: Keyguard dismissed successfully")
+                    }
+                    override fun onDismissCancelled() {
+                        android.util.Log.d(TAG, "proceedWithAnswer: Keyguard dismiss cancelled")
+                    }
+                    override fun onDismissError() {
+                        android.util.Log.d(TAG, "proceedWithAnswer: Keyguard dismiss error")
+                    }
+                })
+            } else {
+                // For older devices, use deprecated method
+                @Suppress("DEPRECATION")
+                val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+                keyguardManager?.newKeyguardLock("IncomingCallActivity")?.disableKeyguard()
+            }
+            
             android.util.Log.d(TAG, "proceedWithAnswer: Launching main Flutter activity")
             // Launch the main Flutter activity
             launchMainActivity()
@@ -1441,6 +1462,26 @@ class IncomingCallActivity : AppCompatActivity() {
      * MainActivity.onNewIntent() handles receiving this data.
      */
     private fun launchMainActivityForCallWaiting() {
+        // Dismiss the keyguard — user answered the call, need to unlock for main app
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+            keyguardManager?.requestDismissKeyguard(this, object : KeyguardManager.KeyguardDismissCallback() {
+                override fun onDismissSucceeded() {
+                    android.util.Log.d(TAG, "launchMainActivityForCallWaiting: Keyguard dismissed")
+                }
+                override fun onDismissCancelled() {
+                    android.util.Log.d(TAG, "launchMainActivityForCallWaiting: Keyguard dismiss cancelled")
+                }
+                override fun onDismissError() {
+                    android.util.Log.d(TAG, "launchMainActivityForCallWaiting: Keyguard dismiss error")
+                }
+            })
+        } else {
+            @Suppress("DEPRECATION")
+            val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+            keyguardManager?.newKeyguardLock("IncomingCallActivity")?.disableKeyguard()
+        }
+        
         val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
         launchIntent?.let {
             it.flags = Intent.FLAG_ACTIVITY_NEW_TASK or 

@@ -383,3 +383,191 @@ The current implementation correctly handles all scenarios because:
 1. **Android 14+ `canUseFullScreenIntent()` check**: If the user has revoked `USE_FULL_SCREEN_INTENT`, detect this and guide them to re-grant it via `ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT`
 2. **MIUI fallback**: If MIUI blocks the `fullScreenIntent`, detect via timeout and manually launch. (Current dead code removed, but the IncomingCallActivity itself handles lock screen display via its own window flags)
 3. **`IncomingCallActivity.isActivityAlive` flag**: Can be simplified since manual double-launch no longer occurs. However, it may still be useful for other purposes (e.g., preventing duplicate IncomingCallActivity instances from rapid notification taps)
+
+---
+
+## 9. Lock Screen Touch Interaction Fix
+
+### The Problem
+
+When the device had a **secure lock screen** (PIN, pattern, or fingerprint), the incoming call UI was displayed correctly over the lock screen, but **all touch events were blocked** — the user could see the Answer and Decline buttons but could not tap them. The only way to interact was to first unlock the device.
+
+### Root Cause: `FLAG_DISMISS_KEYGUARD` and `requestDismissKeyguard()` Blocking Touch Events
+
+The issue was caused by two APIs being invoked during the **display phase** (when the activity was being shown over the lock screen):
+
+1. **`WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD`** — Previously included in the window flags in `showOverLockScreen()` STEP 1 and `onAttachedToWindow()`.
+
+2. **`KeyguardManager.requestDismissKeyguard()`** — Previously called in `showOverLockScreen()` STEP 4 and `bringActivityToFront()`.
+
+**Why these block touch events:**
+
+From the [Android `requestDismissKeyguard()` documentation](https://developer.android.com/reference/android/app/KeyguardManager#requestDismissKeyguard(android.app.Activity,%20android.app.KeyguardManager.KeyguardDismissCallback)):
+
+> *"If the Keyguard is not secure or the device is currently in a trusted state, calling this method will immediately dismiss the Keyguard without any user interaction. If the Keyguard is secure and the device is not in a trusted state, this will bring up the UI so the user can enter their credentials."*
+
+On a **secure lock screen**, both `FLAG_DISMISS_KEYGUARD` and `requestDismissKeyguard()` trigger the system's unlock dialog (PIN entry, pattern grid, or fingerprint prompt). This system dialog:
+- Appears **on top of** the incoming call activity
+- **Steals focus** from the incoming call UI
+- Blocks all touch events on the Answer/Decline buttons
+- The user sees the call screen behind a translucent system unlock prompt
+
+### The Correct Pattern: Show Over Lock Screen vs. Dismiss Keyguard
+
+These are **two completely different operations** that should happen at **different times**:
+
+| Operation | When | API | Purpose |
+|-----------|------|-----|---------|
+| **Show over lock screen** | On incoming call (display phase) | `setShowWhenLocked(true)` + `FLAG_SHOW_WHEN_LOCKED` | Display activity on TOP of the lock screen — interactive, no unlock needed |
+| **Dismiss keyguard** | When user answers the call (answer phase) | `requestDismissKeyguard()` | Unlock the device so the main app can take over |
+
+From the [Android `setShowWhenLocked()` documentation](https://developer.android.com/reference/android/app/Activity#setShowWhenLocked(boolean)):
+
+> *"Specifies whether an Activity should be shown on top of the lock screen whenever the lockscreen is up and the activity is resumed. Normally an activity will be transitioned to the stopped state if it is started while the lockscreen is up, but with this flag set the activity will remain in the resumed state visible on-top of the lock screen."*
+
+The key insight: `setShowWhenLocked(true)` makes the activity **visible AND interactive** over the lock screen — no unlock is needed. The user can freely tap Answer/Decline. Only when the user **answers** do we need to dismiss the keyguard to transition to the main Flutter activity.
+
+### The Fix
+
+#### What Was Removed (Display Phase)
+
+**`showOverLockScreen()` STEP 1** — Removed `FLAG_DISMISS_KEYGUARD` from window flags:
+```kotlin
+// BEFORE (broken):
+window.addFlags(
+    FLAG_SHOW_WHEN_LOCKED or FLAG_DISMISS_KEYGUARD or
+    FLAG_KEEP_SCREEN_ON or FLAG_TURN_SCREEN_ON or ...
+)
+
+// AFTER (fixed):
+window.addFlags(
+    FLAG_SHOW_WHEN_LOCKED or
+    FLAG_KEEP_SCREEN_ON or FLAG_TURN_SCREEN_ON or ...
+)
+// NOTE: FLAG_DISMISS_KEYGUARD intentionally NOT included
+```
+
+**`showOverLockScreen()` STEP 4** — Removed `requestDismissKeyguard()` call entirely (replaced with explanatory comment).
+
+**`bringActivityToFront()`** — Removed `requestDismissKeyguard()` call (replaced with explanatory comment).
+
+**`onAttachedToWindow()`** — Removed `FLAG_DISMISS_KEYGUARD` from re-applied flags.
+
+#### What Was Added (Answer Phase Only)
+
+Keyguard dismissal is now performed **only** when the user answers the call, in exactly 3 locations:
+
+1. **`proceedWithAnswer()`** — Main answer path after microphone permission check
+2. **`handleAnswerFromNotification()`** — Answer via notification action button
+3. **`launchMainActivityForCallWaiting()`** — Answer during call-waiting (hold+answer / end+answer)
+
+Each location uses the same version-guarded pattern:
+
+```kotlin
+// API 27+ (O_MR1): Use modern API
+if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+    val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+    keyguardManager?.requestDismissKeyguard(this, object : KeyguardManager.KeyguardDismissCallback() {
+        override fun onDismissSucceeded() { /* log */ }
+        override fun onDismissCancelled() { /* log */ }
+        override fun onDismissError() { /* log */ }
+    })
+} else {
+    // Pre-API 27: Use deprecated KeyguardLock (only runs on old devices)
+    @Suppress("DEPRECATION")
+    val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+    keyguardManager?.newKeyguardLock("IncomingCallActivity")?.disableKeyguard()
+}
+```
+
+### Result
+
+- **Locked device**: Incoming call UI displays over lock screen. All buttons (Answer, Decline, etc.) are **fully interactive**. No system unlock dialog appears.
+- **User answers**: `requestDismissKeyguard()` fires → system prompts for PIN/pattern/fingerprint → device unlocks → main Flutter activity takes over.
+- **User declines**: Activity finishes quietly — no unlock needed, device stays locked.
+
+---
+
+## 10. Deprecation Audit — Android Window Flags & Keyguard APIs
+
+A comprehensive audit of all deprecated Android APIs used in `IncomingCallActivity.kt`, verifying that each is handled correctly across all Android versions.
+
+### Sources
+
+- [Activity.setShowWhenLocked(boolean)](https://developer.android.com/reference/android/app/Activity#setShowWhenLocked(boolean)) — Added in API 27 (O_MR1)
+- [Activity.setTurnScreenOn(boolean)](https://developer.android.com/reference/android/app/Activity#setTurnScreenOn(boolean)) — Added in API 27 (O_MR1)
+- [KeyguardManager.requestDismissKeyguard()](https://developer.android.com/reference/android/app/KeyguardManager#requestDismissKeyguard(android.app.Activity,%20android.app.KeyguardManager.KeyguardDismissCallback)) — Added in API 26 (O), **not deprecated**
+- [KeyguardManager.KeyguardLock](https://developer.android.com/reference/android/app/KeyguardManager.KeyguardLock) — **Deprecated in API 15**, replaced by `setShowWhenLocked()` / `requestDismissKeyguard()`
+- [WindowManager.LayoutParams flags](https://developer.android.com/reference/android/view/WindowManager.LayoutParams) — Various deprecation levels
+
+### Audit Table
+
+| API / Flag | Deprecated Since | Used In | Version Guard | Status |
+|------------|-----------------|---------|---------------|--------|
+| `FLAG_SHOW_WHEN_LOCKED` | API 27 (O_MR1) | `showOverLockScreen()` STEP 1, `onAttachedToWindow()` | Paired with `setShowWhenLocked(true)` for API 27+ in STEP 2 | ✅ Correct — deprecated flag for pre-27, modern API for 27+ |
+| `FLAG_TURN_SCREEN_ON` | API 27 (O_MR1) | `showOverLockScreen()` STEP 1, `onAttachedToWindow()` | Paired with `setTurnScreenOn(true)` for API 27+ in STEP 2 | ✅ Correct — deprecated flag for pre-27, modern API for 27+ |
+| `FLAG_DISMISS_KEYGUARD` | API 26 (O) | **Removed from code** (only in explanatory comments) | N/A | ✅ Fully removed |
+| `FLAG_KEEP_SCREEN_ON` | **Not deprecated** | `showOverLockScreen()` STEP 1, `onAttachedToWindow()` | N/A | ✅ Safe to use |
+| `FLAG_ALLOW_LOCK_WHILE_SCREEN_ON` | **Not deprecated** | `showOverLockScreen()` STEP 1 | N/A | ✅ Safe to use |
+| `FLAG_FULLSCREEN` | API 30 (R) | `showOverLockScreen()` STEP 1 | Not version-guarded | ⚠️ Low risk — still functional on all versions for lock screen overlay. Replacement (immersive mode via `WindowInsetsController`) targets status/navigation bar visibility, which is not critical for incoming call UI |
+| `setShowWhenLocked(true)` | **Not deprecated** | `showOverLockScreen()` STEP 2 | `if (API >= O_MR1)` | ✅ Modern API, correct guard |
+| `setTurnScreenOn(true)` | **Not deprecated** | `showOverLockScreen()` STEP 2 | `if (API >= O_MR1)` | ✅ Modern API, correct guard |
+| `requestDismissKeyguard()` | **Not deprecated** (API 26+) | `proceedWithAnswer()`, `handleAnswerFromNotification()`, `launchMainActivityForCallWaiting()` | `if (API >= O_MR1)` | ✅ Answer-only, correct guard |
+| `KeyguardLock.disableKeyguard()` | API 15 | `proceedWithAnswer()`, `handleAnswerFromNotification()`, `launchMainActivityForCallWaiting()` | `else` branch of `API >= O_MR1` (pre-27 only) | ✅ Correct — only runs on very old devices that don't have `requestDismissKeyguard()`. Suppressed with `@Suppress("DEPRECATION")` |
+
+### Multi-Version Strategy
+
+The codebase uses a **dual-approach pattern** to support all Android versions:
+
+```
+┌─ API 27+ (O_MR1) ──────────────────────────────────────┐
+│                                                          │
+│  Display over lock screen:                               │
+│    setShowWhenLocked(true)     ← modern, not deprecated  │
+│    setTurnScreenOn(true)       ← modern, not deprecated  │
+│                                                          │
+│  Dismiss keyguard (answer only):                         │
+│    requestDismissKeyguard()    ← modern, not deprecated  │
+│                                                          │
+├─ Pre-API 27 (< O_MR1) ─────────────────────────────────┤
+│                                                          │
+│  Display over lock screen:                               │
+│    FLAG_SHOW_WHEN_LOCKED       ← deprecated but required │
+│    FLAG_TURN_SCREEN_ON         ← deprecated but required │
+│                                                          │
+│  Dismiss keyguard (answer only):                         │
+│    KeyguardLock.disableKeyguard() ← deprecated but only  │
+│                                     option for old API   │
+│                                                          │
+├─ Both paths ────────────────────────────────────────────┤
+│                                                          │
+│  Window flags applied ALWAYS (not deprecated):           │
+│    FLAG_KEEP_SCREEN_ON                                   │
+│    FLAG_ALLOW_LOCK_WHILE_SCREEN_ON                       │
+│                                                          │
+│  The deprecated flags are ALSO applied on API 27+        │
+│  alongside the modern API calls — this is intentional:   │
+│  some OEM ROMs (MIUI, EMUI, ColorOS) may not respect     │
+│  setShowWhenLocked() but DO respect the old flags.       │
+│  Applying both ensures maximum device compatibility.     │
+│                                                          │
+└──────────────────────────────────────────────────────────┘
+```
+
+### Note on `FLAG_FULLSCREEN` (API 30 Deprecation)
+
+`FLAG_FULLSCREEN` was deprecated in API 30 (Android 11) in favor of `WindowInsetsController.hide(WindowInsets.Type.statusBars())`. However:
+
+- **It still works** — the flag is not removed, just deprecated. Android continues to honor it.
+- **Its purpose here is cosmetic** — hides the status bar to give the incoming call UI a true full-screen look on the lock screen.
+- **The replacement API** (`WindowInsetsController`) is designed for runtime insets control and adds complexity without meaningful benefit for a lock-screen overlay that dismisses after seconds.
+- **Risk level: Very low** — no functional impact. Can be migrated to `WindowInsetsController` in a future cleanup pass if desired.
+
+### Conclusion
+
+All deprecated APIs are either:
+1. **Properly version-guarded** with modern replacements for newer API levels (e.g., `FLAG_SHOW_WHEN_LOCKED` → `setShowWhenLocked()`)
+2. **Intentionally used for backward compatibility** on older devices that don't have modern alternatives (e.g., `KeyguardLock.disableKeyguard()` for pre-27)
+3. **Low-risk cosmetic flags** that continue to function (`FLAG_FULLSCREEN`)
+
+No accidental or unguarded deprecation usage exists in the codebase.
