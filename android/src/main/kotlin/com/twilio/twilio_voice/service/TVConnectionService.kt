@@ -978,11 +978,12 @@ class TVConnectionService : ConnectionService() {
                     }
                     // ============================================================
 
-                    // Wake the screen first - this is critical for terminated state
-                    Log.d(TAG, "[SVC-$shortSid] Waking screen...")
-                    wakeScreen()
-
-                    // Start foreground service first for Android O+
+                    // Start foreground service (includes screen wake + notification).
+                    // The notification's fullScreenIntent handles display automatically:
+                    //   - Device locked/screen off → launches IncomingCallActivity full-screen
+                    //   - Device unlocked/in use → shows heads-up notification (persistent with USE_FULL_SCREEN_INTENT)
+                    // Note: wakeScreen() is NOT called separately — the FULL_WAKE_LOCK inside
+                    // startIncomingCallForegroundService() handles turning on the screen.
                     Log.d(TAG, "[SVC-$shortSid] Starting foreground service (will launch IncomingCallActivity)...")
                     startIncomingCallForegroundService(callInvite)
                     Log.d(TAG, "[SVC-$shortSid] Foreground service started")
@@ -1050,8 +1051,8 @@ class TVConnectionService : ConnectionService() {
                     sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_INCOMING_CALL, callSid, connection.extras)
                     sendBroadcastCallHandle(applicationContext, callSid)
                     
-                    // Note: IncomingCallActivity is launched from startIncomingCallForegroundService
-                    // via showIncomingCallOverLockScreen() - no need to launch it again here
+                    // Note: IncomingCallActivity is launched automatically by Android via the
+                    // notification's fullScreenIntent (locked → full-screen, unlocked → heads-up)
                     
                     Log.d(TAG, "========== ACTION_INCOMING_CALL END - callSid: $callSid ==========")
                 }
@@ -2597,9 +2598,7 @@ class TVConnectionService : ConnectionService() {
         // IMPORTANT: Include active call extras in fullScreenIntent so that if the system
         // fires the fullScreenIntent (e.g. lock screen), the IncomingCallActivity knows
         // about the active call and shows the call-waiting bottom sheet instead of
-        // answering directly. Without this, the fullScreenIntent fires first WITHOUT
-        // active call info, then launchIncomingCallActivity fires 200ms later WITH it,
-        // causing a "double bottom sheet" flash.
+        // answering directly.
         if (hasActiveCallDuringIncoming) {
             fullScreenIntent.putExtra(IncomingCallActivity.EXTRA_HAS_ACTIVE_CALL, true)
             fullScreenIntent.putExtra(IncomingCallActivity.EXTRA_ACTIVE_CALLER_NAME, activeCallCallerName)
@@ -2799,6 +2798,30 @@ class TVConnectionService : ConnectionService() {
         
         val notification = createIncomingCallNotification(callInvite)
         Log.d(TAG, "[SVC-$shortSid] │ Notification created")
+        
+        // Step 1: Acquire wake lock to ensure the screen turns on.
+        // This is critical so that Android's fullScreenIntent fires when the device
+        // is locked/screen-off. Without waking the screen, the system may not launch
+        // the full-screen Activity on some devices.
+        try {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
+            @Suppress("DEPRECATION")
+            val wakeLockFlags = PowerManager.FULL_WAKE_LOCK or
+                PowerManager.ACQUIRE_CAUSES_WAKEUP or
+                PowerManager.ON_AFTER_RELEASE
+            incomingCallWakeLock = powerManager?.newWakeLock(wakeLockFlags, "TwilioVoice:IncomingCallWakeLock")
+            incomingCallWakeLock?.acquire(60000) // 60 seconds for incoming call
+            Log.d(TAG, "[SVC-$shortSid] │ Acquired wake lock to turn screen on")
+        } catch (e: Exception) {
+            Log.w(TAG, "[SVC-$shortSid] │ Failed to acquire wake lock: $e")
+        }
+        
+        // Step 2: Start foreground service with the notification.
+        // The notification has setFullScreenIntent which Android handles automatically:
+        //   - Device locked/screen off → Android launches the full-screen IncomingCallActivity
+        //   - Device unlocked/in use → Android shows a heads-up notification
+        // We do NOT manually launch IncomingCallActivity — that caused both the
+        // full-screen UI and heads-up notification to appear simultaneously.
         Log.d(TAG, "[SVC-$shortSid] │ Starting foreground service...")
         
         try {
@@ -2819,13 +2842,13 @@ class TVConnectionService : ConnectionService() {
                 Log.d(TAG, "[SVC-$shortSid] │ Started foreground (pre-Android 10)")
             }
             
-            // Start ringtone and vibration for incoming call
+            // Step 3: Start ringtone and vibration for incoming call
             Log.d(TAG, "[SVC-$shortSid] │ Starting ringtone...")
             startRinging()
             
-            // Wake up screen and show incoming call activity over lock screen
-            Log.d(TAG, "[SVC-$shortSid] │ Calling showIncomingCallOverLockScreen...")
-            showIncomingCallOverLockScreen(callInvite)
+            Log.d(TAG, "[SVC-$shortSid] │ Relying on fullScreenIntent for display:")
+            Log.d(TAG, "[SVC-$shortSid] │   Locked → full-screen IncomingCallActivity")
+            Log.d(TAG, "[SVC-$shortSid] │   Unlocked → heads-up notification")
             Log.d(TAG, "[SVC-$shortSid] └────────────────────────────────────────────────────┘")
             
         } catch (e: Exception) {
@@ -2835,76 +2858,18 @@ class TVConnectionService : ConnectionService() {
                 startForeground(INCOMING_CALL_NOTIFICATION_ID, notification)
                 // Start ringtone even if fallback
                 startRinging()
-                // Try to launch activity on fallback too
-                showIncomingCallOverLockScreen(callInvite)
             } catch (e2: Exception) {
                 Log.e(TAG, "[SVC-$shortSid] Fallback foreground service also failed: $e2")
             }
         }
     }
     
-    @SuppressLint("WakelockTimeout")
-    private fun showIncomingCallOverLockScreen(callInvite: CallInvite) {
-        val shortSid = callInvite.callSid.takeLast(6)
-        Log.d(TAG, "[SVC-$shortSid] ┌─ showIncomingCallOverLockScreen ───────────────────┐")
-        
-        // ============================================================
-        // FINAL CHECK: Verify this call is still the claimed/pending call
-        // This is a safety net in case any race condition slipped through
-        // ============================================================
-        val pendingCallSid = getPendingIncomingCallSidFromPrefs(applicationContext)
-        val currentCallSid = callInvite.callSid
-        
-        Log.d(TAG, "[SVC-$shortSid] │ FINAL SAFETY CHECK:")
-        Log.d(TAG, "[SVC-$shortSid] │   pendingCallSid = $pendingCallSid")
-        Log.d(TAG, "[SVC-$shortSid] │   currentCallSid = $currentCallSid")
-        
-        if (pendingCallSid != null && pendingCallSid != currentCallSid) {
-            Log.w(TAG, "[SVC-$shortSid] ❌ BLOCKED! This call ($currentCallSid) is NOT the pending call ($pendingCallSid)")
-            Log.w(TAG, "[SVC-$shortSid] ❌ NOT launching IncomingCallActivity")
-            Log.d(TAG, "[SVC-$shortSid] └────────────────────────────────────────────────────┘")
-            return
-        }
-        Log.d(TAG, "[SVC-$shortSid] ✓ Safety check passed, proceeding...")
-        // ============================================================
-        
-        try {
-            val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
-            val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as? android.app.KeyguardManager
-            
-            val isScreenOff = powerManager?.isInteractive == false
-            val isDeviceLocked = keyguardManager?.isKeyguardLocked == true
-            
-            Log.d(TAG, "[SVC-$shortSid] │ isScreenOff=$isScreenOff, isDeviceLocked=$isDeviceLocked")
-            
-            // Step 1: Always acquire wake lock to ensure screen turns on
-            // Use FULL_WAKE_LOCK for maximum compatibility
-            @Suppress("DEPRECATION")
-            val wakeLockFlags = PowerManager.FULL_WAKE_LOCK or
-                PowerManager.ACQUIRE_CAUSES_WAKEUP or
-                PowerManager.ON_AFTER_RELEASE
-            
-            incomingCallWakeLock = powerManager?.newWakeLock(wakeLockFlags, "TwilioVoice:IncomingCallWakeLock")
-            incomingCallWakeLock?.acquire(60000) // 60 seconds for incoming call
-            Log.d(TAG, "[SVC-$shortSid] │ Acquired FULL wake lock")
-            
-            // Step 2: Launch the activity after a short delay to let wake lock take effect
-            // BUT skip if the activity is already alive (fullScreenIntent already opened it)
-            Log.d(TAG, "[SVC-$shortSid] │ Scheduling launchIncomingCallActivity in 200ms...")
-            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                if (IncomingCallActivity.isActivityAlive) {
-                    Log.d(TAG, "[SVC-$shortSid] │ Handler fired - IncomingCallActivity already alive, SKIPPING duplicate launch")
-                } else {
-                    Log.d(TAG, "[SVC-$shortSid] │ Handler fired - calling launchIncomingCallActivity NOW")
-                    launchIncomingCallActivity(callInvite)
-                }
-            }, 200)
-            
-            Log.d(TAG, "[SVC-$shortSid] └────────────────────────────────────────────────────┘")
-        } catch (e: Exception) {
-            Log.w(TAG, "[SVC-$shortSid] Failed to show incoming call over lock screen: $e")
-        }
-    }
+    // NOTE: showIncomingCallOverLockScreen() and launchIncomingCallActivity() were REMOVED.
+    // They were the root cause of the dual full-screen + heads-up notification bug.
+    // Android's setFullScreenIntent now handles display mode automatically:
+    //   - Device locked/screen off → launches IncomingCallActivity full-screen
+    //   - Device unlocked/in use → shows persistent heads-up notification
+    // See INCOMING_CALL_NOTIFICATION_RESEARCH.md for full analysis.
     
     private fun isMiuiDevice(): Boolean {
         return try {
@@ -2972,105 +2937,6 @@ class TVConnectionService : ConnectionService() {
             }
         } catch (e: Exception) {
             Log.w(TAG, "launchMainActivityWithCallData: Failed: ${e.message}")
-        }
-    }
-    
-    private fun launchIncomingCallActivity(callInvite: CallInvite) {
-        val shortSid = callInvite.callSid.takeLast(6)
-        Log.d(TAG, "[SVC-$shortSid] ┌─ launchIncomingCallActivity ────────────────────────┐")
-        
-        // ============================================================
-        // FINAL CHECK BEFORE LAUNCH: Verify this call is still valid
-        // This prevents launching activity for a call that was rejected
-        // ============================================================
-        val pendingCallSid = getPendingIncomingCallSidFromPrefs(applicationContext)
-        val currentCallSid = callInvite.callSid
-        
-        Log.d(TAG, "[SVC-$shortSid] │ FINAL CHECK BEFORE LAUNCH:")
-        Log.d(TAG, "[SVC-$shortSid] │   pendingCallSid = $pendingCallSid")
-        Log.d(TAG, "[SVC-$shortSid] │   currentCallSid = $currentCallSid")
-        
-        if (pendingCallSid != null && pendingCallSid != currentCallSid) {
-            Log.w(TAG, "[SVC-$shortSid] ❌ BLOCKED! This call is NOT the pending call")
-            Log.w(TAG, "[SVC-$shortSid] ❌ NOT launching activity - call may have been rejected")
-            Log.d(TAG, "[SVC-$shortSid] └────────────────────────────────────────────────────┘")
-            return
-        }
-        Log.d(TAG, "[SVC-$shortSid] ✓ Check passed, launching activity...")
-        // ============================================================
-        
-        try {
-            val isMiui = isMiuiDevice()
-            Log.d(TAG, "[SVC-$shortSid] │ isMiui=$isMiui")
-            
-            // The activity is configured with showWhenLocked, turnScreenOn flags in theme and manifest
-            val intent = IncomingCallActivity.createIntent(applicationContext, callInvite).apply {
-                addFlags(
-                    Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_NO_USER_ACTION or
-                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
-                    Intent.FLAG_ACTIVITY_BROUGHT_TO_FRONT or
-                    Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED or
-                    Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
-                )
-                
-                // NOTE: Removed FLAG_ACTIVITY_CLEAR_TASK for MIUI.
-                // That flag combined with singleInstance launchMode was destroying
-                // the existing activity and recreating it, causing a double bottom
-                // sheet flash. The singleInstance mode + REORDER_TO_FRONT is sufficient
-                // to bring the activity to front on all devices including MIUI.
-                
-                // Pass active call info if there's an active call during this incoming call
-                if (hasActiveCallDuringIncoming) {
-                    putExtra(IncomingCallActivity.EXTRA_HAS_ACTIVE_CALL, true)
-                    putExtra(IncomingCallActivity.EXTRA_ACTIVE_CALLER_NAME, activeCallCallerName)
-                    putExtra(IncomingCallActivity.EXTRA_ACTIVE_CALLER_NUMBER, activeCallCallerNumber)
-                    putExtra(IncomingCallActivity.EXTRA_ACTIVE_CALL_HANDLE, activeCallHandleDuringIncoming)
-                    Log.d(TAG, "[SVC-$shortSid] │ Passing active call info: name=$activeCallCallerName, number=$activeCallCallerNumber")
-                }
-            }
-            
-            // Try to wake up the screen first
-            val powerManager = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
-            @Suppress("DEPRECATION")
-            val wakeLock = powerManager.newWakeLock(
-                android.os.PowerManager.FULL_WAKE_LOCK or
-                android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP or
-                android.os.PowerManager.ON_AFTER_RELEASE,
-                "twilio_voice:incoming_call_launch"
-            )
-            wakeLock.acquire(5000)  // Hold for 5 seconds (longer for MIUI)
-            
-            // For MIUI, try to dismiss keyguard first before starting activity
-            if (isMiui && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as? android.app.KeyguardManager
-                if (keyguardManager?.isKeyguardLocked == true) {
-                    Log.d(TAG, "[VoiceConnectionService] MIUI: Keyguard is locked, attempting to dismiss")
-                    // On MIUI, we need to start activity first, then it can request keyguard dismiss
-                }
-            }
-            
-            startActivity(intent)
-            Log.d(TAG, "[SVC-$shortSid] ✓ Started IncomingCallActivity via startActivity()")
-            Log.d(TAG, "[SVC-$shortSid] └────────────────────────────────────────────────────┘")
-            
-            // Note: Removed MIUI retry that was causing duplicate activity instances.
-            // The activity uses singleInstance launchMode, so repeated starts should
-            // bring it to front rather than create new instances.
-            
-            // Release wake lock after a delay
-            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                try {
-                    if (wakeLock.isHeld) {
-                        wakeLock.release()
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "[VoiceConnectionService] Failed to release wake lock: $e")
-                }
-            }, 5000)
-            
-        } catch (e: Exception) {
-            Log.w(TAG, "[VoiceConnectionService] Failed to start IncomingCallActivity: $e")
         }
     }
     

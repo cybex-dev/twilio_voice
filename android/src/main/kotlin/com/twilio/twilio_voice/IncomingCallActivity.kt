@@ -78,9 +78,7 @@ class IncomingCallActivity : AppCompatActivity() {
                 // FLAG_ACTIVITY_NO_USER_ACTION is critical for fullScreenIntent on lock screen
                 // NOTE: FLAG_ACTIVITY_CLEAR_TOP is intentionally NOT used here because
                 // combined with singleInstance launchMode it destroys the existing activity
-                // and recreates it, causing a "double bottom sheet" flash when the
-                // notification's fullScreenIntent and the explicit launchIncomingCallActivity
-                // both fire. With singleInstance, the system will deliver onNewIntent instead.
+                // and recreates it. With singleInstance, the system will deliver onNewIntent instead.
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or
                         Intent.FLAG_ACTIVITY_SINGLE_TOP or
                         Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS or
@@ -152,11 +150,14 @@ class IncomingCallActivity : AppCompatActivity() {
                 callHandled = true
                 releaseWakeLock()
                 
-                // Bring main activity back if device is unlocked (user was using the app)
-                val km = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
-                if (km?.isKeyguardLocked != true) {
-                    android.util.Log.d(TAG, "callEndedReceiver: Device unlocked, bringing main activity to foreground")
+                // Don't launch the main app when call ends — the user didn't answer,
+                // so just dismiss the incoming call UI and return to wherever they were.
+                // The only exception is if there's an active call that needs its UI restored.
+                if (hasActiveCall) {
+                    android.util.Log.d(TAG, "callEndedReceiver: Has active call, restoring active call UI")
                     launchMainActivityForActiveCall()
+                } else {
+                    android.util.Log.d(TAG, "callEndedReceiver: No active call, dismissing quietly without launching app")
                 }
                 
                 finishAndRemoveTask()
@@ -226,7 +227,7 @@ class IncomingCallActivity : AppCompatActivity() {
         //
         // NOTE: We also check activeConnections because the pending call SID may have been
         // cleared after the connection was added to activeConnections but before this
-        // activity launched (200ms delay in showIncomingCallOverLockScreen).
+        // activity launched via the notification's fullScreenIntent.
         // ============================================================
         if (pendingCallSid == null && pendingCallSidMem == null && serviceActiveCallHandle == null && !isCallInActiveConnections) {
             android.util.Log.w(TAG, "[ACT-$shortSid] ❌ REJECTED - No pending call exists!")
@@ -274,15 +275,21 @@ class IncomingCallActivity : AppCompatActivity() {
         // ============================================================
         
         // For MIUI devices, try to set overlay window type BEFORE super.onCreate()
-        if (isMiuiDevice() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        // ONLY when device is locked — using TYPE_APPLICATION_OVERLAY while unlocked causes
+        // a visible overlay layer/artifact between the heads-up notification and the app content below
+        val keyguardMgr = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+        val isDeviceLockedOnCreate = keyguardMgr?.isKeyguardLocked == true
+        if (isMiuiDevice() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && isDeviceLockedOnCreate) {
             try {
                 if (android.provider.Settings.canDrawOverlays(this)) {
-                    android.util.Log.d(TAG, "onCreate: MIUI - Setting TYPE_APPLICATION_OVERLAY before super.onCreate()")
+                    android.util.Log.d(TAG, "onCreate: MIUI - Device locked, setting TYPE_APPLICATION_OVERLAY before super.onCreate()")
                     window.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
                 }
             } catch (e: Exception) {
                 android.util.Log.w(TAG, "onCreate: Failed to set overlay type: ${e.message}")
             }
+        } else if (isMiuiDevice()) {
+            android.util.Log.d(TAG, "onCreate: MIUI - Device unlocked, skipping TYPE_APPLICATION_OVERLAY to avoid visual artifact")
         }
         
         // CRITICAL: Set window flags for lock screen display
@@ -758,17 +765,25 @@ class IncomingCallActivity : AppCompatActivity() {
         }
         
         // STEP 5: MIUI-specific handling - use system overlay window type
+        // ONLY when device is locked — on unlocked devices, this creates a visible
+        // overlay layer/artifact between the heads-up notification and app content
         if (isMiuiDevice() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            try {
-                // Check if we have overlay permission
-                if (android.provider.Settings.canDrawOverlays(this)) {
-                    android.util.Log.d(TAG, "showOverLockScreen: MIUI device - has overlay permission, setting window type")
-                    window.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
-                } else {
-                    android.util.Log.w(TAG, "showOverLockScreen: MIUI device - NO overlay permission! User needs to grant this permission")
+            val km = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+            val isDeviceCurrentlyLocked = km?.isKeyguardLocked == true
+            if (isDeviceCurrentlyLocked) {
+                try {
+                    // Check if we have overlay permission
+                    if (android.provider.Settings.canDrawOverlays(this)) {
+                        android.util.Log.d(TAG, "showOverLockScreen: MIUI device locked - has overlay permission, setting window type")
+                        window.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+                    } else {
+                        android.util.Log.w(TAG, "showOverLockScreen: MIUI device locked - NO overlay permission! User needs to grant this permission")
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.w(TAG, "showOverLockScreen: Failed to set overlay window type: ${e.message}")
                 }
-            } catch (e: Exception) {
-                android.util.Log.w(TAG, "showOverLockScreen: Failed to set overlay window type: ${e.message}")
+            } else {
+                android.util.Log.d(TAG, "showOverLockScreen: MIUI device unlocked - skipping TYPE_APPLICATION_OVERLAY to avoid visual artifact")
             }
         }
         
@@ -1387,21 +1402,17 @@ class IncomingCallActivity : AppCompatActivity() {
             android.util.Log.w(TAG, "declineCall: No callSid available")
         }
         
-        // Bring the main activity back to the foreground so the app doesn't stay
-        // in the background after the IncomingCallActivity (which runs in its own task) is dismissed.
-        // Only do this when the device is unlocked (i.e. the user was actively using the app).
-        // If the device is locked, the user was not in the app, so just finish quietly.
-        val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
-        val isDeviceLocked = keyguardManager?.isKeyguardLocked == true
-        
+        // Only bring the main activity back if there's an active call that needs its UI restored.
+        // Otherwise, dismiss quietly — the user declined, so don't open the app.
         if (hasActiveCall) {
+            // Only launch main activity if there's an active call that needs its UI restored
             android.util.Log.d(TAG, "declineCall: Has active call, launching main activity to restore call UI")
             launchMainActivityForActiveCall()
-        } else if (!isDeviceLocked) {
-            android.util.Log.d(TAG, "declineCall: Device is unlocked, bringing main activity back to foreground")
-            launchMainActivityForActiveCall()
         } else {
-            android.util.Log.d(TAG, "declineCall: Device is locked, not bringing main activity to foreground")
+            // No active call — just dismiss quietly. Don't open the app.
+            // The user declined the call, so they should return to wherever they were
+            // (lock screen, home screen, or another app).
+            android.util.Log.d(TAG, "declineCall: No active call, dismissing quietly without launching app")
         }
         finishAndRemoveTask()
     }
