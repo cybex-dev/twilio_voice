@@ -59,6 +59,7 @@ enum class TVMethodChannels(val method: String) {
     OPEN_MIUI_PERMISSION_SETTINGS("openMiuiPermissionSettings"),
     REQUEST_SHOW_ON_LOCK_SCREEN_PERMISSION("requestShowOnLockScreenPermission"),
     HAS_SHOW_ON_LOCK_SCREEN_PERMISSION("hasShowOnLockScreenPermission"),
+    SWAP_CALLS("swapCalls"),
     CONNECT("connect");
 
     companion object {

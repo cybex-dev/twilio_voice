@@ -139,6 +139,11 @@ class TVConnectionService : ConnectionService() {
         const val ACTION_TOGGLE_HOLD: String = "ACTION_TOGGLE_HOLD"
 
         /**
+         * Action used to swap active and held calls atomically.
+         */
+        const val ACTION_SWAP_CALLS: String = "ACTION_SWAP_CALLS"
+
+        /**
          * Action used to toggle mute state of an active call connection.
          */
         const val ACTION_TOGGLE_MUTE: String = "ACTION_TOGGLE_MUTE"
@@ -1708,6 +1713,25 @@ class TVConnectionService : ConnectionService() {
                     getConnection(callHandle)?.toggleHold(holdState) ?: run {
                         Log.e(TAG, "onStartCommand: [ACTION_TOGGLE_HOLD] could not find connection for callHandle: $callHandle")
                     }
+                }
+
+                ACTION_SWAP_CALLS -> {
+                    // Swap active and held calls atomically.
+                    // Find the active connection (STATE_ACTIVE) and the held connection (STATE_HOLDING).
+                    val activeEntry = activeConnections.entries.firstOrNull { it.value.state == Connection.STATE_ACTIVE }
+                    val heldEntry = activeConnections.entries.firstOrNull { it.value.state == Connection.STATE_HOLDING }
+
+                    if (activeEntry == null || heldEntry == null) {
+                        Log.e(TAG, "onStartCommand: [ACTION_SWAP_CALLS] need both active and held connections. active=${activeEntry?.key}, held=${heldEntry?.key}")
+                        return@let
+                    }
+
+                    Log.d(TAG, "onStartCommand: [ACTION_SWAP_CALLS] swapping active=${activeEntry.key} with held=${heldEntry.key}")
+
+                    // Hold the currently active connection
+                    activeEntry.value.toggleHold(true)
+                    // Unhold the currently held connection
+                    heldEntry.value.toggleHold(false)
                 }
 
                 ACTION_TOGGLE_MUTE -> {

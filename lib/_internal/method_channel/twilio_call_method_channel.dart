@@ -84,6 +84,12 @@ class MethodChannelTwilioCall extends TwilioCallPlatform {
         .invokeMethod('holdCall', <String, dynamic>{"shouldHold": holdCall});
   }
 
+  /// Swaps the active and held calls via native CallKit/Telecom APIs.
+  @override
+  Future<bool?> swapCalls() {
+    return _channel.invokeMethod('swapCalls', <String, dynamic>{});
+  }
+
   /// Query's active call holding state
   @override
   Future<bool?> isHolding() {

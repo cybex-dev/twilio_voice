@@ -61,6 +61,11 @@ abstract class TwilioCallPlatform extends SharedPlatformInterface {
   /// Puts active call on hold
   Future<bool?> holdCall({bool holdCall = true});
 
+  /// Swaps the active and held calls via native CallKit/Telecom APIs.
+  /// On iOS, this uses CXSetHeldCallAction to update the native call UI.
+  /// On Android, this atomically holds the active call and unholds the held call.
+  Future<bool?> swapCalls();
+
   /// Query's mute status of call, true if call is muted
   Future<bool?> isHolding();
 

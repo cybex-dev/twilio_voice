@@ -785,6 +785,49 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                 }
             }
         }
+        else if flutterCall.method == "swapCalls" {
+            // Swap active and held calls via CallKit so native UI reflects the change.
+            // Find the currently active call UUID and the held call UUID.
+            guard self.calls.count >= 2 else {
+                self.sendPhoneCallEvents(description: "LOG|swapCalls: need 2+ calls to swap, have \(self.calls.count)", isError: false)
+                _result?(false)
+                return
+            }
+            guard let currentActiveUUID = self.activeCallUUID,
+                  let _ = self.calls[currentActiveUUID] else {
+                self.sendPhoneCallEvents(description: "LOG|swapCalls: no active call UUID", isError: false)
+                _result?(false)
+                return
+            }
+            // Find the other (held) call UUID
+            guard let heldUUID = self.calls.keys.first(where: { $0 != currentActiveUUID }) else {
+                self.sendPhoneCallEvents(description: "LOG|swapCalls: no held call found", isError: false)
+                _result?(false)
+                return
+            }
+
+            self.sendPhoneCallEvents(description: "LOG|swapCalls: swapping active=\(currentActiveUUID) with held=\(heldUUID)", isError: false)
+
+            // Create a CXTransaction with two actions:
+            // 1. Hold the currently active call
+            // 2. Unhold the currently held call
+            // This will trigger provider:performSetHeldCallAction: for each,
+            // which already has swap detection via pendingSwapHoldUUID.
+            let holdAction = CXSetHeldCallAction(call: currentActiveUUID, onHold: true)
+            let unholdAction = CXSetHeldCallAction(call: heldUUID, onHold: false)
+            let transaction = CXTransaction(actions: [holdAction, unholdAction])
+
+            self.callKitCallController.request(transaction) { [weak self] error in
+                guard let self = self else { return }
+                if let error = error {
+                    self.sendPhoneCallEvents(description: "LOG|swapCalls: CXTransaction failed - \(error.localizedDescription)", isError: true)
+                    self._result?(false)
+                } else {
+                    self.sendPhoneCallEvents(description: "LOG|swapCalls: CXTransaction succeeded", isError: false)
+                    self._result?(true)
+                }
+            }
+        }
         else if flutterCall.method == "isHolding" {
             // guard call not nil
             guard let activeCall = self.call else {

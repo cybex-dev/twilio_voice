@@ -931,6 +931,25 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 }
             }
 
+            TVMethodChannels.SWAP_CALLS -> {
+                Log.d(TAG, "Swap calls invoked")
+                if (isOnCall()) {
+                    context?.let { ctx ->
+                        Intent(ctx, TVConnectionService::class.java).apply {
+                            action = TVConnectionService.ACTION_SWAP_CALLS
+                            ctx.startService(this)
+                        }
+                        result.success(true)
+                    } ?: run {
+                        Log.e(TAG, "Context is null, cannot swap calls")
+                        result.success(false)
+                    }
+                } else {
+                    Log.d(TAG, "onMethodCall: Not on call, cannot swap calls")
+                    result.success(false)
+                }
+            }
+
             TVMethodChannels.IS_HOLDING -> {
                 Log.d(TAG, "isHolding call invoked")
                 result.success(isHolding)
