@@ -1260,12 +1260,36 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             self.sendPhoneCallEvents(description: "LOG|callInviteReceived: Device is on a system call - rejecting Twilio incoming call", isError: false)
             // Must report to CallKit first (Apple PushKit requirement), then immediately end
             reportIncomingCall(from: callInvite.from ?? defaultCaller, uuid: callInvite.uuid)
-            self.callInvites[callInvite.uuid] = callInvite
-            // Reject the Twilio call invite and end the CallKit call
+            // Reject the Twilio call invite
             callInvite.reject()
-            self.callInvites.removeValue(forKey: callInvite.uuid)
-            performEndCallAction(uuid: callInvite.uuid)
+            // Tell CallKit the call has ended (more reliable than performEndCallAction)
+            self.callKitProvider.reportCall(with: callInvite.uuid, endedAt: Date(), reason: .declinedElsewhere)
             self.sendPhoneCallEvents(description: "LOG|callInviteReceived: Twilio call rejected (system call active)", isError: false)
+            return
+        }
+        // ============================================================
+
+        // ============================================================
+        // 3RD CALL CHECK: If 2 Twilio calls are already active (e.g.
+        // Call A active + Call B on hold), reject the 3rd incoming call.
+        // We still MUST report the call to CallKit (Apple PushKit
+        // requirement), then immediately end it.
+        // IMPORTANT: We use reportCall(endedAt:reason:) instead of
+        // performEndCallAction to avoid the isCallActive guard race
+        // condition — this directly tells CallKit the call ended,
+        // ensuring Call C is ended without affecting Call A or B.
+        // ============================================================
+        if self.calls.count >= 2 {
+            self.sendPhoneCallEvents(description: "LOG|callInviteReceived: Already have \(self.calls.count) active calls (Call A + Call B) - rejecting 3rd incoming call (Call C)", isError: false)
+            // Step 1: Report to CallKit (Apple PushKit requirement — must report every VoIP push)
+            reportIncomingCall(from: callInvite.from ?? defaultCaller, uuid: callInvite.uuid)
+            // Step 2: Reject the Twilio call invite (only rejects Call C's invite, not A or B)
+            callInvite.reject()
+            // Step 3: Tell CallKit that Call C has ended (uses Call C's UUID only)
+            // Using reportCall(endedAt:reason:) is more reliable than performEndCallAction
+            // because it doesn't depend on CXCallObserver having registered the call yet
+            self.callKitProvider.reportCall(with: callInvite.uuid, endedAt: Date(), reason: .declinedElsewhere)
+            self.sendPhoneCallEvents(description: "LOG|callInviteReceived: 3rd call (Call C) rejected and ended — Call A and Call B unaffected", isError: false)
             return
         }
         // ============================================================
