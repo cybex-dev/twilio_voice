@@ -7,6 +7,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -192,6 +193,7 @@ class IncomingCallActivity : AppCompatActivity() {
         // Android requires super.onCreate() to be called, otherwise a
         // SuperNotCalledException crash will occur.
         super.onCreate(savedInstanceState)
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         
         // Mark activity as alive so TVConnectionService knows not to launch again
         isActivityAlive = true
