@@ -100,9 +100,6 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     // Event queue for events that arrive before Flutter is ready
     private val pendingEvents = mutableListOf<String>()
 
-    // member instance functions
-    private var callListener = callListener()
-
     // Constants
     private val kCHANNEL_NAME = "twilio_voice"
     private val REQUEST_CODE_MICROPHONE = 1
@@ -436,75 +433,6 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
 //        Log.e(TAG, message)
 //    }
 //    //endregion
-
-    //region TwilioVoice Call.Listeners
-    private fun callListener(): Call.Listener {
-        return object : Call.Listener {
-            /*
-             * This callback is emitted once before the Call.Listener.onConnected() callback when
-             * the callee is being alerted of a Call. The behavior of this callback is determined by
-             * the answerOnBridge flag provided in the Dial verb of your TwiML application
-             * associated with this client. If the answerOnBridge flag is false, which is the
-             * default, the Call.Listener.onConnected() callback will be emitted immediately after
-             * Call.Listener.onRinging(). If the answerOnBridge flag is true, this will cause the
-             * call to emit the onConnected callback only after the call is answered.
-             * See answerOnBridge for more details on how to use it with the Dial TwiML verb. If the
-             * twiML response contains a Say verb, then the call will emit the
-             * Call.Listener.onConnected callback immediately after Call.Listener.onRinging() is
-             * raised, irrespective of the value of answerOnBridge being set to true or false
-             */
-            override fun onRinging(call: Call) {
-                Log.d(TAG, "onRinging")
-                // TODO - outgoing call check
-                val list = arrayOf("Ringing", call.from ?: "", call.to ?: "", "Incoming")
-                logEvents("", list)
-            }
-
-            override fun onConnectFailure(call: Call, error: CallException) {
-                Log.d(TAG, "Connect failure")
-                val message = String.format(
-                    Locale.getDefault(),
-                    "Call Error: %d, %s",
-                    error.errorCode,
-                    error.message
-                )
-                logEvent(message)
-                logEvent("", "Call Ended")
-                TVConnectionService.clearActiveConnections()
-
-            }
-
-            override fun onConnected(call: Call) {
-                Log.d(TAG, "onConnected")
-                // TODO - outgoing call check
-                val list = arrayOf("Connected", call.from ?: "", call.to ?: "", "Incoming")
-                logEvents("", list)
-            }
-
-            override fun onReconnecting(call: Call, callException: CallException) {
-                Log.d(TAG, "onReconnecting")
-            }
-
-            override fun onReconnected(call: Call) {
-                Log.d(TAG, "onReconnected")
-            }
-
-            override fun onDisconnected(call: Call, error: CallException?) {
-                Log.d(TAG, "Disconnected")
-                if (error != null) {
-                    val message = String.format(
-                        Locale.getDefault(),
-                        "Call Error: %d, %s",
-                        error.errorCode,
-                        error.message
-                    )
-                    logEvent(message)
-                }
-                logEvent("", "Call Ended")
-            }
-        }
-    }
-    //endregion
 
     //region Flutter RequestPermissionsResultListener
     override fun onRequestPermissionsResult(

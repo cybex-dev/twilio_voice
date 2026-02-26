@@ -406,6 +406,7 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
         call.activeCall = null;
         return CallEvent.callEnded;
       case 'Missed Call':
+        call.activeCall = null;
         return CallEvent.missedCall;
       case 'Unhold':
         return CallEvent.unhold;
