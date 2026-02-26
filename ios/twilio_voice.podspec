@@ -16,7 +16,7 @@ Pod::Spec.new do |s|
   s.source_files = 'Classes/**/*'
   s.resources = 'Assets/**/*'
   s.dependency 'Flutter'
-  s.dependency 'TwilioVoice','~> 6.13.1'
+  s.dependency 'TwilioVoice','~> 6.13.5'
   s.platform = :ios, '11.0'
 
   # Flutter.framework does not contain a i386 slice.
