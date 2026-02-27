@@ -251,11 +251,11 @@
         <!-- Heading: "Answer call and" (use grey style) -->
         <TextView
             android:id="@+id/answer_call"
-            android:layout_width="105dp"
-            android:layout_height="18dp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:text="@string/answer_call"
             android:textAppearance="@style/answer_call"
-            android:gravity="center_horizontal|center_vertical"
+            android:gravity="start|center_vertical"
             android:layout_marginBottom="20dp"
             android:layout_marginStart="4dp" />
 
@@ -263,10 +263,12 @@
         <LinearLayout
             android:id="@+id/optionHoldAndAnswer"
             android:layout_width="match_parent"
-            android:layout_height="64dp"
+            android:layout_height="wrap_content"
+            android:minHeight="56dp"
             android:orientation="horizontal"
             android:gravity="center_vertical"
             android:paddingHorizontal="16dp"
+            android:paddingVertical="12dp"
             android:background="@drawable/bottom_sheet_option_ripple"
             android:clickable="true"
             android:focusable="true">
@@ -289,12 +291,15 @@
 
             <TextView
                 android:id="@+id/put_1_222_3"
-                android:layout_width="175dp"
-                android:layout_height="18dp"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
                 android:text="@string/put_1_222_3"
                 android:textAppearance="@style/put_1_222_3"
-                android:gravity="center_horizontal|center_vertical"
-                android:layout_marginStart="20dp" />
+                android:gravity="start|center_vertical"
+                android:layout_marginStart="20dp"
+                android:ellipsize="end"
+                android:maxLines="2" />
 
         </LinearLayout>
 
@@ -302,10 +307,12 @@
         <LinearLayout
             android:id="@+id/optionEndAndAnswer"
             android:layout_width="match_parent"
-            android:layout_height="64dp"
+            android:layout_height="wrap_content"
+            android:minHeight="56dp"
             android:orientation="horizontal"
             android:gravity="center_vertical"
             android:paddingHorizontal="16dp"
+            android:paddingVertical="12dp"
             android:layout_marginTop="6dp"
             android:background="@drawable/bottom_sheet_option_ripple"
             android:clickable="true"
@@ -329,12 +336,15 @@
 
             <TextView
                 android:id="@+id/end_call_wi"
-                android:layout_width="183dp"
-                android:layout_height="18dp"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
                 android:text="@string/end_call_wi"
                 android:textAppearance="@style/end_call_wi"
-                android:gravity="center_horizontal|center_vertical"
-                android:layout_marginStart="20dp" />
+                android:gravity="start|center_vertical"
+                android:layout_marginStart="20dp"
+                android:ellipsize="end"
+                android:maxLines="2" />
 
         </LinearLayout>
 
@@ -342,10 +352,12 @@
         <LinearLayout
             android:id="@+id/optionDecline"
             android:layout_width="match_parent"
-            android:layout_height="64dp"
+            android:layout_height="wrap_content"
+            android:minHeight="56dp"
             android:orientation="horizontal"
             android:gravity="center_vertical"
             android:paddingHorizontal="16dp"
+            android:paddingVertical="12dp"
             android:layout_marginTop="6dp"
             android:background="@drawable/bottom_sheet_option_ripple"
             android:clickable="true"
@@ -369,12 +381,15 @@
 
             <TextView
                 android:id="@+id/decline_inc"
-                android:layout_width="129dp"
-                android:layout_height="18dp"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
                 android:text="@string/decline_inc"
                 android:textAppearance="@style/decline_inc"
-                android:gravity="center_horizontal|center_vertical"
-                android:layout_marginStart="20dp" />
+                android:gravity="start|center_vertical"
+                android:layout_marginStart="20dp"
+                android:ellipsize="end"
+                android:maxLines="2" />
 
         </LinearLayout>
 
