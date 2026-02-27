@@ -2535,7 +2535,10 @@ class TVConnectionService : ConnectionService() {
         }
         canvas.drawCircle(cx, cy, innerRadius, innerPaint)
 
-        val hasName = callerName != "Unknown Caller" && callerName.isNotBlank()
+        val hasName = callerName != "Unknown Caller" && callerName.isNotBlank() &&
+            // Detect phone numbers: if after removing common phone chars (+, -, (, ), spaces, dots)
+            // the remaining string is all digits, it's a phone number, not a real name
+            !callerName.replace(Regex("[+\\-()\\s.]"), "").all { it.isDigit() }
 
         if (hasName) {
             // Draw initials
@@ -2581,10 +2584,12 @@ class TVConnectionService : ConnectionService() {
 
     /**
      * Extracts caller initials from a name string.
-     * E.g., "John Doe" → "JD", "Alice" → "A", "Unknown Caller" → ""
+     * E.g., "John Doe" → "JD", "Alice" → "A", "Unknown Caller" → "", phone numbers → ""
      */
     private fun getCallerInitials(callerName: String): String {
         if (callerName == "Unknown Caller" || callerName.isBlank()) return ""
+        // Don't generate initials from phone numbers
+        if (callerName.replace(Regex("[+\\-()\\s.]"), "").all { it.isDigit() }) return ""
         return callerName.split(" ")
             .filter { it.isNotBlank() }
             .take(2)
@@ -2726,7 +2731,8 @@ class TVConnectionService : ConnectionService() {
         // Use CallStyle for Android 12+ for native incoming call UI in notification
         // Determine what to show: if caller has name, show name on top and number below
         // If no name, show number on top only
-        val hasCallerName = callerName != "Unknown Caller" && callerName.isNotEmpty()
+        val isPhoneNumber = callerName.replace(Regex("[+\\-()\\s.]"), "").all { it.isDigit() }
+        val hasCallerName = callerName != "Unknown Caller" && callerName.isNotEmpty() && !isPhoneNumber
         val displayName = if (hasCallerName) callerName else formattedCallerNumber.ifEmpty { "Unknown Number" }
         val displaySubtext = if (hasCallerName && formattedCallerNumber.isNotEmpty()) formattedCallerNumber else null
         
@@ -2749,7 +2755,7 @@ class TVConnectionService : ConnectionService() {
             )
             
             Notification.Builder(this, channel.id).apply {
-                setSmallIcon(R.drawable.ic_transparent)
+                setSmallIcon(R.drawable.ic_easify_logo_mono)
                 setVisibility(Notification.VISIBILITY_PUBLIC)
                 setOngoing(true)
                 setAutoCancel(false)
@@ -2773,7 +2779,7 @@ class TVConnectionService : ConnectionService() {
             
             Notification.Builder(this, channel.id).apply {
                 setOngoing(true)
-                setSmallIcon(R.drawable.ic_transparent)
+                setSmallIcon(R.drawable.ic_easify_logo_mono)
                 setFullScreenIntent(fullScreenPendingIntent, true)
                 setContentIntent(fullScreenPendingIntent)
                 setVisibility(Notification.VISIBILITY_PUBLIC)

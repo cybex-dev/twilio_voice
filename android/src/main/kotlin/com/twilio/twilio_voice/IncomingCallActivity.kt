@@ -836,6 +836,23 @@ class IncomingCallActivity : AppCompatActivity() {
         }
     }
     
+    /**
+     * Gets the navigation bar height in pixels.
+     * Works even in fullscreen mode by reading the system resource dimension.
+     * Returns 0 if the navigation bar is not present (e.g. devices with hardware buttons).
+     */
+    private fun getNavigationBarHeight(): Int {
+        val resourceId = resources.getIdentifier("navigation_bar_height", "dimen", "android")
+        return if (resourceId > 0) {
+            val height = resources.getDimensionPixelSize(resourceId)
+            android.util.Log.d(TAG, "getNavigationBarHeight: $height px")
+            height
+        } else {
+            android.util.Log.d(TAG, "getNavigationBarHeight: resource not found, returning 0")
+            0
+        }
+    }
+    
     private fun moveTaskToFront() {
         try {
             val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
@@ -961,6 +978,21 @@ class IncomingCallActivity : AppCompatActivity() {
             android.util.Log.w(TAG, "showCallWaitingBottomSheet: Bottom sheet views not found, falling back to hold+answer")
             answerCallWithHold()
             return
+        }
+        
+        // Apply safe area padding for navigation bar / gesture area
+        // This ensures the "Decline incoming call" option is not hidden behind
+        // the system gesture bar on devices with gesture navigation (e.g. Oppo)
+        val navBarHeight = getNavigationBarHeight()
+        if (navBarHeight > 0) {
+            val basePaddingBottom = (28 * resources.displayMetrics.density).toInt()
+            bottomSheetContainer.setPadding(
+                bottomSheetContainer.paddingLeft,
+                bottomSheetContainer.paddingTop,
+                bottomSheetContainer.paddingRight,
+                basePaddingBottom + navBarHeight
+            )
+            android.util.Log.d(TAG, "showCallWaitingBottomSheet: Applied safe area bottom padding: navBarHeight=$navBarHeight, totalBottom=${basePaddingBottom + navBarHeight}")
         }
         
         // Capture the current screen and apply blur for frosted glass effect
