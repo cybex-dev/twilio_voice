@@ -385,6 +385,22 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
       return CallEvent.returningCall;
     } else if (state.startsWith("Reconnecting")) {
       return CallEvent.reconnecting;
+    } else if (state.startsWith("HeldCallData|")) {
+      // Held call data emitted during resume from terminated state
+      // Store as waitingCall so the BLoC can recover multi-call state
+      final heldCallData = createCallFromState(state);
+      if (call is MethodChannelTwilioCall) {
+        (call as MethodChannelTwilioCall).waitingCall = heldCallData;
+      }
+
+      if (kDebugMode) {
+        printDebug(
+            'HeldCallData - From: ${heldCallData.from}, To: ${heldCallData.to}, Direction: ${heldCallData.callDirection}');
+      }
+
+      // Return log so the BLoC event stream doesn't react to this directly.
+      // The BLoC's _onManuallyFetchCallDetailsOnStartup will read waitingCall.
+      return CallEvent.log;
     } else if (state.startsWith("Swap|")) {
       // Swap event from iOS CallKit native swap button: "Swap|from|to"
       // The from/to are the now-active call's info

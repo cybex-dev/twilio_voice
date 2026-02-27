@@ -718,13 +718,35 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 val hasActiveCalls = isOnCall()
                 if(hasActiveCalls){
                     val activeCalls = TVConnectionService.Companion.activeConnections
-                    val currentCall = activeCalls.values.firstOrNull()
-                    val isAnsweredCall = currentCall?.twilioCall?.state == Call.State.CONNECTED
-                    if(isAnsweredCall){
-                        val from = extractUserNumber(currentCall?.twilioCall?.from ?: "")
-                        val to = currentCall?.twilioCall?.to ?: ""
-                        val callDirection = currentCall?.callDirection ?: CallDirection.INCOMING
+
+                    // Find the active (foreground) call — prefer STATE_ACTIVE, then any connected call
+                    val activeCallHandle = TVConnectionService.getActiveCallHandle()
+                    val activeConnection = if (activeCallHandle != null) {
+                        TVConnectionService.getConnection(activeCallHandle)
+                    } else {
+                        activeCalls.values.firstOrNull()
+                    }
+
+                    // Emit Connected event for the active call
+                    val isAnsweredCall = activeConnection?.twilioCall?.state == Call.State.CONNECTED
+                    if(isAnsweredCall && activeConnection != null){
+                        val from = extractUserNumber(activeConnection.twilioCall?.from ?: "")
+                        val to = activeConnection.twilioCall?.to ?: ""
+                        val callDirection = activeConnection.callDirection ?: CallDirection.INCOMING
                         logEvents("", arrayOf("Connected", from, to, callDirection.label ))
+                    }
+
+                    // Check for held call(s) and emit HeldCallData for each
+                    for ((callSid, connection) in activeCalls) {
+                        if (callSid == activeCallHandle) continue // skip the active call
+                        val heldTwilioCall = connection.twilioCall ?: continue
+                        if (heldTwilioCall.state == Call.State.CONNECTED || connection.state == android.telecom.Connection.STATE_HOLDING) {
+                            val heldFrom = extractUserNumber(heldTwilioCall.from ?: "")
+                            val heldTo = heldTwilioCall.to ?: ""
+                            val heldDirection = connection.callDirection ?: CallDirection.INCOMING
+                            Log.d(TAG, "GetActiveCallOnResumeFromTerminatedState: emitting HeldCallData for held call - from=$heldFrom, to=$heldTo, direction=${heldDirection.label}")
+                            logEvents("", arrayOf("HeldCallData", heldFrom, heldTo, heldDirection.label))
+                        }
                     }
                 }
                 result.success(true)

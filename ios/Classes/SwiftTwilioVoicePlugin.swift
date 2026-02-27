@@ -756,6 +756,23 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                 let to = activeCall.to ?? self.callTo
                 self.sendPhoneCallEvents(description: "Connected|\(from)|\(to)|\(direction)", isError: false)
             }
+
+            // Emit HeldCallData for any held call(s) so Flutter can recover multi-call state
+            if self.calls.count >= 2, let currentActiveUUID = self.activeCallUUID {
+                for (uuid, heldCall) in self.calls {
+                    if uuid == currentActiveUUID { continue }
+                    // This is a held call — emit its data
+                    let heldFrom = extractUserNumber(from: heldCall.from ?? self.identity)
+                    let heldTo = heldCall.to ?? ""
+                    // Infer direction: if the held call was the first call and the active call was outgoing,
+                    // then the held call was likely incoming (and vice versa). However, since we don't track
+                    // per-call direction, default to Incoming as most call-waiting scenarios are incoming.
+                    let heldDirection = "Incoming"
+                    NSLog("getActiveCallOnResumeFromTerminatedState: emitting HeldCallData for held call - from=\(heldFrom), to=\(heldTo)")
+                    self.sendPhoneCallEvents(description: "HeldCallData|\(heldFrom)|\(heldTo)|\(heldDirection)", isError: false)
+                }
+            }
+
             result(true)
         }
 
