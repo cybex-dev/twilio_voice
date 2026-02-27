@@ -145,8 +145,16 @@ class IncomingCallActivity : AppCompatActivity() {
             val action = intent?.action
             android.util.Log.d(TAG, "Received broadcast: $action")
             if (action == TVBroadcastReceiver.ACTION_CALL_ENDED) {
-                // Call was ended (possibly from notification), close this activity
-                android.util.Log.d(TAG, "Call ended broadcast received, finishing activity")
+                // Check which call ended — if it's a DIFFERENT call (e.g. Call A ended
+                // while Call B is ringing), we must NOT close Call B's IncomingCallActivity.
+                val endedCallHandle = intent?.getStringExtra(TVBroadcastReceiver.EXTRA_CALL_HANDLE)
+                if (endedCallHandle != null && callSid != null && endedCallHandle != callSid) {
+                    android.util.Log.d(TAG, "Call ended broadcast is for a DIFFERENT call ($endedCallHandle), our call is $callSid - ignoring")
+                    return
+                }
+                
+                // This broadcast is for OUR call — close this activity
+                android.util.Log.d(TAG, "Call ended broadcast received for our call ($endedCallHandle), finishing activity")
                 stopRinging()
                 callHandled = true
                 releaseWakeLock()
@@ -339,6 +347,21 @@ class IncomingCallActivity : AppCompatActivity() {
         activeCallerName = intent.getStringExtra(EXTRA_ACTIVE_CALLER_NAME)
         activeCallerNumber = intent.getStringExtra(EXTRA_ACTIVE_CALLER_NUMBER)
         activeCallHandle = intent.getStringExtra(EXTRA_ACTIVE_CALL_HANDLE)
+        
+        // The PendingIntent extras are baked at notification-creation time.
+        // If the active call ended before the user tapped the notification,
+        // the intent still says hasActiveCall=true with a stale handle.
+        // Verify against live state to avoid showing the call-waiting bottom sheet.
+        if (hasActiveCall && activeCallHandle != null) {
+            val stillActive = TVConnectionService.activeConnections.containsKey(activeCallHandle)
+            if (!stillActive) {
+                android.util.Log.d(TAG, "onCreate: Intent says hasActiveCall=true but $activeCallHandle is no longer in activeConnections - overriding to false")
+                hasActiveCall = false
+                activeCallHandle = null
+                activeCallerName = null
+                activeCallerNumber = null
+            }
+        }
         android.util.Log.d(TAG, "onCreate: hasActiveCall=$hasActiveCall, activeCallerName=$activeCallerName, activeCallerNumber=$activeCallerNumber")
 
         // Set caller info
@@ -526,8 +549,19 @@ class IncomingCallActivity : AppCompatActivity() {
         
         // Check if there's an active call — if so, we need to show the call waiting
         // bottom sheet instead of answering directly, just like the full-screen UI does
-        val hasActiveCallFromIntent = intent.getBooleanExtra(EXTRA_HAS_ACTIVE_CALL, false)
-        android.util.Log.d(TAG, "handleAnswerFromNotification: hasActiveCallFromIntent=$hasActiveCallFromIntent")
+        var hasActiveCallFromIntent = intent.getBooleanExtra(EXTRA_HAS_ACTIVE_CALL, false)
+        val activeHandleFromIntent = intent.getStringExtra(EXTRA_ACTIVE_CALL_HANDLE)
+        android.util.Log.d(TAG, "handleAnswerFromNotification: hasActiveCallFromIntent=$hasActiveCallFromIntent, activeHandleFromIntent=$activeHandleFromIntent")
+        
+        // PendingIntent extras are baked at notification-creation time. If the
+        // active call has since ended, the intent data is stale. Check live state.
+        if (hasActiveCallFromIntent && activeHandleFromIntent != null) {
+            val stillActive = TVConnectionService.activeConnections.containsKey(activeHandleFromIntent)
+            if (!stillActive) {
+                android.util.Log.d(TAG, "handleAnswerFromNotification: Active call $activeHandleFromIntent no longer in activeConnections - answering directly")
+                hasActiveCallFromIntent = false
+            }
+        }
         
         if (hasActiveCallFromIntent) {
             // There's an active call — DON'T answer directly.

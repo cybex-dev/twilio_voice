@@ -841,7 +841,22 @@ class TVConnectionService : ConnectionService() {
                         clearPendingIncomingCall()
                     }
                     
-                    getConnection(callHandle)?.onAbort() ?: run {
+                    val cancelledConnection = getConnection(callHandle)
+                    
+                    // Check if other calls exist BEFORE removing this one
+                    val otherCallsExistBeforeRemoval = activeConnections.keys.any { it != callHandle }
+                    
+                    if (cancelledConnection != null && otherCallsExistBeforeRemoval) {
+                        // Other calls are active - clear listeners BEFORE calling onAbort()
+                        // to prevent the abort's releaseAudioFocus/events from killing the
+                        // remaining call's audio and sending "Call Ended" to Flutter
+                        Log.d(TAG, "[ACTION_CANCEL_CALL_INVITE] Other calls active, clearing listeners before abort")
+                        cancelledConnection.onEvent = null
+                        cancelledConnection.onDisconnected = null
+                        cancelledConnection.onAction = null
+                    }
+                    
+                    cancelledConnection?.onAbort() ?: run {
                         Log.e(TAG, "onStartCommand: [ACTION_CANCEL_CALL_INVITE] could not find connection for callHandle: $callHandle")
                     }
                     activeConnections.remove(callHandle)
@@ -859,7 +874,18 @@ class TVConnectionService : ConnectionService() {
                             val remainingNumber = remainingConn?.address?.schemeSpecificPart 
                                 ?: remainingConn?.extras?.getString("caller_number") ?: ""
                             showOngoingCallNotification(remainingHandle, remainingNumber)
+                            
+                            // Restore audio focus for the remaining call.
+                            // The cancelled call's onAbort() called releaseAudioFocus() which
+                            // reset MODE to NORMAL and cleared communication devices, breaking
+                            // audio for the still-active call.
+                            remainingConn?.restoreAudioFocus()
+                            Log.d(TAG, "[ACTION_CANCEL_CALL_INVITE] Restored audio focus for remaining call $remainingHandle")
                         }
+                        
+                        // Notify Flutter that the waiting/ringing call was cancelled
+                        // so it can clear any pending call UI without closing the active call screen
+                        sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_HELD_CALL_ENDED, callHandle, null)
                     } else {
                         stopForegroundService()
                         stopSelfSafe()
@@ -1011,19 +1037,46 @@ class TVConnectionService : ConnectionService() {
                     // Apply parameters and attach listeners
                     applyParameters(connection, callParams, callInvite.from ?: "")
                     attachCallEventListeners(connection, callSid)
-                    Log.d(TAG, "ACTION_INCOMING_CALL: Event listeners attached")
+                    // Mark connection as ringing (matches onCreateIncomingConnection behavior).
+                    // Without this, connection.state stays STATE_NEW and multi-call
+                    // disconnect handlers can't identify it as an unanswered incoming call.
+                    connection.setRinging()
+                    Log.d(TAG, "ACTION_INCOMING_CALL: Event listeners attached, state=RINGING")
                     
                     // Set call disconnected listener
                     val onCallDisconnectedListener: CompletionHandler<DisconnectCause> = CompletionHandler {
-                        if (activeConnections.containsKey(callSid)) {
+                        // onCallStateListener fires BEFORE this handler (see TVConnection.onDisconnected order).
+                        // If it already removed callSid and handled remaining-call logic, just do cleanup.
+                        val alreadyHandled = !activeConnections.containsKey(callSid)
+                        if (!alreadyHandled) {
                             activeConnections.remove(callSid)
                         }
                         // Clear pending call if this was the pending one
                         if (getPendingIncomingCallSidFromPrefs(applicationContext) == callSid) {
                             clearPendingIncomingCallFromPrefs(applicationContext)
                         }
-                        cancelIncomingCallNotification()
-                        releaseWakeLock()
+                        // Only cancel incoming call notification/ringtone if no other calls
+                        // are still ringing. Otherwise we'd kill Call B's notification when
+                        // Call A (which was also created via ACTION_INCOMING_CALL) disconnects.
+                        val hasOtherRingingCall = activeConnections.values.any { conn ->
+                            conn.state == Connection.STATE_RINGING || conn.state == Connection.STATE_NEW
+                        }
+                        if (!hasOtherRingingCall) {
+                            cancelIncomingCallNotification()
+                            releaseWakeLock()
+                        } else {
+                            Log.d(TAG, "[ACTION_INCOMING_CALL onDisconnected] Skipping cancelIncomingCallNotification - another call is still ringing")
+                        }
+
+                        if (alreadyHandled) {
+                            Log.d(TAG, "[ACTION_INCOMING_CALL onDisconnected] Call $callSid already handled by onCallState, skipping remaining-call logic")
+                            if (!hasActiveCalls()) {
+                                stopForegroundService()
+                                stopSelfSafe()
+                            }
+                            return@CompletionHandler
+                        }
+
                         // Only send ACTION_CALL_ENDED and stop service if no other calls remain
                         if (!hasActiveCalls()) {
                             sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, callSid, connection.extras)
@@ -1037,18 +1090,30 @@ class TVConnectionService : ConnectionService() {
                                 val remainingConn = getConnection(remainingHandle)
                                 val remainingNumber = remainingConn?.address?.schemeSpecificPart 
                                     ?: remainingConn?.extras?.getString("caller_number") ?: ""
-                                showOngoingCallNotification(remainingHandle, remainingNumber)
-                                if (remainingConn?.state == Connection.STATE_HOLDING) {
-                                    // The remaining call is ON HOLD → the ACTIVE call ended.
-                                    // Do NOT send ACTION_HELD_CALL_ENDED — the held call is still alive.
-                                    remainingConn.toggleHold(false)
-                                    Log.d(TAG, "[ACTION_INCOMING_CALL onDisconnected] Unholding remaining call $remainingHandle")
+                                
+                                if (remainingConn?.state == Connection.STATE_RINGING || remainingConn?.state == Connection.STATE_NEW) {
+                                    // Remaining call is an unanswered incoming call.
+                                    // IncomingCallActivity is already showing — do NOT bring
+                                    // MainActivity to front (that would cover it).
+                                    // Send ACTION_CALL_ENDED so Flutter resets its call UI.
+                                    Log.d(TAG, "[ACTION_INCOMING_CALL onDisconnected] Remaining call $remainingHandle is RINGING/NEW (state=${remainingConn?.state}) - sending Call Ended, NOT bringing MainActivity to front")
+                                    sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, callSid, Bundle().apply {
+                                        putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callSid)
+                                    })
                                 } else {
-                                    // The remaining call is NOT on hold → the HELD call ended.
-                                    // Notify Flutter to clear the held call banner.
-                                    sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_HELD_CALL_ENDED, callSid, connection.extras)
+                                    showOngoingCallNotification(remainingHandle, remainingNumber)
+                                    if (remainingConn?.state == Connection.STATE_HOLDING) {
+                                        // The remaining call is ON HOLD → the ACTIVE call ended.
+                                        // Do NOT send ACTION_HELD_CALL_ENDED — the held call is still alive.
+                                        remainingConn.toggleHold(false)
+                                        Log.d(TAG, "[ACTION_INCOMING_CALL onDisconnected] Unholding remaining call $remainingHandle")
+                                    } else {
+                                        // The remaining call is NOT on hold → the HELD call ended.
+                                        // Notify Flutter to clear the held call banner.
+                                        sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_HELD_CALL_ENDED, callSid, connection.extras)
+                                    }
+                                    bringMainActivityToFront()
                                 }
-                                bringMainActivityToFront()
                             }
                         }
                     }
@@ -1399,8 +1464,24 @@ class TVConnectionService : ConnectionService() {
                     }
 
                     Log.i(TAG, "[Decline] Received ACTION_HANGUP for callHandle: $callHandle. Active connections: ${activeConnections.keys}")
-                    cancelIncomingCallNotification()
-                    releaseWakeLock()
+                    
+                    // Only cancel the incoming call notification/ringtone/wakelock if:
+                    // - The call being hung up is itself a ringing call, OR
+                    // - There are no OTHER ringing/new calls that still need the notification
+                    // If an active call is being hung up while another call is ringing,
+                    // we must NOT cancel the notification or the ringing call loses its UI.
+                    val hangupConnection = getConnection(callHandle)
+                    val hangupCallIsRinging = hangupConnection != null && 
+                        (hangupConnection.state == Connection.STATE_RINGING || hangupConnection.state == Connection.STATE_NEW)
+                    val hasOtherRingingCall = activeConnections.any { (sid, conn) ->
+                        sid != callHandle && (conn.state == Connection.STATE_RINGING || conn.state == Connection.STATE_NEW)
+                    }
+                    if (hangupCallIsRinging || !hasOtherRingingCall) {
+                        cancelIncomingCallNotification()
+                        releaseWakeLock()
+                    } else {
+                        Log.d(TAG, "[Decline] Skipping cancelIncomingCallNotification/releaseWakeLock - other call is still ringing")
+                    }
                     
                     // Clear pending call if this matches
                     if (getPendingIncomingCallSid() == callHandle) {
@@ -1489,61 +1570,66 @@ class TVConnectionService : ConnectionService() {
                     // Check if there are remaining active calls
                     if (hasActiveCalls()) {
                         // Other calls still active - DON'T stop the service
-                        // Re-show ongoing call notification for the remaining call
                         val remainingHandle = getActiveCallHandle()
                         if (remainingHandle != null) {
                             val remainingConnection = getConnection(remainingHandle)
-                            val remainingNumber = remainingConnection?.address?.schemeSpecificPart 
-                                ?: remainingConnection?.extras?.getString("caller_number") ?: ""
-                            Log.d(TAG, "[Decline] Other call still active: $remainingHandle, showing ongoing notification")
-                            showOngoingCallNotification(remainingHandle, remainingNumber)
+                            val remainingIsRinging = remainingConnection != null &&
+                                (remainingConnection.state == Connection.STATE_RINGING || remainingConnection.state == Connection.STATE_NEW)
                             
-                            // Unhold the remaining call if it was on hold
-                            if (remainingConnection?.state == Connection.STATE_HOLDING) {
-                                remainingConnection.toggleHold(false)
-                                Log.d(TAG, "[Decline] Unholding remaining call $remainingHandle")
-                            }
-
-                            // Re-request audio focus for the remaining call.
-                            // The disconnected call's forceDisconnectWithLogging() released audio focus
-                            // which reset MODE to NORMAL, cleared communication device, and stopped BT SCO.
-                            // Without re-requesting, audio toggles (speaker/earpiece/bluetooth) won't work.
-                            remainingConnection?.let { conn ->
-                                Log.d(TAG, "[Decline] Restoring audio focus for remaining call $remainingHandle")
-                                conn.restoreAudioFocus()
+                            if (remainingIsRinging) {
+                                // Remaining call is still ringing on IncomingCallActivity.
+                                // Do NOT show ongoing notification (it would replace the incoming
+                                // call notification), do NOT restore audio focus (not connected yet),
+                                // and do NOT bring MainActivity to front (IncomingCallActivity
+                                // is already handling the ringing call).
+                                Log.d(TAG, "[Decline] Remaining call $remainingHandle is ringing (state=${remainingConnection!!.state}), keeping IncomingCallActivity visible")
+                            } else {
+                                // Remaining call is active/connected - restore its state
+                                val remainingNumber = remainingConnection?.address?.schemeSpecificPart 
+                                    ?: remainingConnection?.extras?.getString("caller_number") ?: ""
+                                Log.d(TAG, "[Decline] Other call still active: $remainingHandle, showing ongoing notification")
+                                showOngoingCallNotification(remainingHandle, remainingNumber)
                                 
-                                // ── Restore the audio route the user had selected ──
-                                // restoreAudioFocus() always routes to earpiece (or BT if
-                                // connected).  If the user had speaker ON we must re-apply it.
-                                // For Bluetooth we only restore if the device is still available.
-                                Log.d(TAG, "[Decline] Restoring saved audio route: $savedAudioRoute")
-                                when (savedAudioRoute) {
-                                    "speaker" -> {
-                                        Log.d(TAG, "[Decline] Re-applying speaker route")
-                                        conn.toggleSpeaker(true)
-                                    }
-                                    "bluetooth" -> {
-                                        // Check if BT device is still available before restoring
-                                        val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-                                        val btAvailable = am?.isBluetoothScoOn == true || isBluetoothDeviceAvailable(am)
-                                        if (btAvailable) {
-                                            Log.d(TAG, "[Decline] Re-applying bluetooth route (device still available)")
-                                            conn.toggleBluetooth(true)
-                                        } else {
-                                            Log.d(TAG, "[Decline] Bluetooth device no longer available, staying on earpiece")
+                                // Unhold the remaining call if it was on hold
+                                if (remainingConnection?.state == Connection.STATE_HOLDING) {
+                                    remainingConnection.toggleHold(false)
+                                    Log.d(TAG, "[Decline] Unholding remaining call $remainingHandle")
+                                }
+
+                                // Re-request audio focus for the remaining call.
+                                // The disconnected call's forceDisconnectWithLogging() released audio focus
+                                // which reset MODE to NORMAL, cleared communication device, and stopped BT SCO.
+                                // Without re-requesting, audio toggles (speaker/earpiece/bluetooth) won't work.
+                                remainingConnection?.let { conn ->
+                                    Log.d(TAG, "[Decline] Restoring audio focus for remaining call $remainingHandle")
+                                    conn.restoreAudioFocus()
+                                    
+                                    // ── Restore the audio route the user had selected ──
+                                    Log.d(TAG, "[Decline] Restoring saved audio route: $savedAudioRoute")
+                                    when (savedAudioRoute) {
+                                        "speaker" -> {
+                                            Log.d(TAG, "[Decline] Re-applying speaker route")
+                                            conn.toggleSpeaker(true)
+                                        }
+                                        "bluetooth" -> {
+                                            val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                                            val btAvailable = am?.isBluetoothScoOn == true || isBluetoothDeviceAvailable(am)
+                                            if (btAvailable) {
+                                                Log.d(TAG, "[Decline] Re-applying bluetooth route (device still available)")
+                                                conn.toggleBluetooth(true)
+                                            } else {
+                                                Log.d(TAG, "[Decline] Bluetooth device no longer available, staying on earpiece")
+                                            }
+                                        }
+                                        else -> {
+                                            Log.d(TAG, "[Decline] Earpiece is already the default, no action needed")
                                         }
                                     }
-                                    else -> {
-                                        // earpiece - already the default after restoreAudioFocus
-                                        Log.d(TAG, "[Decline] Earpiece is already the default, no action needed")
-                                    }
                                 }
+                                
+                                // Bring back the main activity to show the remaining call's UI
+                                bringMainActivityToFront()
                             }
-                            
-                            // Bring back the main activity to show the remaining call's UI
-                            // Use bringMainActivityToFront() instead of launchMainActivityWithCallData()
-                            // to avoid resetting Flutter call state (timer, connecting status)
-                            bringMainActivityToFront()
                         }
                     } else {
                         // No more active calls - clean up everything
@@ -1916,18 +2002,26 @@ class TVConnectionService : ConnectionService() {
                     stopForegroundService()
                     stopSelfSafe()
                 } else {
-                    Log.d(TAG, "[onCallInitializingDisconnected] Call ${it.sid} ended but other calls still active, suppressing ACTION_CALL_ENDED")
+                    Log.d(TAG, "[onCallInitializingDisconnected] Call ${it.sid} ended but other calls still active")
                     val remainingHandle = getActiveCallHandle()
                     if (remainingHandle != null) {
                         val remainingConn = getConnection(remainingHandle)
                         val remainingNumber = remainingConn?.address?.schemeSpecificPart 
                             ?: remainingConn?.extras?.getString("caller_number") ?: ""
-                        showOngoingCallNotification(remainingHandle, remainingNumber)
-                        if (remainingConn?.state == Connection.STATE_HOLDING) {
-                            remainingConn.toggleHold(false)
-                            Log.d(TAG, "[onCallInitializingDisconnected] Unholding remaining call $remainingHandle")
+                        
+                        if (remainingConn?.state == Connection.STATE_RINGING || remainingConn?.state == Connection.STATE_NEW) {
+                            Log.d(TAG, "[onCallInitializingDisconnected] Remaining call $remainingHandle is RINGING/NEW (state=${remainingConn?.state}) - sending Call Ended to Flutter")
+                            sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, it.sid ?: "", Bundle().apply {
+                                putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, it.sid ?: "")
+                            })
+                        } else {
+                            showOngoingCallNotification(remainingHandle, remainingNumber)
+                            if (remainingConn?.state == Connection.STATE_HOLDING) {
+                                remainingConn.toggleHold(false)
+                                Log.d(TAG, "[onCallInitializingDisconnected] Unholding remaining call $remainingHandle")
+                            }
+                            bringMainActivityToFront()
                         }
-                        bringMainActivityToFront()
                     }
                 }
             }
@@ -1989,9 +2083,14 @@ class TVConnectionService : ConnectionService() {
             sendBroadcastCallHandle(applicationContext, extra?.getString(TVBroadcastReceiver.EXTRA_CALL_HANDLE))
         }
         val onDisconnect: CompletionHandler<DisconnectCause> = CompletionHandler {
-            if (activeConnections.containsKey(callSid)) {
-                activeConnections.remove(callSid)
+            // onCallState fires BEFORE onDisconnect (see TVConnection.onDisconnected order).
+            // If onCallState already removed callSid from activeConnections and handled
+            // the remaining-call logic, skip here to avoid duplicate broadcasts.
+            if (!activeConnections.containsKey(callSid)) {
+                Log.d(TAG, "[onDisconnect] Call $callSid already handled by onCallState, skipping")
+                return@CompletionHandler
             }
+            activeConnections.remove(callSid)
             // Clear pending call if this was the pending one
             if (getPendingIncomingCallSid() == callSid) {
                 clearPendingIncomingCall()
@@ -2003,20 +2102,38 @@ class TVConnectionService : ConnectionService() {
                 stopSelfSafe()
             } else {
                 Log.d(TAG, "[onDisconnect] Call $callSid ended but other calls still active (${activeConnections.size} remaining)")
-                // Re-show ongoing notification for remaining call
                 val remainingHandle = getActiveCallHandle()
                 if (remainingHandle != null) {
                     val remainingConn = getConnection(remainingHandle)
                     val remainingNumber = remainingConn?.address?.schemeSpecificPart 
                         ?: remainingConn?.extras?.getString("caller_number") ?: ""
-                    showOngoingCallNotification(remainingHandle, remainingNumber)
-                    // Unhold remaining call if it was on hold
-                    if (remainingConn?.state == Connection.STATE_HOLDING) {
+                    
+                    if (remainingConn?.state == Connection.STATE_RINGING) {
+                        Log.d(TAG, "[onDisconnect] Remaining call $remainingHandle is RINGING - sending Call Ended to Flutter")
+                        sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, callSid, Bundle().apply {
+                            putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callSid)
+                        })
+                    } else if (remainingConn?.state == Connection.STATE_HOLDING) {
+                        // Remaining call is HOLDING — the ACTIVE call disconnected.
+                        // Match iOS behavior: suppress Call Ended and just unhold
+                        // the remaining call. The Unhold event will trigger Flutter's
+                        // unhold handler which restores the held call as active.
+                        Log.d(TAG, "[onDisconnect] Remaining call $remainingHandle is HOLDING (state=${remainingConn?.state}) - ACTIVE call $callSid ended, suppressing Call Ended + unholding remaining")
+                        showOngoingCallNotification(remainingHandle, remainingNumber)
                         remainingConn.toggleHold(false)
                         Log.d(TAG, "[onDisconnect] Unholding remaining call $remainingHandle")
+                        bringMainActivityToFront()
+                    } else {
+                        // Remaining call is ACTIVE — the HELD call disconnected.
+                        // Send ACTION_HELD_CALL_ENDED so Flutter clears the
+                        // held-call banner without touching the active call.
+                        Log.d(TAG, "[onDisconnect] Remaining call $remainingHandle is ACTIVE (state=${remainingConn?.state}) - HELD call $callSid ended, sending Held Call Ended")
+                        sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_HELD_CALL_ENDED, callSid, Bundle().apply {
+                            putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callSid)
+                        })
+                        showOngoingCallNotification(remainingHandle, remainingNumber)
+                        bringMainActivityToFront()
                     }
-                    // Bring back the main activity to show the remaining call's UI
-                    bringMainActivityToFront()
                 }
             }
         }
@@ -2041,13 +2158,38 @@ class TVConnectionService : ConnectionService() {
                         val remainingConn = getConnection(remainingHandle)
                         val remainingNumber = remainingConn?.address?.schemeSpecificPart 
                             ?: remainingConn?.extras?.getString("caller_number") ?: ""
-                        showOngoingCallNotification(remainingHandle, remainingNumber)
-                        if (remainingConn?.state == Connection.STATE_HOLDING) {
+                        
+                        if (remainingConn?.state == Connection.STATE_RINGING || remainingConn?.state == Connection.STATE_NEW) {
+                            // Remaining call is RINGING or NEW (unanswered incoming).
+                            // The native IncomingCallActivity is already showing for this call.
+                            // Send ACTION_CALL_ENDED so Flutter knows the active call is over
+                            // and resets its UI. Do NOT call bringMainActivityToFront() — that
+                            // would cover the IncomingCallActivity with Flutter's stale call UI.
+                            Log.d(TAG, "[onCallState] Remaining call $remainingHandle is RINGING/NEW (state=${remainingConn?.state}) - sending Call Ended to Flutter")
+                            sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, callSid, Bundle().apply {
+                                putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callSid)
+                            })
+                        } else if (remainingConn?.state == Connection.STATE_HOLDING) {
+                            // Remaining call is HOLDING — the ACTIVE call disconnected.
+                            // Match iOS behavior: suppress Call Ended and just unhold
+                            // the remaining call. The Unhold event will trigger Flutter's
+                            // unhold handler which restores the held call as active.
+                            Log.d(TAG, "[onCallState] Remaining call $remainingHandle is HOLDING (state=${remainingConn?.state}) - ACTIVE call $callSid ended, suppressing Call Ended + unholding remaining")
+                            showOngoingCallNotification(remainingHandle, remainingNumber)
                             remainingConn.toggleHold(false)
                             Log.d(TAG, "[onCallState] Unholding remaining call $remainingHandle")
+                            bringMainActivityToFront()
+                        } else {
+                            // Remaining call is ACTIVE — the HELD call disconnected.
+                            // Send ACTION_HELD_CALL_ENDED so Flutter clears the
+                            // held-call banner without touching the active call.
+                            Log.d(TAG, "[onCallState] Remaining call $remainingHandle is ACTIVE (state=${remainingConn?.state}) - HELD call $callSid ended, sending Held Call Ended")
+                            sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_HELD_CALL_ENDED, callSid, Bundle().apply {
+                                putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callSid)
+                            })
+                            showOngoingCallNotification(remainingHandle, remainingNumber)
+                            bringMainActivityToFront()
                         }
-                        // Bring back the main activity to show the remaining call's UI
-                        bringMainActivityToFront()
                     }
                 }
             }
