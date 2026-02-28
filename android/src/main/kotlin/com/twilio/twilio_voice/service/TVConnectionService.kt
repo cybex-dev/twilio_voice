@@ -1095,8 +1095,11 @@ class TVConnectionService : ConnectionService() {
                                     // Remaining call is an unanswered incoming call.
                                     // IncomingCallActivity is already showing — do NOT bring
                                     // MainActivity to front (that would cover it).
+                                    // Cancel the ongoing-call notification — it belongs to the
+                                    // call that just ended; the ringing call has its own notification.
+                                    cancelOngoingCallNotification()
                                     // Send ACTION_CALL_ENDED so Flutter resets its call UI.
-                                    Log.d(TAG, "[ACTION_INCOMING_CALL onDisconnected] Remaining call $remainingHandle is RINGING/NEW (state=${remainingConn?.state}) - sending Call Ended, NOT bringing MainActivity to front")
+                                    Log.d(TAG, "[ACTION_INCOMING_CALL onDisconnected] Remaining call $remainingHandle is RINGING/NEW (state=${remainingConn?.state}) - sending Call Ended, cancelled ongoing notification")
                                     sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, callSid, Bundle().apply {
                                         putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callSid)
                                     })
@@ -1175,18 +1178,29 @@ class TVConnectionService : ConnectionService() {
                                         val remainingConn = getConnection(remainingHandle)
                                         val remainingNumber = remainingConn?.address?.schemeSpecificPart 
                                             ?: remainingConn?.extras?.getString("caller_number") ?: ""
-                                        showOngoingCallNotification(remainingHandle, remainingNumber)
-                                        if (remainingConn?.state == Connection.STATE_HOLDING) {
+                                        if (remainingConn?.state == Connection.STATE_RINGING || remainingConn?.state == Connection.STATE_NEW) {
+                                            // Remaining call is an unanswered incoming call.
+                                            // Cancel the ongoing-call notification — it belongs to the
+                                            // call that just ended; the ringing call has its own notification.
+                                            cancelOngoingCallNotification()
+                                            Log.d(TAG, "[ACTION_ANSWER onDisconnected] Remaining call $remainingHandle is RINGING/NEW - sending Call Ended, cancelled ongoing notification")
+                                            sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, callSid, Bundle().apply {
+                                                putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callSid)
+                                            })
+                                        } else if (remainingConn?.state == Connection.STATE_HOLDING) {
+                                            showOngoingCallNotification(remainingHandle, remainingNumber)
                                             // The remaining call is ON HOLD → the ACTIVE call ended.
                                             // Do NOT send ACTION_HELD_CALL_ENDED — the held call is still alive.
                                             remainingConn.toggleHold(false)
                                             Log.d(TAG, "[ACTION_ANSWER onDisconnected] Unholding remaining call $remainingHandle")
+                                            bringMainActivityToFront()
                                         } else {
+                                            showOngoingCallNotification(remainingHandle, remainingNumber)
                                             // The remaining call is NOT on hold → the HELD call ended.
                                             // Notify Flutter to clear the held call banner.
                                             sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_HELD_CALL_ENDED, callSid, newConnection.extras)
+                                            bringMainActivityToFront()
                                         }
-                                        bringMainActivityToFront()
                                     }
                                 }
                             }
@@ -1578,11 +1592,16 @@ class TVConnectionService : ConnectionService() {
                             
                             if (remainingIsRinging) {
                                 // Remaining call is still ringing on IncomingCallActivity.
-                                // Do NOT show ongoing notification (it would replace the incoming
-                                // call notification), do NOT restore audio focus (not connected yet),
+                                // Cancel the ongoing-call notification — it belongs to the call
+                                // that just ended; the ringing call has its own incoming-call
+                                // notification.
+                                cancelOngoingCallNotification()
+                                // Send ACTION_CALL_ENDED so Flutter resets its active call UI.
+                                sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, callHandle, connection?.extras)
+                                // Do NOT restore audio focus (not connected yet),
                                 // and do NOT bring MainActivity to front (IncomingCallActivity
                                 // is already handling the ringing call).
-                                Log.d(TAG, "[Decline] Remaining call $remainingHandle is ringing (state=${remainingConnection!!.state}), keeping IncomingCallActivity visible")
+                                Log.d(TAG, "[Decline] Remaining call $remainingHandle is ringing (state=${remainingConnection?.state}), cancelled ongoing notification, keeping IncomingCallActivity visible")
                             } else {
                                 // Remaining call is active/connected - restore its state
                                 val remainingNumber = remainingConnection?.address?.schemeSpecificPart 
@@ -2109,7 +2128,10 @@ class TVConnectionService : ConnectionService() {
                         ?: remainingConn?.extras?.getString("caller_number") ?: ""
                     
                     if (remainingConn?.state == Connection.STATE_RINGING) {
-                        Log.d(TAG, "[onDisconnect] Remaining call $remainingHandle is RINGING - sending Call Ended to Flutter")
+                        // Cancel the ongoing-call notification — it belongs to the call that
+                        // just ended; the ringing call has its own incoming-call notification.
+                        cancelOngoingCallNotification()
+                        Log.d(TAG, "[onDisconnect] Remaining call $remainingHandle is RINGING - sending Call Ended to Flutter, cancelled ongoing notification")
                         sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, callSid, Bundle().apply {
                             putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callSid)
                         })
@@ -2139,9 +2161,20 @@ class TVConnectionService : ConnectionService() {
         }
         val onCallState: CompletionHandler<Call.State> = CompletionHandler { state ->
             if (state == Call.State.DISCONNECTED) {
-                if (activeConnections.containsKey(callSid)) {
-                    activeConnections.remove(callSid)
+                // If callSid is already removed from activeConnections, it means another
+                // handler (e.g. ACTION_HANGUP / Decline) already handled cleanup for this
+                // call. Skip to avoid duplicate broadcasts and notification cancels.
+                val alreadyHandled = !activeConnections.containsKey(callSid)
+                if (alreadyHandled) {
+                    Log.d(TAG, "[onCallState] Call $callSid already handled (not in activeConnections), skipping")
+                    if (!hasActiveCalls()) {
+                        clearCallWaitingState()
+                        stopForegroundService()
+                        stopSelfSafe()
+                    }
+                    return@CompletionHandler
                 }
+                activeConnections.remove(callSid)
                 // Clear pending call if this was the pending one
                 if (getPendingIncomingCallSid() == callSid) {
                     clearPendingIncomingCall()
@@ -2162,10 +2195,13 @@ class TVConnectionService : ConnectionService() {
                         if (remainingConn?.state == Connection.STATE_RINGING || remainingConn?.state == Connection.STATE_NEW) {
                             // Remaining call is RINGING or NEW (unanswered incoming).
                             // The native IncomingCallActivity is already showing for this call.
+                            // Cancel the ongoing-call notification — it belongs to the call that
+                            // just ended, and the ringing call has its own incoming-call notification.
+                            cancelOngoingCallNotification()
                             // Send ACTION_CALL_ENDED so Flutter knows the active call is over
                             // and resets its UI. Do NOT call bringMainActivityToFront() — that
                             // would cover the IncomingCallActivity with Flutter's stale call UI.
-                            Log.d(TAG, "[onCallState] Remaining call $remainingHandle is RINGING/NEW (state=${remainingConn?.state}) - sending Call Ended to Flutter")
+                            Log.d(TAG, "[onCallState] Remaining call $remainingHandle is RINGING/NEW (state=${remainingConn?.state}) - sending Call Ended to Flutter, cancelled ongoing notification")
                             sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, callSid, Bundle().apply {
                                 putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callSid)
                             })
@@ -2594,21 +2630,32 @@ class TVConnectionService : ConnectionService() {
     private fun cancelOngoingCallNotification() {
         // Stop the duration updater
         stopOngoingCallDurationUpdater()
-        Log.d(TAG, "[VoiceConnectionService] cancelOngoingCallNotification")
-        try {
-            // Stop the foreground service that was started for ongoing call notification
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                stopForeground(STOP_FOREGROUND_REMOVE)
-            } else {
-                @Suppress("DEPRECATION")
-                stopForeground(true)
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "[VoiceConnectionService] Error stopping foreground for ongoing call: ${e.message}")
-        }
-        // Also cancel via NotificationManager as fallback
         val notificationManager: NotificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.cancel(ONGOING_CALL_NOTIFICATION_ID)
+        
+        if (hasActiveCalls()) {
+            // Other calls still exist (e.g. a ringing incoming call).
+            // Do NOT call stopForeground() — that removes the CURRENT foreground
+            // notification which may be the incoming-call notification (ID 101),
+            // not the ongoing-call notification (ID 102).
+            // Instead, just cancel the ongoing notification by its specific ID.
+            Log.d(TAG, "[VoiceConnectionService] cancelOngoingCallNotification - other calls active, cancelling by ID only")
+            notificationManager.cancel(ONGOING_CALL_NOTIFICATION_ID)
+        } else {
+            // No other calls remain — safe to fully stop the foreground service.
+            Log.d(TAG, "[VoiceConnectionService] cancelOngoingCallNotification - no other calls, stopping foreground")
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                } else {
+                    @Suppress("DEPRECATION")
+                    stopForeground(true)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "[VoiceConnectionService] Error stopping foreground for ongoing call: ${e.message}")
+            }
+            // Also cancel via NotificationManager as fallback
+            notificationManager.cancel(ONGOING_CALL_NOTIFICATION_ID)
+        }
     }
 
     private fun getOrCreateIncomingCallChannel(): NotificationChannel {
