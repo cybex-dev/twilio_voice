@@ -2402,8 +2402,10 @@ class TVConnectionService : ConnectionService() {
         }.build()
     }
 
-    private fun cancelNotification() {
+    private fun cancelAllNotifications() {
         val notificationManager: NotificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.cancel(INCOMING_CALL_NOTIFICATION_ID)
+        notificationManager.cancel(ONGOING_CALL_NOTIFICATION_ID)
         notificationManager.cancel(SERVICE_TYPE_MICROPHONE)
     }
 
@@ -2426,9 +2428,19 @@ class TVConnectionService : ConnectionService() {
     /// Source: https://github.com/react-native-webrtc/react-native-callkeep/blob/master/android/src/main/java/io/wazo/callkeep/VoiceConnectionService.java#L352C5-L377C6
     private fun stopForegroundService() {
         Log.d(TAG, "[VoiceConnectionService] stopForegroundService")
+        // Stop the ongoing call duration updater if running
+        stopOngoingCallDurationUpdater()
         try {
-            stopForeground(SERVICE_TYPE_MICROPHONE)
-            cancelNotification()
+            // Use STOP_FOREGROUND_REMOVE to properly remove the foreground notification.
+            // Previously used SERVICE_TYPE_MICROPHONE (100) as flags, but 100 doesn't include
+            // STOP_FOREGROUND_REMOVE (1), so the notification was never actually removed.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                @Suppress("DEPRECATION")
+                stopForeground(true)
+            }
+            cancelAllNotifications()
         } catch (e: java.lang.Exception) {
             Log.w(TAG, "[VoiceConnectionService] can't stop foreground service :$e")
         }
