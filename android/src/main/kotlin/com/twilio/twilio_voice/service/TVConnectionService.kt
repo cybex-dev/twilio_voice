@@ -1,6 +1,7 @@
 package com.twilio.twilio_voice.service
 
 import android.annotation.SuppressLint
+import android.app.KeyguardManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -68,6 +69,11 @@ class TVConnectionService : ConnectionService() {
         val TAG = "TwilioVoiceConnectionService"
 
         val activeConnections = HashMap<String, TVCallConnection>()
+        
+        // Track the start time of each call for notification Chronometer.
+        // When a held call resumes, we use the original start time instead of
+        // System.currentTimeMillis() so the timer doesn't reset to 00:00.
+        val callStartTimes = HashMap<String, Long>()
 
         val TWI_SCHEME: String = "twi"
 
@@ -2121,6 +2127,7 @@ class TVConnectionService : ConnectionService() {
                 stopSelfSafe()
             } else {
                 Log.d(TAG, "[onDisconnect] Call $callSid ended but other calls still active (${activeConnections.size} remaining)")
+                
                 val remainingHandle = getActiveCallHandle()
                 if (remainingHandle != null) {
                     val remainingConn = getConnection(remainingHandle)
@@ -2186,6 +2193,7 @@ class TVConnectionService : ConnectionService() {
                     stopSelfSafe()
                 } else {
                     Log.d(TAG, "[onCallState] Call $callSid disconnected but other calls still active (${activeConnections.size} remaining)")
+                    
                     val remainingHandle = getActiveCallHandle()
                     if (remainingHandle != null) {
                         val remainingConn = getConnection(remainingHandle)
@@ -2244,7 +2252,17 @@ class TVConnectionService : ConnectionService() {
         connection.setOnCallActionListener(onAction)
         connection.setOnCallEventListener(onEvent)
         connection.setOnCallDisconnected(onDisconnect)
-        connection.setOnCallStateListener(onCallState);
+        connection.setOnCallStateListener(onCallState)
+        
+        // Provide callback so the connection can check for other active calls
+        // before releasing audio focus on disconnect. This prevents killing the
+        // foreground notification of a remaining call on Android 12+/16.
+        connection.hasOtherActiveCalls = {
+            // The disconnecting connection's callSid may or may not still be in
+            // activeConnections at this point (depends on which handler ran first).
+            // We check if there are connections OTHER than this one.
+            activeConnections.keys.any { it != callSid }
+        }
     }
 
     /**
@@ -2430,6 +2448,8 @@ class TVConnectionService : ConnectionService() {
         Log.d(TAG, "[VoiceConnectionService] stopForegroundService")
         // Stop the ongoing call duration updater if running
         stopOngoingCallDurationUpdater()
+        // Clear all stored call start times since all calls are ending
+        callStartTimes.clear()
         try {
             // Use STOP_FOREGROUND_REMOVE to properly remove the foreground notification.
             // Previously used SERVICE_TYPE_MICROPHONE (100) as flags, but 100 doesn't include
@@ -2451,6 +2471,11 @@ class TVConnectionService : ConnectionService() {
         val name = "Ongoing Calls"
         val descriptionText = "Active Voice Calls"
         val notificationManager: NotificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        
+        // Delete v2 channel if it exists (was a temporary experiment)
+        try {
+            notificationManager.deleteNotificationChannel("${applicationContext.packageName}_ongoing_calls_v2")
+        } catch (_: Exception) {}
         
         // Use IMPORTANCE_DEFAULT for ongoing calls - shows in notification shade but no sound
         val importance = NotificationManager.IMPORTANCE_DEFAULT
@@ -2507,11 +2532,39 @@ class TVConnectionService : ConnectionService() {
         
         val displayName = callerName ?: "Unknown"
         
-        // Store the call start time for duration tracking
-        val callStartTime = System.currentTimeMillis()
+        // Use the stored start time for this call if available (e.g. held call resuming),
+        // otherwise record a new start time. This prevents the Chronometer from resetting
+        // to 00:00 when a held call's notification is re-shown after the other call ends.
+        val callStartTime = callStartTimes.getOrPut(callSid) { System.currentTimeMillis() }
         
-        // Start a handler to update the call duration in subtitle
-        startOngoingCallDurationUpdater(callSid, displayName, callStartTime, channel, contentIntent, hangupPendingIntent)
+        // On Android 12+ (API 31), CallStyle uses Android's built-in Chronometer
+        // so we build the notification ONCE and let the OS handle the timer.
+        // On older Android, we use a handler to manually update the custom RemoteViews every second.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val notification = buildOngoingCallNotification(
+                displayName, "00:00", channel, contentIntent, hangupPendingIntent, callStartTime
+            )
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    startForeground(ONGOING_CALL_NOTIFICATION_ID, notification, 
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+                } else {
+                    startForeground(ONGOING_CALL_NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
+                }
+                Log.d(TAG, "[VoiceConnectionService] Started foreground service with CallStyle notification (Chronometer)")
+            } catch (e: Exception) {
+                Log.w(TAG, "[VoiceConnectionService] Could not start foreground with ongoing call notification: ${e.message}")
+                try {
+                    val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                    notificationManager.notify(ONGOING_CALL_NOTIFICATION_ID, notification)
+                } catch (e2: Exception) {
+                    Log.e(TAG, "[VoiceConnectionService] Fallback notify also failed: ${e2.message}")
+                }
+            }
+        } else {
+            // Older Android: use handler-based duration updater with custom RemoteViews
+            startOngoingCallDurationUpdater(callSid, displayName, callStartTime, channel, contentIntent, hangupPendingIntent)
+        }
     }
     
     // Handler for updating ongoing call notification duration
@@ -2606,9 +2659,36 @@ class TVConnectionService : ConnectionService() {
         durationText: String,
         channel: NotificationChannel,
         contentIntent: PendingIntent,
-        hangupPendingIntent: PendingIntent
+        hangupPendingIntent: PendingIntent,
+        callStartTime: Long = 0L
     ): Notification {
-        // Create custom RemoteViews for the notification
+        // On Android 12+ (API 31), use Notification.CallStyle which gives the
+        // WhatsApp-style compact chip on the lock screen showing caller name + duration.
+        // We use setUsesChronometer(true) + setWhen(callStartTime) so the OS handles
+        // the timer natively — no need to rebuild the notification every second.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val caller = Person.Builder()
+                .setName(displayName)
+                .setImportant(true)
+                .build()
+            
+            return Notification.Builder(this, channel.id).apply {
+                setOngoing(true)
+                setSmallIcon(R.drawable.ic_transparent)
+                setContentIntent(contentIntent)
+                setCategory(Notification.CATEGORY_CALL)
+                setVisibility(Notification.VISIBILITY_PUBLIC)
+                setColorized(true)
+                setColor(Color.parseColor("#1C1C1E"))
+                // CallStyle.forOngoingCall renders the lock screen chip (like WhatsApp)
+                style = Notification.CallStyle.forOngoingCall(caller, hangupPendingIntent)
+                // Let Android's built-in Chronometer handle the call duration display
+                setUsesChronometer(true)
+                setWhen(callStartTime)
+            }.build()
+        }
+        
+        // Fallback for Android < 12: use custom RemoteViews layout
         val remoteViews = android.widget.RemoteViews(packageName, R.layout.notification_ongoing_call)
         
         // Set caller name (title)
@@ -3129,6 +3209,17 @@ class TVConnectionService : ConnectionService() {
     
     private fun launchMainActivityWithCallData(callSid: String, callerNumber: String, myNumber: String) {
         try {
+            // Check if the device is locked (keyguard is showing).
+            // If locked, do NOT launch MainActivity — that would set SHOW_OVER_LOCK_SCREEN
+            // flags on it, making the entire app accessible without authentication.
+            // Instead, IncomingCallActivity already stored pendingAnsweredCallData,
+            // and MainActivity.onResume() will pick it up when the user unlocks normally.
+            val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+            if (keyguardManager?.isKeyguardLocked == true) {
+                Log.d(TAG, "launchMainActivityWithCallData: Device is locked - skipping MainActivity launch (pendingAnsweredCallData will handle it on unlock)")
+                return
+            }
+            
             val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
             launchIntent?.let { intent ->
                 // Use SINGLE_TOP + REORDER_TO_FRONT to preserve existing Flutter activity
@@ -3165,22 +3256,32 @@ class TVConnectionService : ConnectionService() {
         // Stop ringtone when cancelling notification
         stopRinging()
         
-        // When a foreground service notification is shown, we need to stop the foreground state
-        // to remove the notification, not just call notificationManager.cancel()
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                // STOP_FOREGROUND_REMOVE removes the notification
-                stopForeground(STOP_FOREGROUND_REMOVE)
-            } else {
-                @Suppress("DEPRECATION")
-                stopForeground(true)
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "[VoiceConnectionService] Error stopping foreground for incoming call: $e")
-        }
-        // Also try to cancel via NotificationManager as a fallback
         val notificationManager: NotificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.cancel(INCOMING_CALL_NOTIFICATION_ID)
+        
+        if (hasActiveCalls()) {
+            // Other calls still exist — an ongoing call notification (ID 102) is likely the
+            // current foreground notification.  stopForeground(STOP_FOREGROUND_REMOVE) would
+            // strip the service's foreground status and remove THAT notification, killing the
+            // ongoing-call indicator.  Instead, just cancel the incoming notification by its
+            // specific ID and leave the foreground state untouched.
+            Log.d(TAG, "[VoiceConnectionService] cancelIncomingCallNotification - other calls active, cancelling incoming notification by ID only (preserving foreground)")
+            notificationManager.cancel(INCOMING_CALL_NOTIFICATION_ID)
+        } else {
+            // No other calls remain — safe to fully stop the foreground service.
+            Log.d(TAG, "[VoiceConnectionService] cancelIncomingCallNotification - no other calls, stopping foreground")
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                } else {
+                    @Suppress("DEPRECATION")
+                    stopForeground(true)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "[VoiceConnectionService] Error stopping foreground for incoming call: $e")
+            }
+            // Also cancel via NotificationManager as a fallback
+            notificationManager.cancel(INCOMING_CALL_NOTIFICATION_ID)
+        }
     }
     
     private fun startRinging() {

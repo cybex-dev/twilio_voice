@@ -84,10 +84,15 @@ class TVCallInviteConnection(
     }
 
     override fun onReject() {
-        Log.d(TAG, "onReject: onReject")
+        val otherCallsActive = hasOtherActiveCalls?.invoke() ?: false
+        Log.d(TAG, "onReject: onReject, otherCallsActive=$otherCallsActive")
         super.onReject()
         callInvite.reject(context)
-        releaseAudioFocus()
+        if (otherCallsActive) {
+            Log.d(TAG, "onReject: Skipping releaseAudioFocus — other calls still active")
+        } else {
+            releaseAudioFocus()
+        }
         // if the call was answered, then immediately rejected/ended, we need to disconnect the call also
         twilioCall?.let {
             Log.d(TAG, "onReject: disconnecting call")
@@ -661,6 +666,15 @@ open class TVCallConnection(
     @Volatile private var isDisconnectingOrDisconnected = false
 
     /**
+     * Callback to check whether other active calls exist in the service.
+     * Set by TVConnectionService.attachCallEventListeners().
+     * Used by onDisconnected() to decide whether to release audio focus:
+     * if other calls are still active, we must NOT release audio focus or the
+     * OS (Android 12+/16) will kill the foreground notification for the remaining call.
+     */
+    var hasOtherActiveCalls: (() -> Boolean)? = null
+
+    /**
      * Force disconnect with extra logging for debugging decline issues.
      * Idempotent: only processes disconnect once.
      */
@@ -670,13 +684,19 @@ open class TVCallConnection(
             return
         }
         isDisconnectingOrDisconnected = true
-        Log.i(TAG, "[Decline] forceDisconnectWithLogging called. State: $state, Direction: $callDirection, twilioCall: ${twilioCall != null}, CallParams: ${getCallParameters()?.callSid}")
+        val otherCallsActive = hasOtherActiveCalls?.invoke() ?: false
+        Log.i(TAG, "[Decline] forceDisconnectWithLogging called. State: $state, Direction: $callDirection, twilioCall: ${twilioCall != null}, CallParams: ${getCallParameters()?.callSid}, otherCallsActive=$otherCallsActive")
         
         // Stop ringback tone if playing
         stopRingback()
 
-        // Release audio focus when disconnecting
-        releaseAudioFocus()
+        // Release audio focus when disconnecting — but ONLY if no other calls are active.
+        // When other calls exist, releasing audio focus would kill their foreground notification.
+        if (otherCallsActive) {
+            Log.d(TAG, "[Decline] Skipping releaseAudioFocus — other calls still active")
+        } else {
+            releaseAudioFocus()
+        }
         
         try {
             // For incoming call invites that haven't been answered yet, reject the invite
@@ -983,7 +1003,8 @@ open class TVCallConnection(
     }
 
     override fun onDisconnected(call: Call, reason: CallException?) {
-        Log.d(TAG, "onDisconnected: onDisconnected, reason: ${reason?.message}, isDisconnectingOrDisconnected=$isDisconnectingOrDisconnected.\nException: ${reason.toString()}")
+        val otherCallsActive = hasOtherActiveCalls?.invoke() ?: false
+        Log.d(TAG, "onDisconnected: onDisconnected, reason: ${reason?.message}, isDisconnectingOrDisconnected=$isDisconnectingOrDisconnected, otherCallsActive=$otherCallsActive.\nException: ${reason.toString()}")
 
         // Stop ringback tone if playing
         stopRingback()
@@ -999,7 +1020,16 @@ open class TVCallConnection(
         }
         isDisconnectingOrDisconnected = true
 
-        releaseAudioFocus()
+        // Only release audio focus if no other calls are still active.
+        // When another call exists (e.g. held call that will resume), releasing audio
+        // focus resets AudioManager to MODE_NORMAL, abandons focus, and clears the
+        // communication device — on Android 12+/16 this causes the OS to revoke the
+        // FOREGROUND_SERVICE_TYPE_PHONE_CALL foreground notification for the remaining call.
+        if (otherCallsActive) {
+            Log.d(TAG, "onDisconnected: Skipping releaseAudioFocus — other calls still active, preserving audio state for remaining call")
+        } else {
+            releaseAudioFocus()
+        }
         onCallStateListener?.withValue(call.state)
         onEvent?.onChange(TVNativeCallEvents.EVENT_DISCONNECTED_REMOTE, Bundle().apply {
             reason?.toBundle()?.let { putExtras(it) }
@@ -1012,7 +1042,8 @@ open class TVCallConnection(
 
     override fun onAbort() {
         super.onAbort()
-        Log.i(TAG, "onAbort: onAbort, isDisconnectingOrDisconnected=$isDisconnectingOrDisconnected")
+        val otherCallsActive = hasOtherActiveCalls?.invoke() ?: false
+        Log.i(TAG, "onAbort: onAbort, isDisconnectingOrDisconnected=$isDisconnectingOrDisconnected, otherCallsActive=$otherCallsActive")
         if (isDisconnectingOrDisconnected) {
             Log.d(TAG, "onAbort: Already handled by forceDisconnectWithLogging, skipping duplicate cleanup")
             return
@@ -1023,7 +1054,11 @@ open class TVCallConnection(
         stopRingback()
 
         twilioCall?.disconnect()
-        releaseAudioFocus()
+        if (otherCallsActive) {
+            Log.d(TAG, "onAbort: Skipping releaseAudioFocus — other calls still active")
+        } else {
+            releaseAudioFocus()
+        }
         setDisconnected(DisconnectCause(DisconnectCause.CANCELED))
         onAction?.onChange(TVNativeCallActions.ACTION_ABORT, null)
         onDisconnected?.withValue(DisconnectCause(DisconnectCause.CANCELED))
@@ -1032,7 +1067,8 @@ open class TVCallConnection(
 
     override fun onDisconnect() {
         super.onDisconnect()
-        Log.i(TAG, "onDisconnect: onDisconnect, isDisconnectingOrDisconnected=$isDisconnectingOrDisconnected")
+        val otherCallsActive = hasOtherActiveCalls?.invoke() ?: false
+        Log.i(TAG, "onDisconnect: onDisconnect, isDisconnectingOrDisconnected=$isDisconnectingOrDisconnected, otherCallsActive=$otherCallsActive")
         if (isDisconnectingOrDisconnected) {
             Log.d(TAG, "onDisconnect: Already handled by forceDisconnectWithLogging, skipping duplicate cleanup")
             return
@@ -1043,7 +1079,11 @@ open class TVCallConnection(
         stopRingback()
 
         twilioCall?.disconnect()
-        releaseAudioFocus()
+        if (otherCallsActive) {
+            Log.d(TAG, "onDisconnect: Skipping releaseAudioFocus — other calls still active")
+        } else {
+            releaseAudioFocus()
+        }
         setDisconnected(DisconnectCause(DisconnectCause.LOCAL))
         this.onDisconnected?.withValue(DisconnectCause(DisconnectCause.LOCAL))
         onEvent?.onChange(TVNativeCallEvents.EVENT_DISCONNECTED_LOCAL, null)
