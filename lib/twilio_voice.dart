@@ -8,6 +8,8 @@ import '_internal/platform_interface/twilio_voice_platform_interface.dart';
 export './models/active_call.dart';
 export './models/audio_route_data.dart';
 export './models/call_event.dart';
+export './models/call_session.dart';
+export './models/call_session_manager.dart';
 
 class TwilioVoice extends MethodChannelTwilioVoice {
   static TwilioVoicePlatform get instance => MethodChannelTwilioVoice.instance;

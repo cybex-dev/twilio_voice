@@ -240,4 +240,12 @@ abstract class TwilioVoicePlatform extends SharedPlatformInterface {
   /// Cached audio route data from the latest native AudioRoute event.
   /// Returns the route + Bluetooth availability without an extra method channel round-trip.
   AudioRouteData? get lastAudioRouteData;
+
+  /// The call SID extracted from the most recent native event.
+  ///
+  /// For data events (Ringing, Connected, Answer, etc.), the SID is also on
+  /// [TwilioCallPlatform.activeCall.callSid]. For simple events (Hold, Unhold,
+  /// Call Ended, Held Call Ended), this is the only place the SID is available.
+  /// The value is updated every time [parseCallEvent] processes an event.
+  String? get lastEventCallSid;
 }

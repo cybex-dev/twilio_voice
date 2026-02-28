@@ -1,6 +1,7 @@
 enum CallDirection { incoming, outgoing }
 
 class ActiveCall {
+  final String? callSid;
   final String to;
   final String toFormatted;
   final String from;
@@ -10,7 +11,13 @@ class ActiveCall {
   // Only available after Ringing and Answer events
   final Map<String, dynamic>? customParams;
 
-  ActiveCall({required String from, required String to, this.initiated, required this.callDirection, this.customParams})
+  ActiveCall(
+      {this.callSid,
+      required String from,
+      required String to,
+      this.initiated,
+      required this.callDirection,
+      this.customParams})
       : to = to.replaceAll("client:", ""),
         from = from.replaceAll("client:", ""),
         toFormatted = _prettyPrintNumber(to),
@@ -42,6 +49,7 @@ class ActiveCall {
   @override
   String toString() {
     return 'ActiveCall{'
+        'callSid: $callSid, '
         'to: $to, '
         'toFormatted: $toFormatted, '
         'from: $from, '

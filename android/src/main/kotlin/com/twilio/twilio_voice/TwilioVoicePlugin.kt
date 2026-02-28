@@ -733,7 +733,8 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                         val from = extractUserNumber(activeConnection.twilioCall?.from ?: "")
                         val to = activeConnection.twilioCall?.to ?: ""
                         val callDirection = activeConnection.callDirection ?: CallDirection.INCOMING
-                        logEvents("", arrayOf("Connected", from, to, callDirection.label ))
+                        val activeSid = activeCallHandle ?: (activeConnection.twilioCall?.sid ?: "")
+                        logEvents("", arrayOf("Connected", activeSid, from, to, callDirection.label ))
                     }
 
                     // Check for held call(s) and emit HeldCallData for each
@@ -744,8 +745,8 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                             val heldFrom = extractUserNumber(heldTwilioCall.from ?: "")
                             val heldTo = heldTwilioCall.to ?: ""
                             val heldDirection = connection.callDirection ?: CallDirection.INCOMING
-                            Log.d(TAG, "GetActiveCallOnResumeFromTerminatedState: emitting HeldCallData for held call - from=$heldFrom, to=$heldTo, direction=${heldDirection.label}")
-                            logEvents("", arrayOf("HeldCallData", heldFrom, heldTo, heldDirection.label))
+                            Log.d(TAG, "GetActiveCallOnResumeFromTerminatedState: emitting HeldCallData for held call - sid=$callSid, from=$heldFrom, to=$heldTo, direction=${heldDirection.label}")
+                            logEvents("", arrayOf("HeldCallData", callSid, heldFrom, heldTo, heldDirection.label))
                         }
                     }
                 }
@@ -2486,7 +2487,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                     // Send a separate event so Flutter can track the waiting call
                     // without corrupting the active call's data
                     Log.d(TAG, "handleBroadcastIntent: ACTION_INCOMING_CALL during active call (callSid=$callSid), sending IncomingWhileActive for $callHandle")
-                    logEvents("", arrayOf("IncomingWhileActive", from, to, CallDirection.INCOMING.label, params))
+                    logEvents("", arrayOf("IncomingWhileActive", callHandle, from, to, CallDirection.INCOMING.label, params))
                 } else {
                     callSid = callHandle
                     // Reset audio states for new incoming call (only when no active call)
@@ -2494,8 +2495,8 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                     isBluetoothOn = false
                     isMuted = false
                     Log.d(TAG, "handleBroadcastIntent: ACTION_INCOMING_CALL - Reset audio states: isSpeakerOn=$isSpeakerOn, isBluetoothOn=$isBluetoothOn")
-                    logEvents("", arrayOf("Incoming", from, to, CallDirection.INCOMING.label, params))
-                    logEvents("", arrayOf("Ringing", from, to, CallDirection.INCOMING.label, params))
+                    logEvents("", arrayOf("Incoming", callHandle, from, to, CallDirection.INCOMING.label, params))
+                    logEvents("", arrayOf("Ringing", callHandle, from, to, CallDirection.INCOMING.label, params))
                 }
             }
 
@@ -2518,12 +2519,13 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                     callSid = null
                     Log.d(TAG, "handleBroadcastIntent: Call Ended $callHandle, no remaining calls")
                 }
-                logEvent("", "Call Ended")
+                logEvent("", "Call Ended|$callHandle")
             }
 
             TVBroadcastReceiver.ACTION_HELD_CALL_ENDED -> {
-                Log.d(TAG, "handleBroadcastIntent: Held Call Ended - the held call disconnected while another call is active")
-                logEvent("", "Held Call Ended")
+                val endedCallHandle = intent.getStringExtra(TVBroadcastReceiver.EXTRA_CALL_HANDLE) ?: ""
+                Log.d(TAG, "handleBroadcastIntent: Held Call Ended ($endedCallHandle) - the held call disconnected while another call is active")
+                logEvent("", "Held Call Ended|$endedCallHandle")
             }
 
             TVBroadcastReceiver.ACTION_CALL_STATE -> {
@@ -2581,7 +2583,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                     }
                 }.toString()
                 callSid = callHandle
-                logEvents("", arrayOf("Answer", from, to, CallDirection.INCOMING.label, params))
+                logEvents("", arrayOf("Answer", callHandle, from, to, CallDirection.INCOMING.label, params))
             }
 
             TVNativeCallActions.ACTION_DTMF -> {
@@ -2605,13 +2607,13 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
 
             TVNativeCallActions.ACTION_ABORT -> {
                 Log.d(TAG, "handleBroadcastIntent: Abort")
-                logEvent("", "Call Ended")
+                logEvent("", "Call Ended|${callSid ?: ""}")
                 callSid = null
             }
 
             TVNativeCallActions.ACTION_HOLD -> {
-                Log.d(TAG, "handleBroadcastIntent: Hold")
-                logEvent("", "Hold")
+                Log.d(TAG, "handleBroadcastIntent: Hold (callSid=$callSid)")
+                logEvent("", "Hold|${callSid ?: ""}")
             }
 
             TVNativeCallActions.ACTION_UNHOLD -> {
@@ -2629,7 +2631,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                         Log.d(TAG, "handleBroadcastIntent: Unhold - callSid already correct: $callSid")
                     }
                 }
-                logEvent("", "Unhold")
+                logEvent("", "Unhold|${callSid ?: ""}")
             }
 
             TVNativeCallEvents.EVENT_CONNECTING -> {
@@ -2657,7 +2659,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 // or if this is the same call (not a second incoming call)
                 if (callSid == null || callSid == callHandle) {
                     callSid = callHandle
-                    logEvents("", arrayOf("Ringing", from, to, callDirection))
+                    logEvents("", arrayOf("Ringing", callHandle, from, to, callDirection))
                 } else {
                     // Active call exists with different SID - skip to avoid corrupting Flutter state
                     Log.d(TAG, "handleBroadcastIntent: EVENT_RINGING skipped for $callHandle (active callSid=$callSid)")
@@ -2732,7 +2734,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                     }
                 }
                 
-                logEvents("", arrayOf("Connected", from, to, callDirection))
+                logEvents("", arrayOf("Connected", callHandle, from, to, callDirection))
             }
 
             TVNativeCallEvents.EVENT_CONNECT_FAILURE -> {
@@ -2746,7 +2748,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                     return
                 }
                 logEvent("Call Error: ${code}, $message");
-                logEvent("", "Call Ended")
+                logEvent("", "Call Ended|${callSid ?: ""}")
                 callSid = null
                 TVConnectionService.clearActiveConnections()
 
@@ -2761,7 +2763,8 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             }
 
             TVNativeCallEvents.EVENT_DISCONNECTED_LOCAL -> {
-                logEvent("", "Call Ended")
+                val disconnectedSid = callSid ?: ""
+                logEvent("", "Call Ended|$disconnectedSid")
                 // Only null callSid if no other calls remain
                 val remainingHandleLocal = TVConnectionService.getActiveCallHandle()
                 if (remainingHandleLocal != null) {
@@ -2778,7 +2781,8 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             }
 
             TVNativeCallEvents.EVENT_DISCONNECTED_REMOTE -> {
-                logEvent("", "Call Ended")
+                val disconnectedSid = callSid ?: ""
+                logEvent("", "Call Ended|$disconnectedSid")
                 // Only null callSid if no other calls remain
                 val remainingHandleRemote = TVConnectionService.getActiveCallHandle()
                 if (remainingHandleRemote != null) {
@@ -2796,7 +2800,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
 
             TVNativeCallEvents.EVENT_MISSED -> {
                 logEvent("", "Missed Call")
-                logEvent("", "Call Ended")
+                logEvent("", "Call Ended|${callSid ?: ""}")
                 callSid = null
                 // Reset audio states for next call
                 isSpeakerOn = false

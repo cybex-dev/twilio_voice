@@ -18,8 +18,14 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
   /// Cached audio route data from the latest native AudioRoute event.
   AudioRouteData? _lastAudioRouteData;
 
+  /// The call SID extracted from the most recent native event.
+  String? _lastEventCallSid;
+
   @override
   AudioRouteData? get lastAudioRouteData => _lastAudioRouteData;
+
+  @override
+  String? get lastEventCallSid => _lastEventCallSid;
 
   @override
   TwilioCallPlatform get call => _call;
@@ -298,35 +304,37 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
       if (tokens[1].contains("31600") ||
           tokens[1].contains("31603") ||
           tokens[1].contains("31486")) {
-        call.activeCall = null;
+        // Note: call.activeCall is NOT cleared here — the BLoC owns call
+        // lifecycle via CallSessionManager and clears it when processing
+        // the event. Clearing here would race with the BLoC's held-call check.
         return CallEvent.declined;
       } else if (tokens.toString().toLowerCase().contains("call rejected")) {
         // Android call reject from string: "LOG|Call Rejected"
-        call.activeCall = null;
         return CallEvent.declined;
       } else if (tokens.toString().toLowerCase().contains("rejecting call")) {
         // iOS call reject from string: "LOG|provider:performEndCallAction: rejecting call"
-        call.activeCall = null;
         return CallEvent.declined;
       } else if (tokens[1].contains("Call Rejected")) {
         // macOS / web call reject from string: "Call Rejected"
-        call.activeCall = null;
         return CallEvent.declined;
       }
       return CallEvent.log;
     } else if (state.startsWith("Connecting|")) {
       call.activeCall = createCallFromState(state);
+      _lastEventCallSid = call.activeCall?.callSid;
       if (kDebugMode) {
         printDebug(
-            'Connecting - From: ${call.activeCall!.from}, To: ${call.activeCall!.to}, Direction: ${call.activeCall!.callDirection}');
+            'Connecting - SID: ${call.activeCall!.callSid}, From: ${call.activeCall!.from}, To: ${call.activeCall!.to}, Direction: ${call.activeCall!.callDirection}');
       }
       call.activeCall = createCallFromState(state, initiated: true);
+      _lastEventCallSid = call.activeCall?.callSid;
       return CallEvent.connecting;
     } else if (state.startsWith("Connected|")) {
       call.activeCall = createCallFromState(state, initiated: true);
+      _lastEventCallSid = call.activeCall?.callSid;
       if (kDebugMode) {
         printDebug(
-            'Connected - From: ${call.activeCall!.from}, To: ${call.activeCall!.to}, StartOn: ${call.activeCall!.initiated}, Direction: ${call.activeCall!.callDirection}');
+            'Connected - SID: ${call.activeCall!.callSid}, From: ${call.activeCall!.from}, To: ${call.activeCall!.to}, StartOn: ${call.activeCall!.initiated}, Direction: ${call.activeCall!.callDirection}');
       }
       return CallEvent.connected;
     } else if (state.startsWith("IncomingWhileActive|")) {
@@ -334,13 +342,14 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
       // Do NOT overwrite activeCall - store as waitingCall instead
       final waitingCallData =
           createCallFromState(state, callDirection: CallDirection.incoming);
+      _lastEventCallSid = waitingCallData.callSid;
       if (call is MethodChannelTwilioCall) {
         (call as MethodChannelTwilioCall).waitingCall = waitingCallData;
       }
 
       if (kDebugMode) {
         printDebug(
-            'IncomingWhileActive - From: ${waitingCallData.from}, To: ${waitingCallData.to}, Direction: ${waitingCallData.callDirection}');
+            'IncomingWhileActive - SID: ${waitingCallData.callSid}, From: ${waitingCallData.from}, To: ${waitingCallData.to}, Direction: ${waitingCallData.callDirection}');
       }
 
       return CallEvent.incomingWhileActive;
@@ -348,38 +357,42 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
       // Added as temporary override for incoming calls, not breaking current (expected) Ringing behaviour
       call.activeCall =
           createCallFromState(state, callDirection: CallDirection.incoming);
+      _lastEventCallSid = call.activeCall?.callSid;
 
       if (kDebugMode) {
         printDebug(
-            'Incoming - From: ${call.activeCall!.from}, To: ${call.activeCall!.to}, Direction: ${call.activeCall!.callDirection}');
+            'Incoming - SID: ${call.activeCall!.callSid}, From: ${call.activeCall!.from}, To: ${call.activeCall!.to}, Direction: ${call.activeCall!.callDirection}');
       }
 
       return CallEvent.incoming;
     } else if (state.startsWith("Ringing|")) {
       call.activeCall = createCallFromState(state);
+      _lastEventCallSid = call.activeCall?.callSid;
 
       if (kDebugMode) {
         printDebug(
-            'Ringing - From: ${call.activeCall!.from}, To: ${call.activeCall!.to}, Direction: ${call.activeCall!.callDirection}');
+            'Ringing - SID: ${call.activeCall!.callSid}, From: ${call.activeCall!.from}, To: ${call.activeCall!.to}, Direction: ${call.activeCall!.callDirection}');
       }
 
       return CallEvent.ringing;
     } else if (state.startsWith("Answer")) {
       call.activeCall =
           createCallFromState(state, callDirection: CallDirection.incoming);
+      _lastEventCallSid = call.activeCall?.callSid;
       if (kDebugMode) {
         printDebug(
-            'Answer - From: ${call.activeCall!.from}, To: ${call.activeCall!.to}, Direction: ${call.activeCall!.callDirection}');
+            'Answer - SID: ${call.activeCall!.callSid}, From: ${call.activeCall!.from}, To: ${call.activeCall!.to}, Direction: ${call.activeCall!.callDirection}');
       }
 
       return CallEvent.answer;
     } else if (state.startsWith("ReturningCall")) {
       call.activeCall =
           createCallFromState(state, callDirection: CallDirection.outgoing);
+      _lastEventCallSid = call.activeCall?.callSid;
 
       if (kDebugMode) {
         printDebug(
-            'Returning Call - From: ${call.activeCall!.from}, To: ${call.activeCall!.to}, Direction: ${call.activeCall!.callDirection}');
+            'Returning Call - SID: ${call.activeCall!.callSid}, From: ${call.activeCall!.from}, To: ${call.activeCall!.to}, Direction: ${call.activeCall!.callDirection}');
       }
 
       return CallEvent.returningCall;
@@ -389,47 +402,72 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
       // Held call data emitted during resume from terminated state
       // Store as waitingCall so the BLoC can recover multi-call state
       final heldCallData = createCallFromState(state);
+      _lastEventCallSid = heldCallData.callSid;
       if (call is MethodChannelTwilioCall) {
         (call as MethodChannelTwilioCall).waitingCall = heldCallData;
       }
 
       if (kDebugMode) {
         printDebug(
-            'HeldCallData - From: ${heldCallData.from}, To: ${heldCallData.to}, Direction: ${heldCallData.callDirection}');
+            'HeldCallData - SID: ${heldCallData.callSid}, From: ${heldCallData.from}, To: ${heldCallData.to}, Direction: ${heldCallData.callDirection}');
       }
 
       // Return log so the BLoC event stream doesn't react to this directly.
       // The BLoC's _onManuallyFetchCallDetailsOnStartup will read waitingCall.
       return CallEvent.log;
     } else if (state.startsWith("Swap|")) {
-      // Swap event from iOS CallKit native swap button: "Swap|from|to"
-      // The from/to are the now-active call's info
-      // We update activeCall so the BLoC can read the swapped-to call's details
+      // Swap event from iOS CallKit native swap button: "Swap|sid|from|to"
+      // The sid is the now-active call's SID, from/to are its info
       List<String> tokens = state.split('|');
-      if (tokens.length >= 3) {
+      if (tokens.length >= 4) {
+        _lastEventCallSid = tokens[1].isNotEmpty ? tokens[1] : null;
         if (kDebugMode) {
-          printDebug('Swap - NowActive From: ${tokens[1]}, To: ${tokens[2]}');
+          printDebug(
+              'Swap - SID: ${tokens[1]}, NowActive From: ${tokens[2]}, To: ${tokens[3]}');
         }
       }
       return CallEvent.swap;
     }
+
+    // --- Simple events (may contain SID after pipe separator) ---
+    // Helper to extract SID from "Event|sid" format
+    String? extractSidFromSimpleEvent(String event) {
+      final pipeIndex = event.indexOf('|');
+      if (pipeIndex == -1) return null;
+      final sid = event.substring(pipeIndex + 1);
+      return sid.isNotEmpty ? sid : null;
+    }
+
+    if (state.startsWith('Call Ended')) {
+      // Format: "Call Ended" or "Call Ended|sid"
+      _lastEventCallSid = extractSidFromSimpleEvent(state);
+      // Note: call.activeCall is NOT cleared here — the BLoC owns call
+      // lifecycle via CallSessionManager. Clearing here races with the
+      // BLoC's held-session stale-data check.
+      return CallEvent.callEnded;
+    } else if (state.startsWith('Held Call Ended')) {
+      // Format: "Held Call Ended" or "Held Call Ended|sid"
+      _lastEventCallSid = extractSidFromSimpleEvent(state);
+      return CallEvent.heldCallEnded;
+    } else if (state.startsWith('Hold')) {
+      // Format: "Hold" or "Hold|sid"
+      _lastEventCallSid = extractSidFromSimpleEvent(state);
+      return CallEvent.hold;
+    } else if (state.startsWith('Unhold')) {
+      // Format: "Unhold" or "Unhold|sid"
+      _lastEventCallSid = extractSidFromSimpleEvent(state);
+      return CallEvent.unhold;
+    } else if (state == 'Missed Call') {
+      _lastEventCallSid = null;
+      return CallEvent.missedCall;
+    }
+
+    // Events that don't carry SIDs
     switch (state) {
       case 'Ringing':
         return CallEvent.ringing;
       case 'Connected':
         return CallEvent.connected;
-      case 'Call Ended':
-        call.activeCall = null;
-        return CallEvent.callEnded;
-      case 'Missed Call':
-        call.activeCall = null;
-        return CallEvent.missedCall;
-      case 'Unhold':
-        return CallEvent.unhold;
-      case 'Hold':
-        return CallEvent.hold;
-      case 'Held Call Ended':
-        return CallEvent.heldCallEnded;
       case 'Unmute':
         return CallEvent.unmute;
       case 'Mute':
@@ -673,13 +711,17 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
 ActiveCall createCallFromState(String state,
     {CallDirection? callDirection, bool initiated = false}) {
   List<String> tokens = state.split('|');
+  // New event format: Event|callSid|from|to|direction[|customParams]
+  // tokens[0] = event name, tokens[1] = callSid, tokens[2] = from,
+  // tokens[3] = to, tokens[4] = direction, tokens[5] = customParams (optional)
   final direction = callDirection ??
-      ("incoming" == tokens[3].toLowerCase()
+      ("incoming" == tokens[4].toLowerCase()
           ? CallDirection.incoming
           : CallDirection.outgoing);
   return ActiveCall(
-    from: tokens[1],
-    to: tokens[2],
+    callSid: tokens[1].isNotEmpty ? tokens[1] : null,
+    from: tokens[2],
+    to: tokens[3],
     initiated: initiated ? DateTime.now() : null,
     callDirection: direction,
     customParams: parseCustomParams(tokens),
@@ -687,9 +729,9 @@ ActiveCall createCallFromState(String state,
 }
 
 Map<String, dynamic>? parseCustomParams(List<String> tokens) {
-  if (tokens.length != 5) return null;
+  if (tokens.length != 6) return null;
   try {
-    Map<String, dynamic> customValue = jsonDecode(tokens[4]);
+    Map<String, dynamic> customValue = jsonDecode(tokens[5]);
     return customValue;
   } catch (error) {
     return null;
