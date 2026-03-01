@@ -46,6 +46,19 @@
             android:excludeFromRecents="true"
             android:theme="@style/Theme.CallWaitingSheet" />
 
+        <!-- Invisible trampoline activity for answering calls from notification.
+             Launched from the notification Answer button when there is NO active call.
+             Sends ACTION_ANSWER to the service, launches MainActivity from activity
+             context (reliable on all Android versions), then finishes immediately.
+             Uses the same transparent theme so it's completely invisible. -->
+        <activity
+            android:name=".AnswerCallTrampolineActivity"
+            android:exported="false"
+            android:taskAffinity=""
+            android:noHistory="true"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.CallWaitingSheet" />
+
         <service
             android:name=".service.TVConnectionService"
             android:exported="true"

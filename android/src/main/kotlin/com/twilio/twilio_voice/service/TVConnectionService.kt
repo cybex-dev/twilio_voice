@@ -54,6 +54,7 @@ import com.twilio.twilio_voice.types.ContextExtension.hasManageOwnCallsPermissio
 import com.twilio.twilio_voice.types.TVNativeCallActions
 import com.twilio.twilio_voice.types.TVNativeCallEvents
 import com.twilio.twilio_voice.CallWaitingSheetActivity
+import com.twilio.twilio_voice.AnswerCallTrampolineActivity
 import com.twilio.twilio_voice.IncomingCallActivity
 import com.twilio.voice.CallInvite
 import com.twilio.twilio_voice.types.ContextExtension.hasMicrophoneAccess
@@ -706,6 +707,13 @@ class TVConnectionService : ConnectionService() {
     private var vibrator: Vibrator? = null
     private var isRinging = false
 
+    // Deduplication guard for ACTION_ANSWER from notification PendingIntent.
+    // On some devices (Samsung SDK 36), the PendingIntent can fire multiple times
+    // within a short window. We track the last processed answer timestamp and
+    // ignore duplicates within 3 seconds.
+    private var lastAnswerProcessedAt: Long = 0
+    private val ANSWER_DEDUP_WINDOW_MS = 3000L
+
     /**
      * Detect the current audio route from AudioManager.
      * Returns "speaker", "bluetooth", or "earpiece".
@@ -1174,6 +1182,15 @@ class TVConnectionService : ConnectionService() {
                 }
 
                 ACTION_ANSWER -> {
+                    // Deduplication: ignore repeated ACTION_ANSWER within a short window.
+                    // On some devices (Samsung SDK 36), the PendingIntent fires multiple times.
+                    val now = System.currentTimeMillis()
+                    if (now - lastAnswerProcessedAt < ANSWER_DEDUP_WINDOW_MS) {
+                        Log.w(TAG, "ACTION_ANSWER: Ignoring duplicate (${now - lastAnswerProcessedAt}ms since last)")
+                        return@let
+                    }
+                    lastAnswerProcessedAt = now
+
                     // Set classloader for CallInvite deserialization
                     it.setExtrasClassLoader(CallInvite::class.java.classLoader)
                     
@@ -3247,33 +3264,8 @@ class TVConnectionService : ConnectionService() {
         Log.d(TAG, "[SVC-$shortSid] │ CallSid in fullScreenIntent: ${callInvite.callSid}")
 
         // Use unique request codes based on callSid hash to avoid PendingIntent caching issues
-        val answerServiceRequestCode = (callInvite.callSid.hashCode() and 0x7FFFFFFF) % 10000 + 2000
         val declineRequestCode = (callInvite.callSid.hashCode() and 0x7FFFFFFF) % 10000 + 3000
-        Log.d(TAG, "createIncomingCallNotification: answerServiceRequestCode=$answerServiceRequestCode, declineRequestCode=$declineRequestCode")
-        
-        // Create answer intent - include CallInvite for terminated state recovery
-        val answerIntent = Intent(applicationContext, TVConnectionService::class.java).apply {
-            action = ACTION_ANSWER
-            putExtra(EXTRA_CALL_HANDLE, callInvite.callSid)
-            putExtra(EXTRA_INCOMING_CALL_INVITE, callInvite)
-            // Add unique data URI to ensure PendingIntent is unique
-            data = android.net.Uri.parse("twilio://answer-service/${callInvite.callSid}")
-        }
-        val answerPendingIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            PendingIntent.getForegroundService(
-                applicationContext,
-                answerServiceRequestCode,
-                answerIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-        } else {
-            PendingIntent.getService(
-                applicationContext,
-                answerServiceRequestCode,
-                answerIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT
-            )
-        }
+        Log.d(TAG, "createIncomingCallNotification: declineRequestCode=$declineRequestCode")
 
         // Create decline intent - include CallInvite for terminated state recovery
         val declineIntent = Intent(applicationContext, TVConnectionService::class.java).apply {
@@ -3338,26 +3330,30 @@ class TVConnectionService : ConnectionService() {
                     PendingIntent.FLAG_UPDATE_CURRENT
             )
         } else {
-            // No active call — launch IncomingCallActivity for direct answer
-            val answerActivityIntent = Intent(applicationContext, IncomingCallActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
-                        Intent.FLAG_ACTIVITY_CLEAR_TOP or 
-                        Intent.FLAG_ACTIVITY_SINGLE_TOP
-                putExtra(IncomingCallActivity.EXTRA_CALL_SID, callInvite.callSid)
-                putExtra(IncomingCallActivity.EXTRA_CALL_INVITE, callInvite)
-                putExtra(IncomingCallActivity.EXTRA_CALLER_NAME, callerName)
-                putExtra(IncomingCallActivity.EXTRA_CALLER_NUMBER, callerNumber)
-                putExtra("extra_my_number", myNumber)
-                putExtra("action", "answer")
-                data = android.net.Uri.parse("twilio://answer/${callInvite.callSid}")
+            // No active call — use AnswerCallTrampolineActivity (invisible).
+            // This trampoline sends ACTION_ANSWER to the service and then launches
+            // MainActivity from an activity context. We can't launch MainActivity
+            // directly from a foreground service on Android 12+ (Samsung SDK 36+)
+            // because background activity start restrictions silently block it.
+            // The trampoline is fully transparent (Theme.CallWaitingSheet) so the
+            // user sees no screen transition — just the app coming to foreground.
+            Log.d(TAG, "createIncomingCallNotification: No active call — using AnswerCallTrampolineActivity")
+            val trampolineIntent = Intent(applicationContext, AnswerCallTrampolineActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra(AnswerCallTrampolineActivity.EXTRA_CALL_SID, callInvite.callSid)
+                putExtra(AnswerCallTrampolineActivity.EXTRA_CALL_INVITE, callInvite)
+                putExtra(AnswerCallTrampolineActivity.EXTRA_CALLER_NAME, callerName)
+                putExtra(AnswerCallTrampolineActivity.EXTRA_CALLER_NUMBER, callerNumber)
+                putExtra(AnswerCallTrampolineActivity.EXTRA_MY_NUMBER, myNumber)
+                data = android.net.Uri.parse("twilio://answer-trampoline/${callInvite.callSid}")
             }
             PendingIntent.getActivity(
                 applicationContext,
                 answerRequestCode,
-                answerActivityIntent,
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) 
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE 
-                else 
+                trampolineIntent,
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                else
                     PendingIntent.FLAG_UPDATE_CURRENT
             )
         }

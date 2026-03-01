@@ -1,8 +1,9 @@
 package com.twilio.twilio_voice.types
 
 import android.content.Context
+import android.content.pm.PackageManager
 import android.telecom.TelecomManager
-import androidx.core.content.PermissionChecker
+import androidx.core.content.ContextCompat
 import com.twilio.twilio_voice.types.ContextExtension.hasReadPhoneNumbersPermission
 import com.twilio.twilio_voice.types.ContextExtension.hasReadPhoneStatePermission
 
@@ -60,12 +61,17 @@ object ContextExtension {
     }
 
     /**
-     * Check if a permission is granted
-     * @param ctx application context
+     * Check if a permission is granted.
+     * Uses ContextCompat.checkSelfPermission() instead of PermissionChecker.checkSelfPermission()
+     * because PermissionChecker also checks AppOps state, which can return PERMISSION_DENIED_APP_OP
+     * on Samsung devices (especially SDK 36/Android 16) when called from a service context without
+     * a foreground activity — even though the runtime permission is granted.
+     * ContextCompat only checks the runtime permission grant, which is reliable from any context.
+     *
      * @param permission The permission to check
      * @return Boolean True if the permission is granted
      */
     fun Context.checkPermission(permission: String): Boolean {
-        return PermissionChecker.checkSelfPermission(this, permission) == PermissionChecker.PERMISSION_GRANTED
+        return ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
     }
 }
