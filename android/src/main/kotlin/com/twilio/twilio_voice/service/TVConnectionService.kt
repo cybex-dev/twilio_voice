@@ -2682,10 +2682,10 @@ class TVConnectionService : ConnectionService() {
         
         // On Android 12+ (API 31), CallStyle uses Android's built-in Chronometer
         // so we build the notification ONCE and let the OS handle the timer.
-        // On older Android, we use a handler to manually update the custom RemoteViews every second.
+        // On older Android, we also build once — Chronometer in RemoteViews ticks automatically.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val notification = buildOngoingCallNotification(
-                displayName, "00:00", channel, contentIntent, hangupPendingIntent, callStartTime, heldCallerName, swapPendingIntent
+                displayName, channel, contentIntent, hangupPendingIntent, callStartTime, heldCallerName, swapPendingIntent
             )
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -2705,8 +2705,31 @@ class TVConnectionService : ConnectionService() {
                 }
             }
         } else {
-            // Older Android: use handler-based duration updater with custom RemoteViews
-            startOngoingCallDurationUpdater(callSid, displayName, callStartTime, channel, contentIntent, hangupPendingIntent, heldCallerName, swapPendingIntent)
+            // Older Android: Build notification once — Chronometer in RemoteViews
+            // handles the timer automatically. No more Handler-based 1-second rebuilding.
+            stopOngoingCallDurationUpdater()
+            val notification = buildOngoingCallNotification(
+                displayName, channel, contentIntent, hangupPendingIntent, callStartTime, heldCallerName, swapPendingIntent
+            )
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    startForeground(ONGOING_CALL_NOTIFICATION_ID, notification, 
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    startForeground(ONGOING_CALL_NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
+                } else {
+                    startForeground(ONGOING_CALL_NOTIFICATION_ID, notification)
+                }
+                Log.d(TAG, "[VoiceConnectionService] Started foreground service with Chronometer notification (pre-12)")
+            } catch (e: Exception) {
+                Log.w(TAG, "[VoiceConnectionService] Could not start foreground with ongoing call notification: ${e.message}")
+                try {
+                    val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                    notificationManager.notify(ONGOING_CALL_NOTIFICATION_ID, notification)
+                } catch (e2: Exception) {
+                    Log.e(TAG, "[VoiceConnectionService] Fallback notify also failed: ${e2.message}")
+                }
+            }
         }
     }
     
@@ -2730,13 +2753,9 @@ class TVConnectionService : ConnectionService() {
         ongoingCallHandler = android.os.Handler(android.os.Looper.getMainLooper())
         ongoingCallRunnable = object : Runnable {
             override fun run() {
-                // Calculate duration
-                val durationMs = System.currentTimeMillis() - callStartTime
-                val durationText = formatCallDuration(durationMs)
-                
                 // Build and update notification
                 val notification = buildOngoingCallNotification(
-                    displayName, durationText, channel, contentIntent, hangupPendingIntent, 0L, heldCallerName, swapPendingIntent
+                    displayName, channel, contentIntent, hangupPendingIntent, 0L, heldCallerName, swapPendingIntent
                 )
                 
                 try {
@@ -2753,7 +2772,7 @@ class TVConnectionService : ConnectionService() {
         
         // Build initial notification and start foreground
         val initialNotification = buildOngoingCallNotification(
-            displayName, "00:00", channel, contentIntent, hangupPendingIntent, 0L, heldCallerName, swapPendingIntent
+            displayName, channel, contentIntent, hangupPendingIntent, 0L, heldCallerName, swapPendingIntent
         )
         
         try {
@@ -2801,7 +2820,6 @@ class TVConnectionService : ConnectionService() {
     
     private fun buildOngoingCallNotification(
         displayName: String,
-        durationText: String,
         channel: NotificationChannel,
         contentIntent: PendingIntent,
         hangupPendingIntent: PendingIntent,
@@ -2829,7 +2847,7 @@ class TVConnectionService : ConnectionService() {
             
             return Notification.Builder(this, channel.id).apply {
                 setOngoing(true)
-                setSmallIcon(R.drawable.ic_transparent)
+                setSmallIcon(R.drawable.ic_easify_logo_mono)
                 setContentIntent(contentIntent)
                 setCategory(Notification.CATEGORY_CALL)
                 setVisibility(Notification.VISIBILITY_PUBLIC)
@@ -2857,16 +2875,31 @@ class TVConnectionService : ConnectionService() {
             }.build()
         }
         
-        // Fallback for Android < 12: use custom RemoteViews layout
+        // Fallback for Android < 12: use custom RemoteViews with Chronometer + avatar
+        
+        // Generate avatar bitmap with caller's initial
+        val avatarBitmap = generateCallerAvatarBitmap(displayName)
+        
+        // --- Collapsed view (compact) ---
         val remoteViews = android.widget.RemoteViews(packageName, R.layout.notification_ongoing_call)
         
-        // Set caller name (title)
+        // Set avatar
+        if (avatarBitmap != null) {
+            remoteViews.setImageViewBitmap(R.id.caller_avatar, avatarBitmap)
+        }
+        
+        // Set caller name
         remoteViews.setTextViewText(R.id.caller_name, displayName)
         
-        // Set call duration (subtitle)
-        remoteViews.setTextViewText(R.id.call_duration, durationText)
+        // Set Chronometer base time (elapsed realtime)
+        if (callStartTime > 0L) {
+            val elapsedBase = android.os.SystemClock.elapsedRealtime() - (System.currentTimeMillis() - callStartTime)
+            remoteViews.setChronometer(R.id.call_chronometer, elapsedBase, null, true)
+        } else {
+            remoteViews.setChronometer(R.id.call_chronometer, android.os.SystemClock.elapsedRealtime(), null, true)
+        }
         
-        // Set held caller info if available
+        // Set held caller info
         if (heldCallerName != null) {
             remoteViews.setTextViewText(R.id.held_caller_info, "On hold: $heldCallerName")
             remoteViews.setViewVisibility(R.id.held_caller_info, android.view.View.VISIBLE)
@@ -2874,7 +2907,7 @@ class TVConnectionService : ConnectionService() {
             remoteViews.setViewVisibility(R.id.held_caller_info, android.view.View.GONE)
         }
         
-        // Set swap button click action and visibility
+        // Set swap button
         if (swapPendingIntent != null) {
             remoteViews.setOnClickPendingIntent(R.id.swap_button, swapPendingIntent)
             remoteViews.setViewVisibility(R.id.swap_button, android.view.View.VISIBLE)
@@ -2882,8 +2915,46 @@ class TVConnectionService : ConnectionService() {
             remoteViews.setViewVisibility(R.id.swap_button, android.view.View.GONE)
         }
         
-        // Set hangup button click action
+        // Set hangup button
         remoteViews.setOnClickPendingIntent(R.id.hangup_button, hangupPendingIntent)
+        
+        // --- Expanded view (bigger with pill buttons) ---
+        val expandedViews = android.widget.RemoteViews(packageName, R.layout.notification_ongoing_call_expanded)
+        
+        // Set avatar
+        if (avatarBitmap != null) {
+            expandedViews.setImageViewBitmap(R.id.caller_avatar, avatarBitmap)
+        }
+        
+        // Set caller name
+        expandedViews.setTextViewText(R.id.caller_name, displayName)
+        
+        // Set Chronometer
+        if (callStartTime > 0L) {
+            val elapsedBase = android.os.SystemClock.elapsedRealtime() - (System.currentTimeMillis() - callStartTime)
+            expandedViews.setChronometer(R.id.call_chronometer, elapsedBase, null, true)
+        } else {
+            expandedViews.setChronometer(R.id.call_chronometer, android.os.SystemClock.elapsedRealtime(), null, true)
+        }
+        
+        // Set held caller info (use warm amber color in expanded view for visibility)
+        if (heldCallerName != null) {
+            expandedViews.setTextViewText(R.id.held_caller_info, "On hold: $heldCallerName")
+            expandedViews.setViewVisibility(R.id.held_caller_info, android.view.View.VISIBLE)
+        } else {
+            expandedViews.setViewVisibility(R.id.held_caller_info, android.view.View.GONE)
+        }
+        
+        // Set swap button in expanded view
+        if (swapPendingIntent != null) {
+            expandedViews.setOnClickPendingIntent(R.id.swap_button, swapPendingIntent)
+            expandedViews.setViewVisibility(R.id.swap_button, android.view.View.VISIBLE)
+        } else {
+            expandedViews.setViewVisibility(R.id.swap_button, android.view.View.GONE)
+        }
+        
+        // Set hangup button in expanded view
+        expandedViews.setOnClickPendingIntent(R.id.hangup_button, hangupPendingIntent)
         
         // Build a Person for pre-12 notifications so Android ranks them higher,
         // allows DND bypass for calls, and improves lock screen visibility.
@@ -2896,7 +2967,7 @@ class TVConnectionService : ConnectionService() {
         
         return Notification.Builder(this, channel.id).apply {
             setOngoing(true)
-            setSmallIcon(R.drawable.ic_transparent)
+            setSmallIcon(R.drawable.ic_easify_logo_mono)
             setContentIntent(contentIntent)
             setCategory(Notification.CATEGORY_CALL)
             setVisibility(Notification.VISIBILITY_PUBLIC)
@@ -2910,14 +2981,75 @@ class TVConnectionService : ConnectionService() {
             setShowWhen(false)
             setColorized(true)
             setColor(Color.parseColor("#1C1C1E"))
-            setContentTitle("")
-            setContentText("")
+            // Use Chronometer at Notification level too (status bar shows time)
+            setUsesChronometer(true)
+            setWhen(callStartTime)
+            setContentTitle(displayName)
+            setContentText(if (heldCallerName != null) "On hold: $heldCallerName" else "Ongoing call")
             style = Notification.DecoratedMediaCustomViewStyle()
             
-            // Use custom view for the notification content
+            // Collapsed view: avatar + name + chronometer + action circles
             setCustomContentView(remoteViews)
-            setCustomBigContentView(remoteViews)
+            // Expanded view: avatar + name + chronometer + pill action buttons
+            setCustomBigContentView(expandedViews)
         }.build()
+    }
+    
+    /**
+     * Generate a circular avatar bitmap with the caller's first initial letter.
+     * Uses a gradient background matching the incoming call notification style.
+     * Falls back to a "?" if the name is empty or starts with a non-letter character.
+     */
+    private fun generateCallerAvatarBitmap(displayName: String, sizeDp: Int = 48): android.graphics.Bitmap? {
+        return try {
+            val density = resources.displayMetrics.density
+            val sizePx = (sizeDp * density).toInt()
+            
+            val bitmap = android.graphics.Bitmap.createBitmap(sizePx, sizePx, android.graphics.Bitmap.Config.ARGB_8888)
+            val canvas = android.graphics.Canvas(bitmap)
+            
+            // Draw circular gradient background (matches notification_avatar_circle.xml style)
+            val bgPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                shader = android.graphics.RadialGradient(
+                    sizePx / 2f, sizePx / 2f, sizePx / 2f,
+                    Color.parseColor("#3A3A3A"),
+                    Color.parseColor("#1A1A1A"),
+                    android.graphics.Shader.TileMode.CLAMP
+                )
+            }
+            canvas.drawCircle(sizePx / 2f, sizePx / 2f, sizePx / 2f, bgPaint)
+            
+            // Draw subtle border ring
+            val borderPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                style = android.graphics.Paint.Style.STROKE
+                strokeWidth = 1.5f * density
+                color = Color.parseColor("#4A4A4A")
+            }
+            canvas.drawCircle(sizePx / 2f, sizePx / 2f, sizePx / 2f - (0.75f * density), borderPaint)
+            
+            // Determine initial letter
+            val initial = displayName.trim().firstOrNull()?.let {
+                if (it.isLetter()) it.uppercaseChar().toString() else "?"
+            } ?: "?"
+            
+            // Draw the initial letter centered
+            val textPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.WHITE
+                textSize = sizePx * 0.42f
+                textAlign = android.graphics.Paint.Align.CENTER
+                typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+            }
+            
+            // Center vertically using font metrics
+            val fontMetrics = textPaint.fontMetrics
+            val textY = sizePx / 2f - (fontMetrics.ascent + fontMetrics.descent) / 2f
+            canvas.drawText(initial, sizePx / 2f, textY, textPaint)
+            
+            bitmap
+        } catch (e: Exception) {
+            Log.w(TAG, "generateCallerAvatarBitmap: Failed: ${e.message}")
+            null
+        }
     }
     
     private fun cancelOngoingCallNotification() {
