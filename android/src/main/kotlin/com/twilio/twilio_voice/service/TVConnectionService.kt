@@ -658,6 +658,17 @@ class TVConnectionService : ConnectionService() {
         fun getConnection(callSid: String): TVCallConnection? {
             return activeConnections[callSid]
         }
+
+        /**
+         * Returns the best display name for a connection.
+         * Priority: callerDisplayName (human name) > address (phone number) > extras caller_number > empty
+         */
+        fun getConnectionDisplayName(connection: TVCallConnection?): String {
+            return connection?.callerDisplayName?.takeIf { it.isNotBlank() }
+                ?: connection?.address?.schemeSpecificPart
+                ?: connection?.extras?.getString("caller_number")
+                ?: ""
+        }
     }
 
     // WakeLock to keep CPU awake during incoming call
@@ -877,8 +888,7 @@ class TVConnectionService : ConnectionService() {
                         val remainingHandle = getActiveCallHandle()
                         if (remainingHandle != null) {
                             val remainingConn = getConnection(remainingHandle)
-                            val remainingNumber = remainingConn?.address?.schemeSpecificPart 
-                                ?: remainingConn?.extras?.getString("caller_number") ?: ""
+                            val remainingNumber = getConnectionDisplayName(remainingConn)
                             showOngoingCallNotification(remainingHandle, remainingNumber)
                             
                             // Restore audio focus for the remaining call.
@@ -968,7 +978,7 @@ class TVConnectionService : ConnectionService() {
                         // Store active caller info to pass to IncomingCallActivity
                         val activeConnection = activeConnections[activeCallHandle]
                         val activeCallerName = activeConnection?.extras?.getString("caller_name") ?: ""
-                        val activeCallerNumber = activeConnection?.address?.schemeSpecificPart ?: activeConnection?.extras?.getString("caller_number") ?: ""
+                        val activeCallerNumber = getConnectionDisplayName(activeConnection)
                         
                         // Store active call info in static vars for IncomingCallActivity to access
                         hasActiveCallDuringIncoming = true
@@ -1094,8 +1104,7 @@ class TVConnectionService : ConnectionService() {
                             val remainingHandle = getActiveCallHandle()
                             if (remainingHandle != null) {
                                 val remainingConn = getConnection(remainingHandle)
-                                val remainingNumber = remainingConn?.address?.schemeSpecificPart 
-                                    ?: remainingConn?.extras?.getString("caller_number") ?: ""
+                                val remainingNumber = getConnectionDisplayName(remainingConn)
                                 
                                 if (remainingConn?.state == Connection.STATE_RINGING || remainingConn?.state == Connection.STATE_NEW) {
                                     // Remaining call is an unanswered incoming call.
@@ -1182,8 +1191,7 @@ class TVConnectionService : ConnectionService() {
                                     val remainingHandle = getActiveCallHandle()
                                     if (remainingHandle != null) {
                                         val remainingConn = getConnection(remainingHandle)
-                                        val remainingNumber = remainingConn?.address?.schemeSpecificPart 
-                                            ?: remainingConn?.extras?.getString("caller_number") ?: ""
+                                        val remainingNumber = getConnectionDisplayName(remainingConn)
                                         if (remainingConn?.state == Connection.STATE_RINGING || remainingConn?.state == Connection.STATE_NEW) {
                                             // Remaining call is an unanswered incoming call.
                                             // Cancel the ongoing-call notification — it belongs to the
@@ -1279,8 +1287,10 @@ class TVConnectionService : ConnectionService() {
                         // The real EVENT_CONNECTED will be sent from TVConnection.onConnected() 
                         // callback when ICE completes and media connection is established.
                         
-                        // Show ongoing call notification
-                        showOngoingCallNotification(callSid, callerNumber)
+                        // Show ongoing call notification (use display name if available, fallback to number)
+                        val callerDisplayName = connection.callerDisplayName?.takeIf { it.isNotBlank() }
+                            ?: callerNumber
+                        showOngoingCallNotification(callSid, callerDisplayName)
                         
                         // Only launch MainActivity from the service if IncomingCallActivity is NOT
                         // already handling it. When answering from the swipe UI or notification button
@@ -1288,31 +1298,54 @@ class TVConnectionService : ConnectionService() {
                         // the MainActivity launch itself. Launching here too causes dual onNewIntent
                         // calls which confuse Flutter and destroy/recreate the activity unnecessarily.
                         if (!launchedFromActivity) {
-                            // Launch main activity IMMEDIATELY with call data from callInvite
                             // This path is used when answering from notification action button
-                            // that goes directly to the service (without IncomingCallActivity)
+                            // that goes directly to the service (without IncomingCallActivity).
+                            // 
+                            // ARCHITECTURE: MainActivity NEVER shows over lock screen.
+                            // Only IncomingCallActivity has showWhenLocked privileges.
+                            // When device is locked, we store pendingAnsweredCallData and let
+                            // the user unlock normally — MainActivity.onResume() picks it up.
+                            // This matches WhatsApp/Telegram behavior.
                             try {
-                                val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
-                                launchIntent?.let { intent ->
-                                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
-                                                   Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                                                   Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
-                                    intent.putExtra("fromIncomingCall", true)
-                                    intent.putExtra("callHandle", callSid)
-                                    intent.putExtra("callAnswered", true)
-                                    // Add extras that MainActivity expects for call data
-                                    intent.putExtra("SHOW_OVER_LOCK_SCREEN", true)
-                                    intent.putExtra("CALL_ANSWERED", true)
-                                    intent.putExtra("CALL_SID", callSid)
-                                    intent.putExtra("CALLER_NAME", callerNumber)
-                                    intent.putExtra("CALLER_NUMBER", callerNumber)
-                                    intent.putExtra("MY_NUMBER", myNumber)
-                                    intent.putExtra("CALL_DIRECTION", "incoming")
-                                    startActivity(intent)
-                                    Log.d(TAG, "Launched main activity with call data from callInvite - caller: $callerNumber")
+                                val keyguardMgr = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+                                val isLocked = keyguardMgr?.isKeyguardLocked == true
+                                
+                                if (isLocked) {
+                                    // LOCKED PATH: Do NOT launch MainActivity over lock screen.
+                                    // Store call data in pendingAnsweredCallData. User unlocks
+                                    // normally → MainActivity.onResume() picks it up and
+                                    // navigates to the active call screen.
+                                    Log.d(TAG, "ACTION_ANSWER: Device is locked - storing pendingAnsweredCallData instead of launching MainActivity")
+                                    IncomingCallActivity.pendingAnsweredCallData = mapOf(
+                                        "callerName" to callerNumber,
+                                        "callerNumber" to callerNumber,
+                                        "myNumber" to myNumber,
+                                        "callSid" to callSid,
+                                        "callDirection" to "incoming",
+                                        "isCallAnswered" to true
+                                    )
+                                } else {
+                                    // UNLOCKED PATH: Launch MainActivity normally (no lock screen flags).
+                                    val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+                                    launchIntent?.let { intent ->
+                                        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
+                                                       Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                                                       Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                                        intent.putExtra("fromIncomingCall", true)
+                                        intent.putExtra("callHandle", callSid)
+                                        intent.putExtra("callAnswered", true)
+                                        intent.putExtra("CALL_ANSWERED", true)
+                                        intent.putExtra("CALL_SID", callSid)
+                                        intent.putExtra("CALLER_NAME", callerNumber)
+                                        intent.putExtra("CALLER_NUMBER", callerNumber)
+                                        intent.putExtra("MY_NUMBER", myNumber)
+                                        intent.putExtra("CALL_DIRECTION", "incoming")
+                                        startActivity(intent)
+                                        Log.d(TAG, "ACTION_ANSWER: Launched main activity (UNLOCKED path) - caller: $callerNumber")
+                                    }
                                 }
                             } catch (e: Exception) {
-                                Log.w(TAG, "Could not launch main activity after answering: ${e.message}")
+                                Log.w(TAG, "Could not handle post-answer flow: ${e.message}")
                             }
                         } else {
                             Log.d(TAG, "ACTION_ANSWER: Skipping MainActivity launch - IncomingCallActivity is handling it")
@@ -1359,8 +1392,7 @@ class TVConnectionService : ConnectionService() {
                                     heldConnection?.toggleHold(false)
                                     Log.d(TAG, "[ACTION_ANSWER_WITH_HOLD] Second call ended, unholding first call $activeHandle")
                                     // Re-show ongoing notification and bring back call UI for the held call
-                                    val heldNumber = heldConnection?.address?.schemeSpecificPart 
-                                        ?: heldConnection?.extras?.getString("caller_number") ?: ""
+                                    val heldNumber = getConnectionDisplayName(heldConnection)
                                     showOngoingCallNotification(activeHandle, heldNumber)
                                     // Bring back the main activity to show the held call's UI
                                     // Use bringMainActivityToFront() to avoid resetting Flutter call state
@@ -1389,7 +1421,9 @@ class TVConnectionService : ConnectionService() {
                             val callInvite = connection.callInvite
                             val callSid = callInvite.callSid
                             val callerNumber = extractUserNumber(callInvite.from ?: "Unknown")
-                            showOngoingCallNotification(callSid, callerNumber)
+                            val callerName = connection.callerDisplayName?.takeIf { it.isNotBlank() }
+                                ?: callerNumber
+                            showOngoingCallNotification(callSid, callerName)
                             launchMainActivityWithCallData(callSid, callerNumber, callInvite.to ?: "")
                         }
                     }
@@ -1455,7 +1489,9 @@ class TVConnectionService : ConnectionService() {
                             val callInvite = connection.callInvite
                             val callSid = callInvite.callSid
                             val callerNumber = extractUserNumber(callInvite.from ?: "Unknown")
-                            showOngoingCallNotification(callSid, callerNumber)
+                            val callerName = connection.callerDisplayName?.takeIf { it.isNotBlank() }
+                                ?: callerNumber
+                            showOngoingCallNotification(callSid, callerName)
                             launchMainActivityWithCallData(callSid, callerNumber, callInvite.to ?: "")
                         }
                     }
@@ -1610,8 +1646,7 @@ class TVConnectionService : ConnectionService() {
                                 Log.d(TAG, "[Decline] Remaining call $remainingHandle is ringing (state=${remainingConnection?.state}), cancelled ongoing notification, keeping IncomingCallActivity visible")
                             } else {
                                 // Remaining call is active/connected - restore its state
-                                val remainingNumber = remainingConnection?.address?.schemeSpecificPart 
-                                    ?: remainingConnection?.extras?.getString("caller_number") ?: ""
+                                val remainingNumber = getConnectionDisplayName(remainingConnection)
                                 Log.d(TAG, "[Decline] Other call still active: $remainingHandle, showing ongoing notification")
                                 showOngoingCallNotification(remainingHandle, remainingNumber)
                                 
@@ -1781,8 +1816,7 @@ class TVConnectionService : ConnectionService() {
                                 val remainingHandle = getActiveCallHandle()
                                 if (remainingHandle != null) {
                                     val remainingConn = getConnection(remainingHandle)
-                                    val remainingNumber = remainingConn?.address?.schemeSpecificPart 
-                                        ?: remainingConn?.extras?.getString("caller_number") ?: ""
+                                    val remainingNumber = getConnectionDisplayName(remainingConn)
                                     showOngoingCallNotification(remainingHandle, remainingNumber)
                                     if (remainingConn?.state == Connection.STATE_HOLDING) {
                                         // The remaining call is ON HOLD → the ACTIVE call ended.
@@ -2031,8 +2065,7 @@ class TVConnectionService : ConnectionService() {
                     val remainingHandle = getActiveCallHandle()
                     if (remainingHandle != null) {
                         val remainingConn = getConnection(remainingHandle)
-                        val remainingNumber = remainingConn?.address?.schemeSpecificPart 
-                            ?: remainingConn?.extras?.getString("caller_number") ?: ""
+                        val remainingNumber = getConnectionDisplayName(remainingConn)
                         
                         if (remainingConn?.state == Connection.STATE_RINGING || remainingConn?.state == Connection.STATE_NEW) {
                             Log.d(TAG, "[onCallInitializingDisconnected] Remaining call $remainingHandle is RINGING/NEW (state=${remainingConn?.state}) - sending Call Ended to Flutter")
@@ -2131,8 +2164,7 @@ class TVConnectionService : ConnectionService() {
                 val remainingHandle = getActiveCallHandle()
                 if (remainingHandle != null) {
                     val remainingConn = getConnection(remainingHandle)
-                    val remainingNumber = remainingConn?.address?.schemeSpecificPart 
-                        ?: remainingConn?.extras?.getString("caller_number") ?: ""
+                    val remainingNumber = getConnectionDisplayName(remainingConn)
                     
                     if (remainingConn?.state == Connection.STATE_RINGING) {
                         // Cancel the ongoing-call notification — it belongs to the call that
@@ -2167,6 +2199,20 @@ class TVConnectionService : ConnectionService() {
             }
         }
         val onCallState: CompletionHandler<Call.State> = CompletionHandler { state ->
+            // Show ongoing call notification when an outgoing call connects.
+            // Incoming calls get their notification in ACTION_ANSWER, but outgoing
+            // calls don't have an equivalent trigger. The temporary onCallStateListener
+            // set in ACTION_PLACE_OUTGOING_CALL / onCreateOutgoingConnection is replaced
+            // by this permanent handler when attachCallEventListeners is called (at RINGING),
+            // so the CONNECTED state must be handled here.
+            if (state == Call.State.CONNECTED && connection.callDirection == CallDirection.OUTGOING) {
+                // Prefer the display name (e.g. "Qa 2") over the raw number for outgoing calls.
+                // callerDisplayName is set by applyParameters() from the outgoingCallerName param.
+                val displayName = connection.callerDisplayName?.takeIf { it.isNotBlank() }
+                    ?: connection.address?.schemeSpecificPart ?: ""
+                showOngoingCallNotification(callSid, displayName)
+                Log.d(TAG, "[onCallState] Outgoing call $callSid connected - showing ongoing notification")
+            }
             if (state == Call.State.DISCONNECTED) {
                 // If callSid is already removed from activeConnections, it means another
                 // handler (e.g. ACTION_HANGUP / Decline) already handled cleanup for this
@@ -2197,8 +2243,7 @@ class TVConnectionService : ConnectionService() {
                     val remainingHandle = getActiveCallHandle()
                     if (remainingHandle != null) {
                         val remainingConn = getConnection(remainingHandle)
-                        val remainingNumber = remainingConn?.address?.schemeSpecificPart 
-                            ?: remainingConn?.extras?.getString("caller_number") ?: ""
+                        val remainingNumber = getConnectionDisplayName(remainingConn)
                         
                         if (remainingConn?.state == Connection.STATE_RINGING || remainingConn?.state == Connection.STATE_NEW) {
                             // Remaining call is RINGING or NEW (unanswered incoming).
@@ -3209,11 +3254,10 @@ class TVConnectionService : ConnectionService() {
     
     private fun launchMainActivityWithCallData(callSid: String, callerNumber: String, myNumber: String) {
         try {
-            // Check if the device is locked (keyguard is showing).
-            // If locked, do NOT launch MainActivity — that would set SHOW_OVER_LOCK_SCREEN
-            // flags on it, making the entire app accessible without authentication.
-            // Instead, IncomingCallActivity already stored pendingAnsweredCallData,
-            // and MainActivity.onResume() will pick it up when the user unlocks normally.
+            // ARCHITECTURE: MainActivity NEVER shows over lock screen.
+            // If locked, skip launch — pendingAnsweredCallData was already stored
+            // by the caller (IncomingCallActivity or ACTION_ANSWER handler).
+            // MainActivity.onResume() will pick it up when the user unlocks normally.
             val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
             if (keyguardManager?.isKeyguardLocked == true) {
                 Log.d(TAG, "launchMainActivityWithCallData: Device is locked - skipping MainActivity launch (pendingAnsweredCallData will handle it on unlock)")
@@ -3230,7 +3274,8 @@ class TVConnectionService : ConnectionService() {
                 intent.putExtra("fromIncomingCall", true)
                 intent.putExtra("callHandle", callSid)
                 intent.putExtra("callAnswered", true)
-                intent.putExtra("SHOW_OVER_LOCK_SCREEN", true)
+                // NOTE: No SHOW_OVER_LOCK_SCREEN extra — MainActivity never shows over
+                // lock screen. The locked path returned early above (keyguard check).
                 intent.putExtra("CALL_ANSWERED", true)
                 intent.putExtra("CALL_SID", callSid)
                 intent.putExtra("CALLER_NAME", callerNumber)
@@ -3238,7 +3283,7 @@ class TVConnectionService : ConnectionService() {
                 intent.putExtra("MY_NUMBER", myNumber)
                 intent.putExtra("CALL_DIRECTION", "incoming")
                 startActivity(intent)
-                Log.d(TAG, "launchMainActivityWithCallData: Launched with caller=$callerNumber")
+                Log.d(TAG, "launchMainActivityWithCallData: Launched (UNLOCKED path) with caller=$callerNumber")
             }
         } catch (e: Exception) {
             Log.w(TAG, "launchMainActivityWithCallData: Failed: ${e.message}")

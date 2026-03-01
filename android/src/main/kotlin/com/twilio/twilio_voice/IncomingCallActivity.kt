@@ -143,6 +143,12 @@ class IncomingCallActivity : AppCompatActivity() {
     // Guard to prevent showing the bottom sheet multiple times
     private var isBottomSheetShowing = false
     
+    // Tracks whether the device was locked when IncomingCallActivity was created.
+    // MUST be captured BEFORE showOverLockScreen() calls setShowWhenLocked(true),
+    // because setShowWhenLocked causes isKeyguardLocked to return false even though
+    // the keyguard is still engaged and the user hasn't authenticated.
+    private var wasDeviceLockedOnCreate = false
+    
     // Helper function to extract user number from Twilio format
     private fun extractUserNumber(input: String): String {
         val pattern = Regex("""user_number:([^\s:]+)""")
@@ -300,6 +306,10 @@ class IncomingCallActivity : AppCompatActivity() {
         // a visible overlay layer/artifact between the heads-up notification and the app content below
         val keyguardMgr = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
         val isDeviceLockedOnCreate = keyguardMgr?.isKeyguardLocked == true
+        // Store the lock state BEFORE showOverLockScreen() calls setShowWhenLocked(true).
+        // After setShowWhenLocked, isKeyguardLocked will return false even though
+        // the device is still locked. This cached value is used by isDeviceLocked().
+        wasDeviceLockedOnCreate = isDeviceLockedOnCreate
         if (isMiuiDevice() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && isDeviceLockedOnCreate) {
             try {
                 if (android.provider.Settings.canDrawOverlays(this)) {
@@ -725,19 +735,26 @@ class IncomingCallActivity : AppCompatActivity() {
                 return
             } else {
                 // UNLOCKED FLOW: Dismiss keyguard (for non-secure lock) and launch MainActivity.
+                // Only call requestDismissKeyguard if the keyguard is actually showing
+                // (e.g. swipe-to-unlock). On Android 16+, calling it when fully unlocked
+                // can trigger an unexpected authentication prompt or error.
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                     val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
-                    keyguardManager?.requestDismissKeyguard(this, object : KeyguardManager.KeyguardDismissCallback() {
-                        override fun onDismissSucceeded() {
-                            android.util.Log.d(TAG, "handleAnswerFromNotification: Keyguard dismissed")
-                        }
-                        override fun onDismissCancelled() {
-                            android.util.Log.d(TAG, "handleAnswerFromNotification: Keyguard dismiss cancelled")
-                        }
-                        override fun onDismissError() {
-                            android.util.Log.d(TAG, "handleAnswerFromNotification: Keyguard dismiss error")
-                        }
-                    })
+                    if (keyguardManager?.isKeyguardLocked == true) {
+                        keyguardManager.requestDismissKeyguard(this, object : KeyguardManager.KeyguardDismissCallback() {
+                            override fun onDismissSucceeded() {
+                                android.util.Log.d(TAG, "handleAnswerFromNotification: Keyguard dismissed")
+                            }
+                            override fun onDismissCancelled() {
+                                android.util.Log.d(TAG, "handleAnswerFromNotification: Keyguard dismiss cancelled")
+                            }
+                            override fun onDismissError() {
+                                android.util.Log.d(TAG, "handleAnswerFromNotification: Keyguard dismiss error")
+                            }
+                        })
+                    } else {
+                        android.util.Log.d(TAG, "handleAnswerFromNotification: Keyguard not locked, skipping requestDismissKeyguard")
+                    }
                 } else {
                     @Suppress("DEPRECATION")
                     val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
@@ -1399,22 +1416,21 @@ class IncomingCallActivity : AppCompatActivity() {
     }
     
     /**
-     * Check if the device is currently locked (keyguard is showing).
+     * Check if the device was locked when this activity was created.
      * 
-     * IMPORTANT: We use `isKeyguardLocked` instead of `isDeviceLocked`.
-     * `isDeviceLocked` returns false when the calling activity has
-     * `setShowWhenLocked(true)` — Android considers the device "unlocked"
-     * from that activity's perspective. But the keyguard is still engaged
-     * and the user hasn't actually entered their PIN/pattern/fingerprint.
+     * IMPORTANT: We use the cached `wasDeviceLockedOnCreate` value that was captured
+     * in onCreate() BEFORE showOverLockScreen() called setShowWhenLocked(true).
      * 
-     * `isKeyguardLocked` correctly returns true when the keyguard is showing,
-     * regardless of whether the current activity is displayed over it.
-     * This prevents us from launching MainActivity with SHOW_OVER_LOCK_SCREEN
-     * flags (which would make the entire app accessible without authentication).
+     * After setShowWhenLocked(true) is set, both `isDeviceLocked` and `isKeyguardLocked`
+     * return false from this activity's context — Android considers the keyguard
+     * "dismissed" for activities that show over the lock screen. But the user hasn't
+     * actually entered their PIN/pattern/fingerprint.
+     * 
+     * Using the cached value ensures the locked path correctly stores
+     * pendingAnsweredCallData instead of trying to launch MainActivity.
      */
     private fun isDeviceLocked(): Boolean {
-        val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
-        return keyguardManager?.isKeyguardLocked ?: false
+        return wasDeviceLockedOnCreate
     }
     
     private fun proceedWithAnswer() {
@@ -1481,19 +1497,26 @@ class IncomingCallActivity : AppCompatActivity() {
             } else {
                 // UNLOCKED FLOW: Device is not locked — immediately dismiss keyguard
                 // (for non-secure lock screens like swipe) and launch MainActivity.
+                // Only call requestDismissKeyguard if the keyguard is actually showing.
+                // On Android 16+, calling it when fully unlocked can trigger an
+                // unexpected authentication prompt or error.
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                     val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
-                    keyguardManager?.requestDismissKeyguard(this, object : KeyguardManager.KeyguardDismissCallback() {
-                        override fun onDismissSucceeded() {
-                            android.util.Log.d(TAG, "proceedWithAnswer: Keyguard dismissed successfully")
-                        }
-                        override fun onDismissCancelled() {
-                            android.util.Log.d(TAG, "proceedWithAnswer: Keyguard dismiss cancelled")
-                        }
-                        override fun onDismissError() {
-                            android.util.Log.d(TAG, "proceedWithAnswer: Keyguard dismiss error")
-                        }
-                    })
+                    if (keyguardManager?.isKeyguardLocked == true) {
+                        keyguardManager.requestDismissKeyguard(this, object : KeyguardManager.KeyguardDismissCallback() {
+                            override fun onDismissSucceeded() {
+                                android.util.Log.d(TAG, "proceedWithAnswer: Keyguard dismissed successfully")
+                            }
+                            override fun onDismissCancelled() {
+                                android.util.Log.d(TAG, "proceedWithAnswer: Keyguard dismiss cancelled")
+                            }
+                            override fun onDismissError() {
+                                android.util.Log.d(TAG, "proceedWithAnswer: Keyguard dismiss error")
+                            }
+                        })
+                    } else {
+                        android.util.Log.d(TAG, "proceedWithAnswer: Keyguard not locked, skipping requestDismissKeyguard")
+                    }
                 } else {
                     @Suppress("DEPRECATION")
                     val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
@@ -1627,19 +1650,26 @@ class IncomingCallActivity : AppCompatActivity() {
         }
         
         // UNLOCKED FLOW: Dismiss keyguard and launch MainActivity.
+        // Only call requestDismissKeyguard if the keyguard is actually showing
+        // (e.g. swipe-to-unlock). On Android 16+, calling it when fully unlocked
+        // can trigger an unexpected authentication prompt or error.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
-            keyguardManager?.requestDismissKeyguard(this, object : KeyguardManager.KeyguardDismissCallback() {
-                override fun onDismissSucceeded() {
-                    android.util.Log.d(TAG, "launchMainActivityForCallWaiting: Keyguard dismissed")
-                }
-                override fun onDismissCancelled() {
-                    android.util.Log.d(TAG, "launchMainActivityForCallWaiting: Keyguard dismiss cancelled")
-                }
-                override fun onDismissError() {
-                    android.util.Log.d(TAG, "launchMainActivityForCallWaiting: Keyguard dismiss error")
-                }
-            })
+            if (keyguardManager?.isKeyguardLocked == true) {
+                keyguardManager.requestDismissKeyguard(this, object : KeyguardManager.KeyguardDismissCallback() {
+                    override fun onDismissSucceeded() {
+                        android.util.Log.d(TAG, "launchMainActivityForCallWaiting: Keyguard dismissed")
+                    }
+                    override fun onDismissCancelled() {
+                        android.util.Log.d(TAG, "launchMainActivityForCallWaiting: Keyguard dismiss cancelled")
+                    }
+                    override fun onDismissError() {
+                        android.util.Log.d(TAG, "launchMainActivityForCallWaiting: Keyguard dismiss error")
+                    }
+                })
+            } else {
+                android.util.Log.d(TAG, "launchMainActivityForCallWaiting: Keyguard not locked, skipping requestDismissKeyguard")
+            }
         } else {
             @Suppress("DEPRECATION")
             val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
@@ -1651,8 +1681,8 @@ class IncomingCallActivity : AppCompatActivity() {
             it.flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
                        Intent.FLAG_ACTIVITY_SINGLE_TOP or
                        Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
-            // Add extras to tell MainActivity to show over lock screen
-            it.putExtra("SHOW_OVER_LOCK_SCREEN", true)
+            // NOTE: No SHOW_OVER_LOCK_SCREEN extra — MainActivity never shows over lock screen.
+            // Only IncomingCallActivity has showWhenLocked privileges.
             it.putExtra("CALL_ANSWERED", true)
             it.putExtra("CALL_SID", callSid)
             // Pass call data so Flutter can display it immediately
@@ -1661,7 +1691,7 @@ class IncomingCallActivity : AppCompatActivity() {
             it.putExtra("MY_NUMBER", myNumber)
             it.putExtra("CALL_DIRECTION", "incoming")
             startActivity(it)
-            android.util.Log.d(TAG, "launchMainActivityForCallWaiting: Brought main activity to front with call data - caller: $callerName, number: $callerNumber")
+            android.util.Log.d(TAG, "launchMainActivityForCallWaiting: Brought main activity to front (UNLOCKED path) - caller: $callerName, number: $callerNumber")
         }
     }
 
@@ -1675,8 +1705,8 @@ class IncomingCallActivity : AppCompatActivity() {
             it.flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
                        Intent.FLAG_ACTIVITY_SINGLE_TOP or
                        Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
-            // Add extras to tell MainActivity to show over lock screen
-            it.putExtra("SHOW_OVER_LOCK_SCREEN", true)
+            // NOTE: No SHOW_OVER_LOCK_SCREEN extra — MainActivity never shows over lock screen.
+            // Only IncomingCallActivity has showWhenLocked privileges.
             it.putExtra("CALL_ANSWERED", true)
             it.putExtra("CALL_SID", callSid)
             // Pass call data so Flutter can display it immediately without waiting for plugin sync
@@ -1685,7 +1715,7 @@ class IncomingCallActivity : AppCompatActivity() {
             it.putExtra("MY_NUMBER", myNumber)
             it.putExtra("CALL_DIRECTION", "incoming")
             startActivity(it)
-            android.util.Log.d(TAG, "launchMainActivity: Launched with call data - caller: $callerName, number: $callerNumber, myNumber: $myNumber")
+            android.util.Log.d(TAG, "launchMainActivity: Launched with call data (UNLOCKED path) - caller: $callerName, number: $callerNumber, myNumber: $myNumber")
         }
     }
 
