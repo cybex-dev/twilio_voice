@@ -347,10 +347,12 @@ class IncomingCallActivity : AppCompatActivity() {
         // For MIUI - try an additional aggressive approach after content is set
         if (isMiuiDevice()) {
             window.decorView.postDelayed({
-                android.util.Log.d(TAG, "onCreate: MIUI delayed bringActivityToFront")
-                showOverLockScreen()
-                bringActivityToFront()
-                moveTaskToFront()
+                if (!callHandled) {
+                    android.util.Log.d(TAG, "onCreate: MIUI delayed bringActivityToFront")
+                    showOverLockScreen()
+                    bringActivityToFront()
+                    moveTaskToFront()
+                }
             }, 300)
         }
 
@@ -937,6 +939,23 @@ class IncomingCallActivity : AppCompatActivity() {
         }
     }
     
+    /**
+     * Cancel all pending postDelayed callbacks on the window's decorView.
+     * CRITICAL for MIUI: When the call is handled (answered/declined), we must cancel
+     * all pending delayed callbacks (bringActivityToFront, moveTaskToFront, etc.)
+     * BEFORE calling finishAndRemoveTask(). Without this, the 300ms delayed
+     * bringActivityToFront() from onWindowFocusChanged(hasFocus=false) fires after
+     * the activity should be dead, stealing focus from MainActivity and minimizing the app.
+     */
+    private fun cancelPendingCallbacks() {
+        try {
+            window.decorView.handler?.removeCallbacksAndMessages(null)
+            android.util.Log.d(TAG, "cancelPendingCallbacks: Removed all pending callbacks")
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "cancelPendingCallbacks: Failed: ${e.message}")
+        }
+    }
+
     private fun bringActivityToFront() {
         try {
             // Use multiple approaches to bring activity to front on MIUI
@@ -967,9 +986,12 @@ class IncomingCallActivity : AppCompatActivity() {
         showOverLockScreen()
         
         // Ensure we have focus on MIUI devices only
-        if (isMiuiDevice()) {
+        // Skip if call is already handled — activity is about to finish
+        if (isMiuiDevice() && !callHandled) {
             window.decorView.postDelayed({
-                bringActivityToFront()
+                if (!callHandled) {
+                    bringActivityToFront()
+                }
             }, 200)
         }
     }
@@ -988,7 +1010,7 @@ class IncomingCallActivity : AppCompatActivity() {
         )
         
         // For MIUI, try to use a higher window priority
-        if (isMiuiDevice()) {
+        if (isMiuiDevice() && !callHandled) {
             try {
                 // Use reflection to set higher priority for MIUI
                 val layoutParams = window.attributes
@@ -1000,20 +1022,26 @@ class IncomingCallActivity : AppCompatActivity() {
             
             // Also try to bring to front again
             window.decorView.postDelayed({
-                moveTaskToFront()
-                bringActivityToFront()
+                if (!callHandled) {
+                    moveTaskToFront()
+                    bringActivityToFront()
+                }
             }, 100)
         }
     }
     
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        android.util.Log.d(TAG, "onWindowFocusChanged: hasFocus=$hasFocus")
+        android.util.Log.d(TAG, "onWindowFocusChanged: hasFocus=$hasFocus, callHandled=$callHandled")
         
         // If we lose focus on MIUI, try to regain it (only for MIUI devices)
-        if (!hasFocus && isMiuiDevice()) {
+        // CRITICAL: Skip if callHandled is true — the activity is finishing and we must NOT
+        // bring it back to front, otherwise it steals focus from MainActivity and minimizes the app.
+        if (!hasFocus && isMiuiDevice() && !callHandled) {
             window.decorView.postDelayed({
-                bringActivityToFront()
+                if (!callHandled) {
+                    bringActivityToFront()
+                }
             }, 300)
         }
     }
@@ -1335,6 +1363,10 @@ class IncomingCallActivity : AppCompatActivity() {
         }
         
         callHandled = true
+        // CRITICAL: Cancel all pending MIUI postDelayed callbacks BEFORE finishing.
+        // Without this, the delayed bringActivityToFront() from onWindowFocusChanged(false)
+        // fires 300ms later and steals focus from MainActivity, minimizing the app.
+        cancelPendingCallbacks()
         android.util.Log.d(TAG, "answerCallWithHold: Holding active call and answering new call")
         releaseWakeLock()
         callSid?.let { sid ->
@@ -1342,6 +1374,7 @@ class IncomingCallActivity : AppCompatActivity() {
                 action = TVConnectionService.ACTION_ANSWER_WITH_HOLD
                 putExtra(TVConnectionService.EXTRA_CALL_HANDLE, sid)
                 putExtra("EXTRA_ACTIVE_CALL_HANDLE", activeCallHandle)
+                putExtra("LAUNCHED_FROM_ACTIVITY", true)
                 callInvite?.let { invite ->
                     putExtra(TVConnectionService.EXTRA_INCOMING_CALL_INVITE, invite)
                 }
@@ -1372,6 +1405,7 @@ class IncomingCallActivity : AppCompatActivity() {
         }
         
         callHandled = true
+        cancelPendingCallbacks()
         android.util.Log.d(TAG, "answerCallWithEndFirst: Ending active call and answering new call")
         releaseWakeLock()
         callSid?.let { sid ->
@@ -1379,6 +1413,7 @@ class IncomingCallActivity : AppCompatActivity() {
                 action = TVConnectionService.ACTION_ANSWER_WITH_END_FIRST
                 putExtra(TVConnectionService.EXTRA_CALL_HANDLE, sid)
                 putExtra("EXTRA_ACTIVE_CALL_HANDLE", activeCallHandle)
+                putExtra("LAUNCHED_FROM_ACTIVITY", true)
                 callInvite?.let { invite ->
                     putExtra(TVConnectionService.EXTRA_INCOMING_CALL_INVITE, invite)
                 }
@@ -1430,11 +1465,25 @@ class IncomingCallActivity : AppCompatActivity() {
      * pendingAnsweredCallData instead of trying to launch MainActivity.
      */
     private fun isDeviceLocked(): Boolean {
-        return wasDeviceLockedOnCreate
+        // Use the cached value from onCreate AND a fresh keyguard check.
+        // Why both? On some MIUI devices, isKeyguardLocked returns true in onCreate
+        // even when the user is actively using the phone (MIUI's "light" lock state).
+        // By the time the user taps "Answer", the keyguard may have been dismissed.
+        // If the fresh check says unlocked, trust it — the user has clearly authenticated.
+        // If the cached value says unlocked, also trust it (e.g. setShowWhenLocked
+        // made isKeyguardLocked return false even though device was locked on create).
+        val keyguardMgr = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+        val freshLocked = keyguardMgr?.isKeyguardLocked == true
+        val result = wasDeviceLockedOnCreate && freshLocked
+        if (wasDeviceLockedOnCreate != freshLocked) {
+            android.util.Log.d(TAG, "isDeviceLocked: wasDeviceLockedOnCreate=$wasDeviceLockedOnCreate, freshKeyguardLocked=$freshLocked, returning=$result")
+        }
+        return result
     }
     
     private fun proceedWithAnswer() {
         callHandled = true
+        cancelPendingCallbacks()
         android.util.Log.d(TAG, "[LOG] proceedWithAnswer: STARTED - Answering call with callSid: $callSid, hasCallInvite: ${callInvite != null}, hasActiveCall=$hasActiveCall, activeCallHandle=$activeCallHandle, callerName=$callerName, callerNumber=$callerNumber, activeCallerName=$activeCallerName, activeCallerNumber=$activeCallerNumber")
         val extras = intent?.extras
         if (extras != null) {
@@ -1576,6 +1625,7 @@ class IncomingCallActivity : AppCompatActivity() {
             return
         }
         callHandled = true
+        cancelPendingCallbacks()
         
         releaseWakeLock()
         callSid?.let { sid ->

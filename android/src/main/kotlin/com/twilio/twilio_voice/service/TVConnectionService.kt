@@ -1383,7 +1383,8 @@ class TVConnectionService : ConnectionService() {
                 ACTION_ANSWER_WITH_HOLD -> {
                     // Answer the incoming call while putting the active call on hold
                     it.setExtrasClassLoader(CallInvite::class.java.classLoader)
-                    Log.d(TAG, "onStartCommand: ACTION_ANSWER_WITH_HOLD")
+                    val launchedFromActivity = it.getBooleanExtra("LAUNCHED_FROM_ACTIVITY", false)
+                    Log.d(TAG, "onStartCommand: ACTION_ANSWER_WITH_HOLD, launchedFromActivity=$launchedFromActivity")
                     
                     val activeHandle = it.getStringExtra("EXTRA_ACTIVE_CALL_HANDLE") ?: activeCallHandleDuringIncoming
                     val newCallHandle = it.getStringExtra(EXTRA_CALL_HANDLE) ?: getIncomingCallHandle()
@@ -1451,7 +1452,13 @@ class TVConnectionService : ConnectionService() {
                             // The old active call (activeHandle) is now on hold — show its name in notification
                             val heldName = if (activeHandle != null) getConnectionDisplayName(getConnection(activeHandle)) else null
                             showOngoingCallNotification(callSid, callerName, heldName)
-                            launchMainActivityWithCallData(callSid, callerNumber, callInvite.to ?: "")
+                            // Only launch MainActivity from service if IncomingCallActivity didn't already do it.
+                            // On MIUI, two rapid startActivity calls race and can cause the app to minimize.
+                            if (!launchedFromActivity) {
+                                launchMainActivityWithCallData(callSid, callerNumber, callInvite.to ?: "")
+                            } else {
+                                Log.d(TAG, "[ACTION_ANSWER_WITH_HOLD] Skipping launchMainActivityWithCallData - IncomingCallActivity already launched it")
+                            }
                         }
                     }
                     clearCallWaitingState()
@@ -1460,7 +1467,8 @@ class TVConnectionService : ConnectionService() {
                 ACTION_ANSWER_WITH_END_FIRST -> {
                     // End the active call first, then answer the incoming call
                     it.setExtrasClassLoader(CallInvite::class.java.classLoader)
-                    Log.d(TAG, "onStartCommand: ACTION_ANSWER_WITH_END_FIRST")
+                    val launchedFromActivityEndFirst = it.getBooleanExtra("LAUNCHED_FROM_ACTIVITY", false)
+                    Log.d(TAG, "onStartCommand: ACTION_ANSWER_WITH_END_FIRST, launchedFromActivity=$launchedFromActivityEndFirst")
                     
                     val activeHandle = it.getStringExtra("EXTRA_ACTIVE_CALL_HANDLE") ?: activeCallHandleDuringIncoming
                     val newCallHandle = it.getStringExtra(EXTRA_CALL_HANDLE) ?: getIncomingCallHandle()
@@ -1519,7 +1527,11 @@ class TVConnectionService : ConnectionService() {
                             val callerName = connection.callerDisplayName?.takeIf { it.isNotBlank() }
                                 ?: callerNumber
                             showOngoingCallNotification(callSid, callerName)
-                            launchMainActivityWithCallData(callSid, callerNumber, callInvite.to ?: "")
+                            if (!launchedFromActivityEndFirst) {
+                                launchMainActivityWithCallData(callSid, callerNumber, callInvite.to ?: "")
+                            } else {
+                                Log.d(TAG, "[ACTION_ANSWER_WITH_END_FIRST] Skipping launchMainActivityWithCallData - IncomingCallActivity already launched it")
+                            }
                         }
                     }
                     clearCallWaitingState()
