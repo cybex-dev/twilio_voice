@@ -39,4 +39,21 @@
         <!-- For showing over lock screen -->
     <!-- windowShowWhenLocked and windowTurnScreenOn are API 27+. Keep them in values-v27 only. -->
     </style>
+
+    <!-- Theme for call-waiting bottom sheet overlay.
+         MUST be truly translucent so it appears as an overlay on top of whatever
+         is below (Flutter app, home screen, etc.) with NO visible screen transition.
+         Unlike Theme.IncomingCall which needs windowIsTranslucent=false for lock-screen. -->
+    <style name="Theme.CallWaitingSheet" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:colorBackgroundCacheHint">@null</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:windowDisablePreview">true</item>
+        <item name="android:windowActionBar">false</item>
+    </style>
 </resources>

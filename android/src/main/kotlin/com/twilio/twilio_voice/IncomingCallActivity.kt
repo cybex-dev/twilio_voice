@@ -588,9 +588,11 @@ class IncomingCallActivity : AppCompatActivity() {
         
         if (hasActiveCallFromIntent) {
             // There's an active call — DON'T answer directly.
-            // Instead, populate the activity state and show the full incoming call UI
-            // with the call waiting bottom sheet so the user can choose an option.
-            android.util.Log.d(TAG, "handleAnswerFromNotification: Active call detected, showing full UI with bottom sheet instead of direct answer")
+            // Use a minimal transparent layout with ONLY the bottom sheet.
+            // This avoids the visual flash of the full ringing screen that appeared
+            // before the sheet was shown on top. The user already tapped "Answer"
+            // on the notification — they don't need to see the ringing UI again.
+            android.util.Log.d(TAG, "handleAnswerFromNotification: Active call detected, showing bottom sheet only (no ringing screen)")
             
             // Store invite/sid for later use by the bottom sheet actions
             if (invite != null) {
@@ -615,56 +617,88 @@ class IncomingCallActivity : AppCompatActivity() {
             activeCallerNumber = intent.getStringExtra(EXTRA_ACTIVE_CALLER_NUMBER)
             activeCallHandle = intent.getStringExtra(EXTRA_ACTIVE_CALL_HANDLE)
             
-            android.util.Log.d(TAG, "handleAnswerFromNotification: Setting up full UI - callerName=$callerName, callerNumber=$callerNumber, activeCallerName=$activeCallerName, activeCallerNumber=$activeCallerNumber")
+            android.util.Log.d(TAG, "handleAnswerFromNotification: Setting up sheet-only UI - callerName=$callerName, callerNumber=$callerNumber, activeCallerName=$activeCallerName, activeCallerNumber=$activeCallerNumber")
             
-            // Set the content view (the full incoming call layout)
-            setContentView(R.layout.activity_incoming_call_custom)
+            // Use the minimal transparent layout — just scrim + caller info + bottom sheet
+            setContentView(R.layout.activity_call_waiting_sheet)
             bringActivityToFront()
             
-            // Set caller info in UI
-            findViewById<TextView>(R.id.callerName).text = callerName
+            // Set caller info in the top chip
+            findViewById<TextView>(R.id.sheetCallerName)?.text = callerName ?: "Unknown"
             val formattedNumber = formatPhoneNumber(callerNumber ?: "")
-            findViewById<TextView>(R.id.callerNumber).text = if (formattedNumber.isNotEmpty()) "Mobile  $formattedNumber" else "Mobile"
+            findViewById<TextView>(R.id.sheetCallerNumber)?.text = if (formattedNumber.isNotEmpty()) formattedNumber else ""
             
-            val easifyLogo = findViewById<ImageView>(R.id.easifyLogo)
-            easifyLogo.elevation = 8f
-            
-            // Set up the accept button to show bottom sheet (call waiting mode)
-            val acceptButtonContainer = findViewById<FrameLayout>(R.id.acceptButton)
-            val acceptButtonBg = findViewById<View>(R.id.acceptButtonBg)
-            val acceptButtonCircle = findViewById<ImageView>(R.id.acceptButtonCircle)
-            acceptButtonContainer.elevation = 12f
-            acceptButtonBg.elevation = 10f
-            acceptButtonCircle.elevation = 14f
-            
-            setupButtonSwipeAnimation(acceptButtonContainer, acceptButtonBg, acceptButtonCircle) {
-                showCallWaitingBottomSheet()
-            }
-            
-            // Set up decline button
-            val declineButtonContainer = findViewById<FrameLayout>(R.id.declineButton)
-            val declineButtonBg = findViewById<View>(R.id.declineButtonBg)
-            val declineButtonCircle = findViewById<ImageView>(R.id.declineButtonCircle)
-            declineButtonContainer.elevation = 12f
-            declineButtonBg.elevation = 10f
-            declineButtonCircle.elevation = 14f
-            
-            setupButtonSwipeAnimation(declineButtonContainer, declineButtonBg, declineButtonCircle) {
-                declineCall()
-            }
-            
-            // Update label for call waiting
-            val callFromLabel = findViewById<TextView>(R.id.callFromLabel)
-            callFromLabel.text = "Another call from"
+            // Animate caller info chip fade-in
+            findViewById<View>(R.id.callerInfoChip)?.animate()
+                ?.alpha(1f)
+                ?.setDuration(300)
+                ?.setStartDelay(100)
+                ?.start()
             
             // Register broadcast receiver
             registerCallEndedReceiver()
             
-            // Show the bottom sheet immediately since the user tapped "Answer"
-            // from the notification — they want to answer, so show them the options
-            acceptButtonContainer.post {
-                showCallWaitingBottomSheet()
+            // Scrim tap = dismiss (decline)
+            findViewById<View>(R.id.callWaitingScrim)?.setOnClickListener {
+                declineCall()
             }
+            
+            // Set dynamic text with active caller name
+            val displayName = if (!activeCallerName.isNullOrEmpty() && activeCallerName != "Unknown") {
+                activeCallerName!!
+            } else if (!activeCallerNumber.isNullOrEmpty()) {
+                formatPhoneNumber(activeCallerNumber)
+            } else {
+                "active call"
+            }
+            findViewById<TextView>(R.id.put_1_222_3)?.text = "Put $displayName on hold"
+            findViewById<TextView>(R.id.end_call_wi)?.text = "End call with $displayName"
+            
+            // Apply safe area padding for navigation bar / gesture area
+            val bottomSheetContainer = findViewById<View>(R.id.callWaitingBottomSheet)
+            val navBarHeight = getNavigationBarHeight()
+            if (navBarHeight > 0 && bottomSheetContainer != null) {
+                val basePaddingBottom = (28 * resources.displayMetrics.density).toInt()
+                bottomSheetContainer.setPadding(
+                    bottomSheetContainer.paddingLeft,
+                    bottomSheetContainer.paddingTop,
+                    bottomSheetContainer.paddingRight,
+                    basePaddingBottom + navBarHeight
+                )
+                android.util.Log.d(TAG, "handleAnswerFromNotification: Applied safe area padding: navBarHeight=$navBarHeight, totalBottom=${basePaddingBottom + navBarHeight}")
+            }
+            
+            // Animate bottom sheet sliding up
+            bottomSheetContainer?.let { sheet ->
+                sheet.translationY = 2000f  // start off-screen
+                sheet.post {
+                    sheet.translationY = sheet.height.toFloat()
+                    sheet.animate()
+                        .translationY(0f)
+                        .setDuration(300)
+                        .setInterpolator(android.view.animation.DecelerateInterpolator())
+                        .start()
+                }
+            }
+            
+            // Set up option click listeners
+            findViewById<View>(R.id.optionHoldAndAnswer)?.setOnClickListener {
+                android.util.Log.d(TAG, "handleAnswerFromNotification: Option 1 - Hold & Answer")
+                answerCallWithHold()
+            }
+            
+            findViewById<View>(R.id.optionEndAndAnswer)?.setOnClickListener {
+                android.util.Log.d(TAG, "handleAnswerFromNotification: Option 2 - End & Answer")
+                answerCallWithEndFirst()
+            }
+            
+            findViewById<View>(R.id.optionDecline)?.setOnClickListener {
+                android.util.Log.d(TAG, "handleAnswerFromNotification: Option 3 - Decline incoming")
+                declineCall()
+            }
+            
+            // Mark bottom sheet as showing (reuse existing guard)
+            isBottomSheetShowing = true
             
             return  // Don't finish — user needs to interact with the bottom sheet
         }

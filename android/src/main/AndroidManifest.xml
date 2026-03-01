@@ -34,6 +34,18 @@
             android:excludeFromRecents="true"
             android:theme="@style/Theme.IncomingCall" />
 
+        <!-- Call-waiting bottom sheet overlay.
+             Truly translucent activity that shows the 3 options (Hold & Answer,
+             End & Answer, Decline) on top of whatever is currently visible.
+             Launched from notification Answer button during an active call. -->
+        <activity
+            android:name=".CallWaitingSheetActivity"
+            android:exported="false"
+            android:taskAffinity=""
+            android:noHistory="true"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.CallWaitingSheet" />
+
         <service
             android:name=".service.TVConnectionService"
             android:exported="true"

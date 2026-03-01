@@ -53,6 +53,7 @@ import com.twilio.twilio_voice.types.ContextExtension.hasCallPhonePermission
 import com.twilio.twilio_voice.types.ContextExtension.hasManageOwnCallsPermission
 import com.twilio.twilio_voice.types.TVNativeCallActions
 import com.twilio.twilio_voice.types.TVNativeCallEvents
+import com.twilio.twilio_voice.CallWaitingSheetActivity
 import com.twilio.twilio_voice.IncomingCallActivity
 import com.twilio.voice.CallInvite
 import com.twilio.twilio_voice.types.ContextExtension.hasMicrophoneAccess
@@ -3308,39 +3309,58 @@ class TVConnectionService : ConnectionService() {
         val answerRequestCode = (callInvite.callSid.hashCode() and 0x7FFFFFFF) % 10000 + 1000
         Log.d(TAG, "createIncomingCallNotification: Creating answer intent with requestCode=$answerRequestCode for callSid=${callInvite.callSid}")
         
-        // Create an intent that launches IncomingCallActivity with answer action
-        val answerActivityIntent = Intent(applicationContext, IncomingCallActivity::class.java).apply {
-            // Use flags that ensure the activity is started even when app is in foreground
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
-                    Intent.FLAG_ACTIVITY_CLEAR_TOP or 
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP
-            putExtra(IncomingCallActivity.EXTRA_CALL_SID, callInvite.callSid)
-            putExtra(IncomingCallActivity.EXTRA_CALL_INVITE, callInvite)
-            putExtra(IncomingCallActivity.EXTRA_CALLER_NAME, callerName)
-            putExtra(IncomingCallActivity.EXTRA_CALLER_NUMBER, callerNumber)
-            putExtra("extra_my_number", myNumber)
-            putExtra("action", "answer")
-            // Pass active call info so handleAnswerFromNotification can show
-            // the call-waiting bottom sheet instead of answering directly
-            if (hasActiveCallDuringIncoming) {
-                putExtra(IncomingCallActivity.EXTRA_HAS_ACTIVE_CALL, true)
-                putExtra(IncomingCallActivity.EXTRA_ACTIVE_CALLER_NAME, activeCallCallerName)
-                putExtra(IncomingCallActivity.EXTRA_ACTIVE_CALLER_NUMBER, activeCallCallerNumber)
-                putExtra(IncomingCallActivity.EXTRA_ACTIVE_CALL_HANDLE, activeCallHandleDuringIncoming)
-                Log.d(TAG, "createIncomingCallNotification: Added active call extras to answerActivityIntent")
+        // When there's an active call, tapping "Answer" on the notification should
+        // show the call-waiting bottom sheet as a translucent overlay (Hold & Answer,
+        // End & Answer, Decline) via CallWaitingSheetActivity. This activity uses
+        // windowIsTranslucent=true + no animation, so it appears instantly on top of
+        // whatever is visible — no screen transition like IncomingCallActivity.
+        val answerActivityPendingIntent = if (hasActiveCallDuringIncoming) {
+            val sheetIntent = Intent(applicationContext, CallWaitingSheetActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra(CallWaitingSheetActivity.EXTRA_CALL_SID, callInvite.callSid)
+                putExtra(CallWaitingSheetActivity.EXTRA_CALL_INVITE, callInvite)
+                putExtra(CallWaitingSheetActivity.EXTRA_CALLER_NAME, callerName)
+                putExtra(CallWaitingSheetActivity.EXTRA_CALLER_NUMBER, callerNumber)
+                putExtra(CallWaitingSheetActivity.EXTRA_MY_NUMBER, myNumber)
+                putExtra(CallWaitingSheetActivity.EXTRA_ACTIVE_CALL_HANDLE, activeCallHandleDuringIncoming)
+                putExtra(CallWaitingSheetActivity.EXTRA_ACTIVE_CALLER_NAME, activeCallCallerName)
+                putExtra(CallWaitingSheetActivity.EXTRA_ACTIVE_CALLER_NUMBER, activeCallCallerNumber)
+                data = android.net.Uri.parse("twilio://answer-sheet/${callInvite.callSid}")
             }
-            // Add a unique data URI to ensure PendingIntent is unique and not cached
-            data = android.net.Uri.parse("twilio://answer/${callInvite.callSid}")
+            Log.d(TAG, "createIncomingCallNotification: Active call detected — using CallWaitingSheetActivity (translucent overlay)")
+            PendingIntent.getActivity(
+                applicationContext,
+                answerRequestCode,
+                sheetIntent,
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                else
+                    PendingIntent.FLAG_UPDATE_CURRENT
+            )
+        } else {
+            // No active call — launch IncomingCallActivity for direct answer
+            val answerActivityIntent = Intent(applicationContext, IncomingCallActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or 
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP
+                putExtra(IncomingCallActivity.EXTRA_CALL_SID, callInvite.callSid)
+                putExtra(IncomingCallActivity.EXTRA_CALL_INVITE, callInvite)
+                putExtra(IncomingCallActivity.EXTRA_CALLER_NAME, callerName)
+                putExtra(IncomingCallActivity.EXTRA_CALLER_NUMBER, callerNumber)
+                putExtra("extra_my_number", myNumber)
+                putExtra("action", "answer")
+                data = android.net.Uri.parse("twilio://answer/${callInvite.callSid}")
+            }
+            PendingIntent.getActivity(
+                applicationContext,
+                answerRequestCode,
+                answerActivityIntent,
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) 
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE 
+                else 
+                    PendingIntent.FLAG_UPDATE_CURRENT
+            )
         }
-        val answerActivityPendingIntent = PendingIntent.getActivity(
-            applicationContext,
-            answerRequestCode,
-            answerActivityIntent,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) 
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE 
-            else 
-                PendingIntent.FLAG_UPDATE_CURRENT
-        )
         
         // Use CallStyle for Android 12+ for native incoming call UI in notification
         // Determine what to show: if caller has name, show name on top and number below
