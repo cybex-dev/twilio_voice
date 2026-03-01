@@ -416,7 +416,9 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
       // The BLoC's _onManuallyFetchCallDetailsOnStartup will read waitingCall.
       return CallEvent.log;
     } else if (state.startsWith("Swap|")) {
-      // Swap event from iOS CallKit native swap button: "Swap|sid|from|to"
+      // Native swap event: "Swap|sid|from|to"
+      // iOS: from CallKit native swap button.
+      // Android: from notification swap button (ACTION_SWAP broadcast).
       // The sid is the now-active call's SID, from/to are its info
       List<String> tokens = state.split('|');
       if (tokens.length >= 4) {

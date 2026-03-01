@@ -10,7 +10,7 @@ enum CallEvent {
   heldCallEnded, // The held call ended remotely while another call is active
   unhold,
   hold,
-  swap, // CallKit native swap: atomically swaps active and held calls (iOS)
+  swap, // Native swap: atomically swaps active and held calls (iOS CallKit / Android notification)
   unmute,
   mute,
   speakerOn,

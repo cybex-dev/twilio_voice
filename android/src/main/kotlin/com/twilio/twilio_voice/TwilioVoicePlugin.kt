@@ -1989,6 +1989,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 addAction(TVNativeCallActions.ACTION_ABORT)
                 addAction(TVNativeCallActions.ACTION_HOLD)
                 addAction(TVNativeCallActions.ACTION_UNHOLD)
+                addAction(TVNativeCallActions.ACTION_SWAP)
 
                 addAction(TVNativeCallEvents.EVENT_CONNECTING)
                 addAction(TVNativeCallEvents.EVENT_INCOMING)
@@ -2091,7 +2092,8 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 message.contains("Answer|") || message.contains("Call Ended") ||
                 message.contains("Incoming|") || message.contains("IncomingWhileActive|") ||
                 message.contains("Reconnecting") ||
-                message.contains("Reconnected")) {
+                message.contains("Reconnected") ||
+                message.contains("Swap|")) {
                 Log.d(TAG, "logEvent: eventSink is null, queuing event: $message")
                 pendingEvents.add(message)
             } else {
@@ -2632,6 +2634,18 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                     }
                 }
                 logEvent("", "Unhold|${callSid ?: ""}")
+            }
+
+            TVNativeCallActions.ACTION_SWAP -> {
+                // Notification-initiated swap: native side already performed the swap.
+                // Build "Swap|newActiveSid|from|to" event for Flutter's atomic swap handler.
+                val newActiveSid = intent.getStringExtra(TVBroadcastReceiver.EXTRA_CALL_HANDLE) ?: ""
+                val from = intent.getStringExtra(TVBroadcastReceiver.EXTRA_CALL_FROM) ?: ""
+                val to = intent.getStringExtra(TVBroadcastReceiver.EXTRA_CALL_TO) ?: ""
+                Log.d(TAG, "handleBroadcastIntent: Swap - newActiveSid=$newActiveSid, from=$from, to=$to")
+                // Update plugin's callSid to the now-active call
+                callSid = newActiveSid.ifEmpty { callSid }
+                logEvents("", arrayOf("Swap", newActiveSid, from, to))
             }
 
             TVNativeCallEvents.EVENT_CONNECTING -> {

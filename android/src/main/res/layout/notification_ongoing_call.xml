@@ -52,6 +52,25 @@
 
     </LinearLayout>
 
+    <!-- Swap button (hidden by default, shown when there's a held call) -->
+    <FrameLayout
+        android:id="@+id/swap_button"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:layout_marginEnd="8dp"
+        android:background="@drawable/ic_swap_button_bg"
+        android:contentDescription="Swap calls"
+        android:visibility="gone">
+        
+        <ImageView
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:layout_gravity="center"
+            android:src="@drawable/ic_swap_calls"
+            android:scaleType="fitCenter" />
+            
+    </FrameLayout>
+
     <!-- Trailing: Red hangup button with phone icon -->
     <FrameLayout
         android:id="@+id/hangup_button"

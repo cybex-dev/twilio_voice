@@ -51,6 +51,7 @@ import com.twilio.twilio_voice.types.CompletionHandler
 import com.twilio.twilio_voice.types.ContextExtension.appName
 import com.twilio.twilio_voice.types.ContextExtension.hasCallPhonePermission
 import com.twilio.twilio_voice.types.ContextExtension.hasManageOwnCallsPermission
+import com.twilio.twilio_voice.types.TVNativeCallActions
 import com.twilio.twilio_voice.types.TVNativeCallEvents
 import com.twilio.twilio_voice.IncomingCallActivity
 import com.twilio.voice.CallInvite
@@ -93,6 +94,12 @@ class TVConnectionService : ConnectionService() {
     var log_callClaimCounter: Int = 0
     @Volatile
     var log_incomingCallClaimCounter: Int = 0
+
+    // Flag to suppress individual Hold/Unhold broadcasts during an atomic swap.
+    // When true, sendBroadcastEvent will skip ACTION_HOLD and ACTION_UNHOLD events
+    // because the swap handler will send a single ACTION_SWAP broadcast instead.
+    @Volatile
+    var suppressHoldUnholdBroadcasts: Boolean = false
     @Volatile
     var log_callWaitingCounter: Int = 0
         
@@ -201,6 +208,12 @@ class TVConnectionService : ConnectionService() {
          * Extra used to identify a call connection.
          */
         const val EXTRA_CALL_HANDLE: String = "EXTRA_CALL_HANDLE"
+
+        /**
+         * Extra flag to indicate this action was triggered from notification button.
+         * Used with [ACTION_SWAP_CALLS] to distinguish notification-initiated vs Dart-initiated swaps.
+         */
+        const val EXTRA_FROM_NOTIFICATION: String = "EXTRA_FROM_NOTIFICATION"
 
         /**
          * Extra used with [ACTION_CANCEL_CALL_INVITE] to cancel a call connection
@@ -1893,19 +1906,44 @@ class TVConnectionService : ConnectionService() {
                         return@let
                     }
 
-                    Log.d(TAG, "onStartCommand: [ACTION_SWAP_CALLS] swapping active=${activeEntry.key} with held=${heldEntry.key}")
+                    val fromNotification = it.getBooleanExtra(EXTRA_FROM_NOTIFICATION, false)
+                    Log.d(TAG, "onStartCommand: [ACTION_SWAP_CALLS] swapping active=${activeEntry.key} with held=${heldEntry.key}, fromNotification=$fromNotification")
+
+                    // Suppress individual Hold/Unhold broadcasts during the swap.
+                    // We'll send a single atomic ACTION_SWAP broadcast instead.
+                    suppressHoldUnholdBroadcasts = true
 
                     // Hold the currently active connection
                     activeEntry.value.toggleHold(true)
                     // Unhold the currently held connection
                     heldEntry.value.toggleHold(false)
 
-                    // Update ongoing notification to show the newly active caller
-                    // with the newly held caller's info
+                    // Re-enable individual broadcasts
+                    suppressHoldUnholdBroadcasts = false
+
+                    // Resolve the new active call's info for the swap event
                     val newActiveHandle = heldEntry.key
                     val newActiveName = getConnectionDisplayName(heldEntry.value)
                     val newHeldName = getConnectionDisplayName(activeEntry.value)
+
+                    // Get from/to for the new active call
+                    val newActiveFrom = heldEntry.value.getCallParameters()?.from ?: ""
+                    val newActiveTo = heldEntry.value.getCallParameters()?.to ?: ""
+
+                    // Update ongoing notification to show the newly active caller
+                    // with the newly held caller's info
                     showOngoingCallNotification(newActiveHandle, newActiveName, newHeldName)
+
+                    // Broadcast the atomic swap event to Flutter via the plugin.
+                    // For Dart-initiated swaps, BLoC has _suppressSwapEventCount > 0
+                    // and will suppress this event. For notification-initiated swaps,
+                    // BLoC will process it atomically via CallEvent.swap handler.
+                    sendBroadcastEvent(applicationContext, TVNativeCallActions.ACTION_SWAP, newActiveHandle, Bundle().apply {
+                        putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, newActiveHandle)
+                        putString(TVBroadcastReceiver.EXTRA_CALL_FROM, newActiveFrom)
+                        putString(TVBroadcastReceiver.EXTRA_CALL_TO, newActiveTo)
+                        putBoolean(EXTRA_FROM_NOTIFICATION, fromNotification)
+                    })
                 }
 
                 ACTION_TOGGLE_MUTE -> {
@@ -2420,6 +2458,14 @@ class TVConnectionService : ConnectionService() {
 
 
     private fun sendBroadcastEvent(ctx: Context, event: String, callSid: String?, extras: Bundle? = null) {
+        // During an atomic swap, suppress the individual Hold/Unhold broadcasts
+        // that fire from toggleHold(). The swap handler sends a single ACTION_SWAP instead.
+        if (suppressHoldUnholdBroadcasts && 
+            (event == TVNativeCallActions.ACTION_HOLD || event == TVNativeCallActions.ACTION_UNHOLD)) {
+            Log.d(TAG, "sendBroadcastEvent: Suppressing $event during atomic swap (callSid=$callSid)")
+            return
+        }
+
         // Cancel ongoing call notification when call ends, but ONLY if no other calls remain
         if (event == TVBroadcastReceiver.ACTION_CALL_ENDED && !hasActiveCalls()) {
             cancelOngoingCallNotification()
@@ -2598,6 +2644,23 @@ class TVConnectionService : ConnectionService() {
                 PendingIntent.FLAG_UPDATE_CURRENT
         )
         
+        // Create swap action (only when a held call exists)
+        val swapPendingIntent: PendingIntent? = if (heldCallerName != null) {
+            val swapIntent = Intent(applicationContext, TVConnectionService::class.java).apply {
+                action = ACTION_SWAP_CALLS
+                putExtra(EXTRA_FROM_NOTIFICATION, true)
+            }
+            PendingIntent.getService(
+                applicationContext,
+                3,
+                swapIntent,
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) 
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE 
+                else 
+                    PendingIntent.FLAG_UPDATE_CURRENT
+            )
+        } else null
+        
         val displayName = callerName ?: "Unknown"
         
         // Use the stored start time for this call if available (e.g. held call resuming),
@@ -2610,7 +2673,7 @@ class TVConnectionService : ConnectionService() {
         // On older Android, we use a handler to manually update the custom RemoteViews every second.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val notification = buildOngoingCallNotification(
-                displayName, "00:00", channel, contentIntent, hangupPendingIntent, callStartTime, heldCallerName
+                displayName, "00:00", channel, contentIntent, hangupPendingIntent, callStartTime, heldCallerName, swapPendingIntent
             )
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -2631,7 +2694,7 @@ class TVConnectionService : ConnectionService() {
             }
         } else {
             // Older Android: use handler-based duration updater with custom RemoteViews
-            startOngoingCallDurationUpdater(callSid, displayName, callStartTime, channel, contentIntent, hangupPendingIntent, heldCallerName)
+            startOngoingCallDurationUpdater(callSid, displayName, callStartTime, channel, contentIntent, hangupPendingIntent, heldCallerName, swapPendingIntent)
         }
     }
     
@@ -2646,7 +2709,8 @@ class TVConnectionService : ConnectionService() {
         channel: NotificationChannel,
         contentIntent: PendingIntent,
         hangupPendingIntent: PendingIntent,
-        heldCallerName: String? = null
+        heldCallerName: String? = null,
+        swapPendingIntent: PendingIntent? = null
     ) {
         // Cancel any existing handler
         stopOngoingCallDurationUpdater()
@@ -2660,7 +2724,7 @@ class TVConnectionService : ConnectionService() {
                 
                 // Build and update notification
                 val notification = buildOngoingCallNotification(
-                    displayName, durationText, channel, contentIntent, hangupPendingIntent, 0L, heldCallerName
+                    displayName, durationText, channel, contentIntent, hangupPendingIntent, 0L, heldCallerName, swapPendingIntent
                 )
                 
                 try {
@@ -2677,7 +2741,7 @@ class TVConnectionService : ConnectionService() {
         
         // Build initial notification and start foreground
         val initialNotification = buildOngoingCallNotification(
-            displayName, "00:00", channel, contentIntent, hangupPendingIntent, 0L, heldCallerName
+            displayName, "00:00", channel, contentIntent, hangupPendingIntent, 0L, heldCallerName, swapPendingIntent
         )
         
         try {
@@ -2730,7 +2794,8 @@ class TVConnectionService : ConnectionService() {
         contentIntent: PendingIntent,
         hangupPendingIntent: PendingIntent,
         callStartTime: Long = 0L,
-        heldCallerName: String? = null
+        heldCallerName: String? = null,
+        swapPendingIntent: PendingIntent? = null
     ): Notification {
         // On Android 12+ (API 31), use Notification.CallStyle which gives the
         // WhatsApp-style compact chip on the lock screen showing caller name + duration.
@@ -2764,6 +2829,15 @@ class TVConnectionService : ConnectionService() {
                 if (heldCallerName != null) {
                     setContentText("On hold: $heldCallerName")
                 }
+                // Add swap action button when there's a held call.
+                // CallStyle allows up to 2 custom actions.
+                if (swapPendingIntent != null) {
+                    addAction(Notification.Action.Builder(
+                        android.graphics.drawable.Icon.createWithResource(applicationContext, R.drawable.ic_swap_calls),
+                        "Swap",
+                        swapPendingIntent
+                    ).build())
+                }
                 // Let Android's built-in Chronometer handle the call duration display
                 setUsesChronometer(true)
                 setWhen(callStartTime)
@@ -2785,6 +2859,14 @@ class TVConnectionService : ConnectionService() {
             remoteViews.setViewVisibility(R.id.held_caller_info, android.view.View.VISIBLE)
         } else {
             remoteViews.setViewVisibility(R.id.held_caller_info, android.view.View.GONE)
+        }
+        
+        // Set swap button click action and visibility
+        if (swapPendingIntent != null) {
+            remoteViews.setOnClickPendingIntent(R.id.swap_button, swapPendingIntent)
+            remoteViews.setViewVisibility(R.id.swap_button, android.view.View.VISIBLE)
+        } else {
+            remoteViews.setViewVisibility(R.id.swap_button, android.view.View.GONE)
         }
         
         // Set hangup button click action

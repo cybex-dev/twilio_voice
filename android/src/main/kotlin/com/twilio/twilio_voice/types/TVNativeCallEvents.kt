@@ -113,6 +113,13 @@ object TVNativeCallActions {
      */
     val ACTION_UNHOLD: String = "com.twilio.ACTION_UNHOLD"
 
+    /**
+     * Action when calls are swapped (active↔held) from notification or native UI.
+     * Extras: EXTRA_CALL_HANDLE (new active call SID), EXTRA_CALL_FROM (new active from),
+     * EXTRA_CALL_TO (new active to)
+     */
+    val ACTION_SWAP: String = "com.twilio.ACTION_SWAP"
+
 //    val ACTION_MUTE = "ACTION_MUTE"
 
     /**
