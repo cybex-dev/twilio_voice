@@ -671,6 +671,18 @@ class TVConnectionService : ConnectionService() {
         }
     }
 
+    /**
+     * Find the display name of the currently held call (if any).
+     * Excludes the given [excludeCallSid] from the search (typically the active call).
+     * Returns null if there is no held call.
+     */
+    private fun getHeldCallerName(excludeCallSid: String? = null): String? {
+        val heldEntry = activeConnections.entries.firstOrNull {
+            it.value.state == Connection.STATE_HOLDING && it.key != excludeCallSid
+        }
+        return if (heldEntry != null) getConnectionDisplayName(heldEntry.value) else null
+    }
+
     // WakeLock to keep CPU awake during incoming call
     private var wakeLock: PowerManager.WakeLock? = null
     private var incomingCallWakeLock: PowerManager.WakeLock? = null
@@ -1290,7 +1302,7 @@ class TVConnectionService : ConnectionService() {
                         // Show ongoing call notification (use display name if available, fallback to number)
                         val callerDisplayName = connection.callerDisplayName?.takeIf { it.isNotBlank() }
                             ?: callerNumber
-                        showOngoingCallNotification(callSid, callerDisplayName)
+                        showOngoingCallNotification(callSid, callerDisplayName, getHeldCallerName(excludeCallSid = callSid))
                         
                         // Only launch MainActivity from the service if IncomingCallActivity is NOT
                         // already handling it. When answering from the swipe UI or notification button
@@ -1423,7 +1435,9 @@ class TVConnectionService : ConnectionService() {
                             val callerNumber = extractUserNumber(callInvite.from ?: "Unknown")
                             val callerName = connection.callerDisplayName?.takeIf { it.isNotBlank() }
                                 ?: callerNumber
-                            showOngoingCallNotification(callSid, callerName)
+                            // The old active call (activeHandle) is now on hold — show its name in notification
+                            val heldName = if (activeHandle != null) getConnectionDisplayName(getConnection(activeHandle)) else null
+                            showOngoingCallNotification(callSid, callerName, heldName)
                             launchMainActivityWithCallData(callSid, callerNumber, callInvite.to ?: "")
                         }
                     }
@@ -1885,6 +1899,13 @@ class TVConnectionService : ConnectionService() {
                     activeEntry.value.toggleHold(true)
                     // Unhold the currently held connection
                     heldEntry.value.toggleHold(false)
+
+                    // Update ongoing notification to show the newly active caller
+                    // with the newly held caller's info
+                    val newActiveHandle = heldEntry.key
+                    val newActiveName = getConnectionDisplayName(heldEntry.value)
+                    val newHeldName = getConnectionDisplayName(activeEntry.value)
+                    showOngoingCallNotification(newActiveHandle, newActiveName, newHeldName)
                 }
 
                 ACTION_TOGGLE_MUTE -> {
@@ -2210,7 +2231,9 @@ class TVConnectionService : ConnectionService() {
                 // callerDisplayName is set by applyParameters() from the outgoingCallerName param.
                 val displayName = connection.callerDisplayName?.takeIf { it.isNotBlank() }
                     ?: connection.address?.schemeSpecificPart ?: ""
-                showOngoingCallNotification(callSid, displayName)
+                // Check if there's a held call (e.g. user placed outgoing while another was on hold)
+                val heldName = getHeldCallerName(excludeCallSid = callSid)
+                showOngoingCallNotification(callSid, displayName, heldName)
                 Log.d(TAG, "[onCallState] Outgoing call $callSid connected - showing ongoing notification")
             }
             if (state == Call.State.DISCONNECTED) {
@@ -2535,8 +2558,8 @@ class TVConnectionService : ConnectionService() {
         return channel
     }
     
-    private fun showOngoingCallNotification(callSid: String, callerName: String?) {
-        Log.d(TAG, "[VoiceConnectionService] showOngoingCallNotification for callSid: $callSid")
+    private fun showOngoingCallNotification(callSid: String, callerName: String?, heldCallerName: String? = null) {
+        Log.d(TAG, "[VoiceConnectionService] showOngoingCallNotification for callSid: $callSid, heldCallerName: $heldCallerName")
         
         val channel = getOrCreateOngoingCallChannel()
         
@@ -2587,7 +2610,7 @@ class TVConnectionService : ConnectionService() {
         // On older Android, we use a handler to manually update the custom RemoteViews every second.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val notification = buildOngoingCallNotification(
-                displayName, "00:00", channel, contentIntent, hangupPendingIntent, callStartTime
+                displayName, "00:00", channel, contentIntent, hangupPendingIntent, callStartTime, heldCallerName
             )
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -2608,7 +2631,7 @@ class TVConnectionService : ConnectionService() {
             }
         } else {
             // Older Android: use handler-based duration updater with custom RemoteViews
-            startOngoingCallDurationUpdater(callSid, displayName, callStartTime, channel, contentIntent, hangupPendingIntent)
+            startOngoingCallDurationUpdater(callSid, displayName, callStartTime, channel, contentIntent, hangupPendingIntent, heldCallerName)
         }
     }
     
@@ -2622,7 +2645,8 @@ class TVConnectionService : ConnectionService() {
         callStartTime: Long,
         channel: NotificationChannel,
         contentIntent: PendingIntent,
-        hangupPendingIntent: PendingIntent
+        hangupPendingIntent: PendingIntent,
+        heldCallerName: String? = null
     ) {
         // Cancel any existing handler
         stopOngoingCallDurationUpdater()
@@ -2636,7 +2660,7 @@ class TVConnectionService : ConnectionService() {
                 
                 // Build and update notification
                 val notification = buildOngoingCallNotification(
-                    displayName, durationText, channel, contentIntent, hangupPendingIntent
+                    displayName, durationText, channel, contentIntent, hangupPendingIntent, 0L, heldCallerName
                 )
                 
                 try {
@@ -2653,7 +2677,7 @@ class TVConnectionService : ConnectionService() {
         
         // Build initial notification and start foreground
         val initialNotification = buildOngoingCallNotification(
-            displayName, "00:00", channel, contentIntent, hangupPendingIntent
+            displayName, "00:00", channel, contentIntent, hangupPendingIntent, 0L, heldCallerName
         )
         
         try {
@@ -2705,15 +2729,24 @@ class TVConnectionService : ConnectionService() {
         channel: NotificationChannel,
         contentIntent: PendingIntent,
         hangupPendingIntent: PendingIntent,
-        callStartTime: Long = 0L
+        callStartTime: Long = 0L,
+        heldCallerName: String? = null
     ): Notification {
         // On Android 12+ (API 31), use Notification.CallStyle which gives the
         // WhatsApp-style compact chip on the lock screen showing caller name + duration.
         // We use setUsesChronometer(true) + setWhen(callStartTime) so the OS handles
         // the timer natively — no need to rebuild the notification every second.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // Build the Person name. When there's a held call, append it so
+            // the compact lock-screen chip shows both callers, e.g.
+            // "Active Name · On hold: Held Name"
+            val personName = if (heldCallerName != null) {
+                "$displayName · On hold: $heldCallerName"
+            } else {
+                displayName
+            }
             val caller = Person.Builder()
-                .setName(displayName)
+                .setName(personName)
                 .setImportant(true)
                 .build()
             
@@ -2727,6 +2760,10 @@ class TVConnectionService : ConnectionService() {
                 setColor(Color.parseColor("#1C1C1E"))
                 // CallStyle.forOngoingCall renders the lock screen chip (like WhatsApp)
                 style = Notification.CallStyle.forOngoingCall(caller, hangupPendingIntent)
+                // Also set contentText for the expanded notification view
+                if (heldCallerName != null) {
+                    setContentText("On hold: $heldCallerName")
+                }
                 // Let Android's built-in Chronometer handle the call duration display
                 setUsesChronometer(true)
                 setWhen(callStartTime)
@@ -2741,6 +2778,14 @@ class TVConnectionService : ConnectionService() {
         
         // Set call duration (subtitle)
         remoteViews.setTextViewText(R.id.call_duration, durationText)
+        
+        // Set held caller info if available
+        if (heldCallerName != null) {
+            remoteViews.setTextViewText(R.id.held_caller_info, "On hold: $heldCallerName")
+            remoteViews.setViewVisibility(R.id.held_caller_info, android.view.View.VISIBLE)
+        } else {
+            remoteViews.setViewVisibility(R.id.held_caller_info, android.view.View.GONE)
+        }
         
         // Set hangup button click action
         remoteViews.setOnClickPendingIntent(R.id.hangup_button, hangupPendingIntent)

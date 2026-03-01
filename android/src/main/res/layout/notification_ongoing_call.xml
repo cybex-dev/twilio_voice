@@ -38,6 +38,18 @@
             android:textColor="#B3B3B3"
             android:layout_marginTop="2dp" />
 
+        <!-- Held caller info (hidden when no held call) -->
+        <TextView
+            android:id="@+id/held_caller_info"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="12sp"
+            android:textColor="#999999"
+            android:layout_marginTop="2dp"
+            android:visibility="gone"
+            android:ellipsize="end"
+            android:maxLines="1" />
+
     </LinearLayout>
 
     <!-- Trailing: Red hangup button with phone icon -->
