@@ -2821,6 +2821,7 @@ class TVConnectionService : ConnectionService() {
                 setContentIntent(contentIntent)
                 setCategory(Notification.CATEGORY_CALL)
                 setVisibility(Notification.VISIBILITY_PUBLIC)
+                setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
                 setColorized(true)
                 setColor(Color.parseColor("#1C1C1E"))
                 // CallStyle.forOngoingCall renders the lock screen chip (like WhatsApp)
@@ -2872,12 +2873,28 @@ class TVConnectionService : ConnectionService() {
         // Set hangup button click action
         remoteViews.setOnClickPendingIntent(R.id.hangup_button, hangupPendingIntent)
         
+        // Build a Person for pre-12 notifications so Android ranks them higher,
+        // allows DND bypass for calls, and improves lock screen visibility.
+        val callerPerson = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            Person.Builder()
+                .setName(displayName)
+                .setImportant(true)
+                .build()
+        } else null
+        
         return Notification.Builder(this, channel.id).apply {
             setOngoing(true)
             setSmallIcon(R.drawable.ic_transparent)
             setContentIntent(contentIntent)
             setCategory(Notification.CATEGORY_CALL)
             setVisibility(Notification.VISIBILITY_PUBLIC)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
+            }
+            // Associate the caller Person with this notification (API 28+)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && callerPerson != null) {
+                addPerson(callerPerson)
+            }
             setShowWhen(false)
             setColorized(true)
             setColor(Color.parseColor("#1C1C1E"))
