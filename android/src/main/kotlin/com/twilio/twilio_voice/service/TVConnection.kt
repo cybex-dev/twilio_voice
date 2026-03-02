@@ -75,6 +75,13 @@ class TVCallInviteConnection(
         putString(TVBroadcastReceiver.EXTRA_CALL_FROM, extractedFrom)  // Use extracted number here
         putInt(TVBroadcastReceiver.EXTRA_CALL_DIRECTION, callDirection.id)
     })
+
+    // Notify the service to handle notification management (cancel incoming notification,
+    // release wake lock, show ongoing call notification, launch MainActivity).
+    // This is critical when onAnswer() is triggered by the system (BT headset button)
+    // because the ACTION_ANSWER path in onStartCommand is NOT reached in that case.
+    Log.d(TAG, "onAnswer: Invoking onAnswerCallback for notification management")
+    onAnswerCallback?.invoke()
 }
 
     fun acceptInvite() {
@@ -738,6 +745,15 @@ open class TVCallConnection(
      * Called when the user presses volume-down during incoming call ringing.
      */
     var onSilenceCallback: (() -> Unit)? = null
+
+    /**
+     * Callback invoked when onAnswer() is triggered by the system (e.g. BT headset button).
+     * Set by TVConnectionService.attachCallEventListeners().
+     * Handles notification cancellation, wake lock release, ongoing call notification,
+     * and MainActivity launch — the same work that ACTION_ANSWER does in onStartCommand.
+     * Without this, answering via BT headset leaves the incoming call notification visible.
+     */
+    var onAnswerCallback: (() -> Unit)? = null
 
     /**
      * Force disconnect with extra logging for debugging decline issues.

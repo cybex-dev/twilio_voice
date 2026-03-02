@@ -1244,6 +1244,12 @@ class TVConnectionService : ConnectionService() {
                             return@let
                         }
                         
+                        // Null out onAnswerCallback BEFORE calling acceptInvite().
+                        // ACTION_ANSWER already handles notification management (cancelIncomingCallNotification,
+                        // releaseWakeLock, showOngoingCallNotification, MainActivity launch).
+                        // onAnswerCallback is only needed when the system triggers onAnswer() directly
+                        // (e.g. BT headset button), bypassing ACTION_ANSWER entirely.
+                        connection.onAnswerCallback = null
                         connection.acceptInvite()
                         
                         // Clear pending call state now that the call has been answered.
@@ -1396,6 +1402,10 @@ class TVConnectionService : ConnectionService() {
                     
                     if (connection is TVCallInviteConnection) {
                         if (applicationContext.hasMicrophoneAccess()) {
+                            // Null out onAnswerCallback BEFORE calling acceptInvite().
+                            // This path already handles notification management above,
+                            // so prevent duplicate work if onAnswer() fires from system.
+                            connection.onAnswerCallback = null
                             connection.acceptInvite()
                             clearPendingIncomingCall() // Clear pending state so future calls can come through
                             val callInvite = connection.callInvite
@@ -1473,6 +1483,10 @@ class TVConnectionService : ConnectionService() {
                     
                     if (connection is TVCallInviteConnection) {
                         if (applicationContext.hasMicrophoneAccess()) {
+                            // Null out onAnswerCallback BEFORE calling acceptInvite().
+                            // This path already handles notification management above,
+                            // so prevent duplicate work if onAnswer() fires from system.
+                            connection.onAnswerCallback = null
                             connection.acceptInvite()
                             clearPendingIncomingCall() // Clear pending state so future calls can come through
                             val callInvite = connection.callInvite
@@ -2526,6 +2540,71 @@ class TVConnectionService : ConnectionService() {
         // Gap 3: Wire up onSilence → silenceRingtone so volume-down stops the ringtone
         connection.onSilenceCallback = {
             silenceRingtone()
+        }
+
+        // Wire up onAnswer callback for when the system triggers Connection.onAnswer()
+        // directly (e.g. BT headset button press). In that case ACTION_ANSWER in
+        // onStartCommand is NOT reached, so the incoming call notification stays visible.
+        // This callback mirrors the notification/state management from ACTION_ANSWER.
+        if (connection is TVCallInviteConnection) {
+            connection.onAnswerCallback = {
+                Log.d(TAG, "[onAnswerCallback-$callSid] System-triggered answer — handling notification management")
+
+                // 1. Cancel incoming call notification and stop ringing
+                cancelIncomingCallNotification()
+                releaseWakeLock()
+
+                // 2. Clear pending incoming call state
+                clearPendingIncomingCall()
+
+                // 3. Show ongoing call notification
+                val callerDisplayName = connection.callerDisplayName?.takeIf { it.isNotBlank() }
+                    ?: connection.address?.schemeSpecificPart ?: ""
+                val heldName = getHeldCallerName(excludeCallSid = callSid)
+                showOngoingCallNotification(callSid, callerDisplayName, heldName)
+
+                // 4. Launch MainActivity (same logic as ACTION_ANSWER unlocked path)
+                try {
+                    val keyguardMgr = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+                    val isLocked = keyguardMgr?.isKeyguardLocked == true
+
+                    if (isLocked) {
+                        Log.d(TAG, "[onAnswerCallback-$callSid] Device locked — storing pendingAnsweredCallData")
+                        val callerNumber = extractUserNumber(connection.callInvite.from ?: "")
+                        val myNumber = connection.callInvite.to ?: ""
+                        IncomingCallActivity.pendingAnsweredCallData = mapOf(
+                            "callerName" to callerNumber,
+                            "callerNumber" to callerNumber,
+                            "myNumber" to myNumber,
+                            "callSid" to callSid,
+                            "callDirection" to "incoming",
+                            "isCallAnswered" to true
+                        )
+                    } else {
+                        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+                        launchIntent?.let { intent ->
+                            val callerNumber = extractUserNumber(connection.callInvite.from ?: "")
+                            val myNumber = connection.callInvite.to ?: ""
+                            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                            intent.putExtra("fromIncomingCall", true)
+                            intent.putExtra("callHandle", callSid)
+                            intent.putExtra("callAnswered", true)
+                            intent.putExtra("CALL_ANSWERED", true)
+                            intent.putExtra("CALL_SID", callSid)
+                            intent.putExtra("CALLER_NAME", callerNumber)
+                            intent.putExtra("CALLER_NUMBER", callerNumber)
+                            intent.putExtra("MY_NUMBER", myNumber)
+                            intent.putExtra("CALL_DIRECTION", "incoming")
+                            startActivity(intent)
+                            Log.d(TAG, "[onAnswerCallback-$callSid] Launched MainActivity (UNLOCKED path)")
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "[onAnswerCallback-$callSid] Could not handle post-answer flow: ${e.message}")
+                }
+            }
         }
     }
 
