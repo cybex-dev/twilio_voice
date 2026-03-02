@@ -16,6 +16,8 @@ import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
 import android.telecom.CallAudioState
@@ -30,6 +32,7 @@ import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.twilio.twilio_voice.constants.Constants
 import com.twilio.twilio_voice.constants.FlutterErrorCodes
 import com.twilio.twilio_voice.receivers.TVBroadcastReceiver
+import com.twilio.twilio_voice.service.TVCallConnection
 import com.twilio.twilio_voice.service.TVConnectionService
 import com.twilio.twilio_voice.storage.Storage
 import com.twilio.twilio_voice.storage.StorageImpl
@@ -115,6 +118,11 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     private var isMuted: Boolean = false
     private var isHolding: Boolean = false
     private var callSid: String? = null
+
+    // PERF: Cache BluetoothAdapter permission failure to avoid repeated SecurityExceptions
+    // in checkBluetoothDeviceAvailable(). Exception handling in tight loops on main thread
+    // is expensive and shows up in logs as "BluetoothAdapter check failed (permission issue)".
+    private var bluetoothAdapterPermissionDenied: Boolean = false
 
 
     private var hasStarted = false
@@ -359,21 +367,27 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         // Third check: BluetoothAdapter profile connection state
         // This is especially useful for Android 12+ devices (like Vivo) where getDevices() 
         // may not show Bluetooth when audio is routed to speaker/earpiece
-        try {
-            val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
-            if (bluetoothAdapter != null && bluetoothAdapter.isEnabled) {
-                val headsetState = bluetoothAdapter.getProfileConnectionState(BluetoothProfile.HEADSET)
-                val a2dpState = bluetoothAdapter.getProfileConnectionState(BluetoothProfile.A2DP)
-                val btConnected = (headsetState == BluetoothProfile.STATE_CONNECTED) || 
-                                  (a2dpState == BluetoothProfile.STATE_CONNECTED)
-                Log.d(TAG, "checkBluetoothDeviceAvailable: BluetoothAdapter check - headsetState=$headsetState, a2dpState=$a2dpState, btConnected=$btConnected")
-                if (btConnected) {
-                    return true
+        // PERF: Skip if we already know the permission is denied (avoids repeated SecurityException)
+        if (!bluetoothAdapterPermissionDenied) {
+            try {
+                val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
+                if (bluetoothAdapter != null && bluetoothAdapter.isEnabled) {
+                    val headsetState = bluetoothAdapter.getProfileConnectionState(BluetoothProfile.HEADSET)
+                    val a2dpState = bluetoothAdapter.getProfileConnectionState(BluetoothProfile.A2DP)
+                    val btConnected = (headsetState == BluetoothProfile.STATE_CONNECTED) || 
+                                      (a2dpState == BluetoothProfile.STATE_CONNECTED)
+                    Log.d(TAG, "checkBluetoothDeviceAvailable: BluetoothAdapter check - headsetState=$headsetState, a2dpState=$a2dpState, btConnected=$btConnected")
+                    if (btConnected) {
+                        return true
+                    }
                 }
+            } catch (e: SecurityException) {
+                // Cache the permission denial so we don't keep hitting this exception
+                bluetoothAdapterPermissionDenied = true
+                Log.d(TAG, "checkBluetoothDeviceAvailable: BluetoothAdapter check failed (permission issue, cached), continuing with other checks")
+            } catch (e: Exception) {
+                Log.d(TAG, "checkBluetoothDeviceAvailable: BluetoothAdapter check failed: ${e.message}, continuing with other checks")
             }
-        } catch (e: Exception) {
-            // May fail due to BLUETOOTH permission on some devices - that's OK, we have other checks
-            Log.d(TAG, "checkBluetoothDeviceAvailable: BluetoothAdapter check failed (permission issue), continuing with other checks")
         }
         
         // Fourth check: isBluetoothScoOn (audio is currently routed to Bluetooth)
@@ -756,10 +770,16 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
 
             TVMethodChannels.IS_BLUETOOTH_ON -> {
                 Log.d(TAG, "isBluetoothOn invoked")
-                // Use unified audio state detection
-                val audioState = detectAudioState()
-                Log.d(TAG, "isBluetoothOn: returning=${audioState.isBluetoothActive}")
-                result.success(audioState.isBluetoothActive)
+                // PERF: Run detectAudioState() on the audio executor thread to avoid
+                // blocking the main/UI thread. audioManager.communicationDevice can block
+                // for 500ms-1.5s if setCommunicationDevice() is in progress on another thread.
+                TVCallConnection.audioExecutor.submit {
+                    val audioState = detectAudioState()
+                    Log.d(TAG, "isBluetoothOn: returning=${audioState.isBluetoothActive}")
+                    Handler(Looper.getMainLooper()).post {
+                        result.success(audioState.isBluetoothActive)
+                    }
+                }
             }
 
             TVMethodChannels.GET_AUDIO_ROUTE -> {
@@ -767,43 +787,55 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 val previousBluetoothState = isBluetoothOn
                 val previousSpeakerState = isSpeakerOn
                 
-                // Use unified audio state detection
-                val audioState = detectAudioState()
-                
-                // Only emit events if there's an active call (to avoid false events during initialization)
-                val hasActiveCall = TVConnectionService.activeConnections.isNotEmpty()
-                if (hasActiveCall) {
-                    // Emit events if state changed (for UI sync on all devices)
-                    if (previousBluetoothState != audioState.isBluetoothActive) {
-                        Log.d(TAG, "getAudioRoute: Bluetooth state changed from $previousBluetoothState to ${audioState.isBluetoothActive}, emitting event")
-                        if (audioState.isBluetoothActive) {
-                            logEvent("", "Bluetooth On")
+                // PERF: Run detectAudioState() on the audio executor thread to avoid
+                // blocking the main/UI thread. This is serialized with toggleSpeaker/
+                // toggleBluetooth so it runs AFTER any pending audio operation completes,
+                // giving us fresh state without lock contention.
+                TVCallConnection.audioExecutor.submit {
+                    val audioState = detectAudioState()
+                    
+                    Handler(Looper.getMainLooper()).post {
+                        // Only emit events if there's an active call (to avoid false events during initialization)
+                        val hasActiveCall = TVConnectionService.activeConnections.isNotEmpty()
+                        if (hasActiveCall) {
+                            // Emit events if state changed (for UI sync on all devices)
+                            if (previousBluetoothState != audioState.isBluetoothActive) {
+                                Log.d(TAG, "getAudioRoute: Bluetooth state changed from $previousBluetoothState to ${audioState.isBluetoothActive}, emitting event")
+                                if (audioState.isBluetoothActive) {
+                                    logEvent("", "Bluetooth On")
+                                } else {
+                                    logEvent("", "Bluetooth Off")
+                                }
+                            }
+                            if (previousSpeakerState != audioState.isSpeakerActive) {
+                                Log.d(TAG, "getAudioRoute: Speaker state changed from $previousSpeakerState to ${audioState.isSpeakerActive}, emitting event")
+                                if (audioState.isSpeakerActive) {
+                                    logEvent("", "Speaker On")
+                                } else if (!audioState.isBluetoothActive) {
+                                    logEvent("", "Speaker Off")
+                                }
+                            }
                         } else {
-                            logEvent("", "Bluetooth Off")
+                            Log.d(TAG, "getAudioRoute: No active call, skipping event emission")
                         }
+                        
+                        Log.d(TAG, "getAudioRoute: returning=${audioState.audioRoute}")
+                        result.success(audioState.audioRoute)
                     }
-                    if (previousSpeakerState != audioState.isSpeakerActive) {
-                        Log.d(TAG, "getAudioRoute: Speaker state changed from $previousSpeakerState to ${audioState.isSpeakerActive}, emitting event")
-                        if (audioState.isSpeakerActive) {
-                            logEvent("", "Speaker On")
-                        } else if (!audioState.isBluetoothActive) {
-                            logEvent("", "Speaker Off")
-                        }
-                    }
-                } else {
-                    Log.d(TAG, "getAudioRoute: No active call, skipping event emission")
                 }
-                
-                Log.d(TAG, "getAudioRoute: returning=${audioState.audioRoute}")
-                result.success(audioState.audioRoute)
             }
 
             TVMethodChannels.IS_BLUETOOTH_AVAILABLE -> {
                 Log.d(TAG, "isBluetoothAvailable invoked")
-                // Use unified audio state detection
-                val audioState = detectAudioState()
-                Log.d(TAG, "isBluetoothAvailable: returning=${audioState.isBluetoothConnected}")
-                result.success(audioState.isBluetoothConnected)
+                // PERF: Run detectAudioState() on the audio executor thread to avoid
+                // blocking the main/UI thread.
+                TVCallConnection.audioExecutor.submit {
+                    val audioState = detectAudioState()
+                    Log.d(TAG, "isBluetoothAvailable: returning=${audioState.isBluetoothConnected}")
+                    Handler(Looper.getMainLooper()).post {
+                        result.success(audioState.isBluetoothConnected)
+                    }
+                }
             }
 
             TVMethodChannels.TOGGLE_MUTE -> {
@@ -1681,11 +1713,23 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         val handle = if (callSid != null && TVConnectionService.getConnection(callSid!!) != null) callSid else TVConnectionService.getActiveCallHandle()
         Log.d(TAG, "toggleSpeaker: speakerIsOn=$speakerIsOn, callSid=$callSid, resolvedHandle=$handle")
         
-        Intent(ctx, TVConnectionService::class.java).apply {
-            action = TVConnectionService.ACTION_TOGGLE_SPEAKER
-            putExtra(TVConnectionService.EXTRA_SPEAKER_STATE, speakerIsOn)
-            putExtra(TVConnectionService.EXTRA_CALL_HANDLE, handle)
-            ctx.startService(this)
+        // PERF: Call TVConnection directly instead of going through startService() IPC.
+        // startService() queues an Intent via Binder which adds 200-800ms latency on some
+        // devices (Samsung, MIUI) before onStartCommand even fires. Since the plugin runs
+        // in the same process, we can access the connection directly.
+        val connection = handle?.let { TVConnectionService.getConnection(it) }
+        if (connection != null) {
+            Log.d(TAG, "toggleSpeaker: Direct call to connection.toggleSpeaker (bypassing startService IPC)")
+            connection.toggleSpeaker(speakerIsOn)
+        } else {
+            // Fallback to startService if no connection found (shouldn't happen during active call)
+            Log.w(TAG, "toggleSpeaker: No connection found for handle=$handle, falling back to startService")
+            Intent(ctx, TVConnectionService::class.java).apply {
+                action = TVConnectionService.ACTION_TOGGLE_SPEAKER
+                putExtra(TVConnectionService.EXTRA_SPEAKER_STATE, speakerIsOn)
+                putExtra(TVConnectionService.EXTRA_CALL_HANDLE, handle)
+                ctx.startService(this)
+            }
         }
     }
 
@@ -1707,11 +1751,23 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         val handle = if (callSid != null && TVConnectionService.getConnection(callSid!!) != null) callSid else TVConnectionService.getActiveCallHandle()
         Log.d(TAG, "toggleBluetooth: bluetoothOn=$bluetoothOn, callSid=$callSid, resolvedHandle=$handle")
         
-        Intent(ctx, TVConnectionService::class.java).apply {
-            action = TVConnectionService.ACTION_TOGGLE_BLUETOOTH
-            putExtra(TVConnectionService.EXTRA_BLUETOOTH_STATE, bluetoothOn)
-            putExtra(TVConnectionService.EXTRA_CALL_HANDLE, handle)
-            ctx.startService(this)
+        // PERF: Call TVConnection directly instead of going through startService() IPC.
+        // startService() queues an Intent via Binder which adds 200-800ms latency on some
+        // devices (Samsung, MIUI) before onStartCommand even fires. Since the plugin runs
+        // in the same process, we can access the connection directly.
+        val connection = handle?.let { TVConnectionService.getConnection(it) }
+        if (connection != null) {
+            Log.d(TAG, "toggleBluetooth: Direct call to connection.toggleBluetooth (bypassing startService IPC)")
+            connection.toggleBluetooth(bluetoothOn)
+        } else {
+            // Fallback to startService if no connection found (shouldn't happen during active call)
+            Log.w(TAG, "toggleBluetooth: No connection found for handle=$handle, falling back to startService")
+            Intent(ctx, TVConnectionService::class.java).apply {
+                action = TVConnectionService.ACTION_TOGGLE_BLUETOOTH
+                putExtra(TVConnectionService.EXTRA_BLUETOOTH_STATE, bluetoothOn)
+                putExtra(TVConnectionService.EXTRA_CALL_HANDLE, handle)
+                ctx.startService(this)
+            }
         }
     }
 

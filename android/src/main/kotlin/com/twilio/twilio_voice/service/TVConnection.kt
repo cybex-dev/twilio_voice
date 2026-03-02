@@ -28,6 +28,8 @@ import com.twilio.twilio_voice.types.CallExceptionExtension.toBundle
 import com.twilio.twilio_voice.types.CompletionHandler
 import com.twilio.twilio_voice.types.TVNativeCallActions
 import com.twilio.twilio_voice.types.TVNativeCallEvents
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 import com.twilio.twilio_voice.types.ValueBundleChanged
 import com.twilio.voice.Call
 import com.twilio.voice.CallException
@@ -139,6 +141,20 @@ open class TVCallConnection(
     
     // Flag to ignore the initial callback firing when callback is first registered
     private var ignoreInitialAudioDeviceCallback = true
+    
+    companion object {
+        /**
+         * PERF: Single-thread executor shared across all TVConnection instances.
+         * All AudioManager operations (toggleSpeaker, toggleBluetooth) are submitted
+         * to this executor so they run SEQUENTIALLY. This eliminates the race condition
+         * where two concurrent Thread {} calls both try to acquire AudioManager's
+         * internal lock — the second thread would block for 500ms-1.5s causing UI freezes
+         * when detectAudioState() is called on the main thread (it also needs the lock).
+         */
+        val audioExecutor: ExecutorService = Executors.newSingleThreadExecutor { r ->
+            Thread(r, "TVConnection-AudioExecutor").apply { isDaemon = true }
+        }
+    }
     
     // Audio device callback to detect Bluetooth connect/disconnect during calls
     private val audioDeviceCallback = object : AudioDeviceCallback() {
@@ -1284,77 +1300,91 @@ open class TVCallConnection(
                 setAudioRoute(CallAudioState.ROUTE_WIRED_OR_EARPIECE)
             }
         } else {
-            // Use AudioManager directly when callAudioState is null or disconnected
-            Log.d(TAG, "toggleSpeaker: callAudioState is null or disconnected, using AudioManager directly")
-            val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
-            
-            // Log current state before change
-            Log.d(TAG, "toggleSpeaker: BEFORE - isSpeakerphoneOn=${audioManager.isSpeakerphoneOn}, isBluetoothScoOn=${audioManager.isBluetoothScoOn}")
-            
-            if (newState) {
-                // Turning Speaker ON - ensure Bluetooth is off first
-                Log.d(TAG, "toggleSpeaker: Turning Speaker ON")
+            // Use AudioManager directly when callAudioState is null or disconnected.
+            // PERF: Submit to the shared single-thread executor so that concurrent
+            // toggleSpeaker + toggleBluetooth calls are serialized. This avoids two
+            // threads racing on AudioManager's internal lock (which caused 1-2s freezes
+            // when detectAudioState() was called on the main thread).
+            Log.d(TAG, "toggleSpeaker: callAudioState is null or disconnected, submitting AudioManager work to audioExecutor")
+            audioExecutor.submit {
+                val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
                 
-                // For Android 12+, clear communication device first then set speaker
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    try {
-                        Log.d(TAG, "toggleSpeaker: Android 12+, clearing communication device first")
-                        audioManager.clearCommunicationDevice()
-                        
-                        val availableDevices = audioManager.availableCommunicationDevices
-                        Log.d(TAG, "toggleSpeaker: Available devices: ${availableDevices.map { "type=${it.type}" }}")
-                        
-                        val speakerDevice = availableDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
-                        if (speakerDevice != null) {
-                            val result = audioManager.setCommunicationDevice(speakerDevice)
-                            Log.d(TAG, "toggleSpeaker: setCommunicationDevice to SPEAKER result=$result")
-                        } else {
-                            Log.w(TAG, "toggleSpeaker: No speaker device found!")
+                // Log current state before change
+                Log.d(TAG, "toggleSpeaker: BEFORE - isSpeakerphoneOn=${audioManager.isSpeakerphoneOn}, isBluetoothScoOn=${audioManager.isBluetoothScoOn}")
+                
+                if (newState) {
+                    // Turning Speaker ON - ensure Bluetooth is off first
+                    Log.d(TAG, "toggleSpeaker: Turning Speaker ON")
+                    
+                    // For Android 12+, use setCommunicationDevice (preferred, skips legacy)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        try {
+                            Log.d(TAG, "toggleSpeaker: Android 12+, clearing communication device first")
+                            audioManager.clearCommunicationDevice()
+                            
+                            val availableDevices = audioManager.availableCommunicationDevices
+                            Log.d(TAG, "toggleSpeaker: Available devices: ${availableDevices.map { "type=${it.type}" }}")
+                            
+                            val speakerDevice = availableDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+                            if (speakerDevice != null) {
+                                val result = audioManager.setCommunicationDevice(speakerDevice)
+                                Log.d(TAG, "toggleSpeaker: setCommunicationDevice to SPEAKER result=$result")
+                            } else {
+                                Log.w(TAG, "toggleSpeaker: No speaker device found, using legacy fallback")
+                                audioManager.stopBluetoothSco()
+                                audioManager.isBluetoothScoOn = false
+                                audioManager.isSpeakerphoneOn = true
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "toggleSpeaker: Failed to set communication device, using legacy fallback", e)
+                            audioManager.stopBluetoothSco()
+                            audioManager.isBluetoothScoOn = false
+                            audioManager.isSpeakerphoneOn = true
                         }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "toggleSpeaker: Failed to set communication device", e)
+                    } else {
+                        // Pre-Android 12: use legacy methods
+                        Log.d(TAG, "toggleSpeaker: Pre-Android 12, using legacy methods")
+                        audioManager.stopBluetoothSco()
+                        audioManager.isBluetoothScoOn = false
+                        audioManager.isSpeakerphoneOn = true
+                    }
+                } else {
+                    // Turning Speaker OFF - route to earpiece
+                    Log.d(TAG, "toggleSpeaker: Turning Speaker OFF, routing to earpiece")
+                    audioManager.isSpeakerphoneOn = false
+                    
+                    // For Android 12+, use setCommunicationDevice (preferred, skips legacy)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        try {
+                            Log.d(TAG, "toggleSpeaker: Android 12+, clearing and setting earpiece")
+                            audioManager.clearCommunicationDevice()
+                            val earpieceDevice = audioManager.availableCommunicationDevices
+                                .firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE }
+                            if (earpieceDevice != null) {
+                                val result = audioManager.setCommunicationDevice(earpieceDevice)
+                                Log.d(TAG, "toggleSpeaker: setCommunicationDevice to EARPIECE result=$result")
+                            } else {
+                                Log.w(TAG, "toggleSpeaker: No earpiece device found!")
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "toggleSpeaker: Failed to set communication device", e)
+                        }
                     }
                 }
                 
-                // Also use legacy methods
-                Log.d(TAG, "toggleSpeaker: Using legacy methods - stopBluetoothSco, isSpeakerphoneOn=true")
-                audioManager.stopBluetoothSco()
-                audioManager.isBluetoothScoOn = false
-                audioManager.isSpeakerphoneOn = true
-            } else {
-                // Turning Speaker OFF - route to earpiece
-                Log.d(TAG, "toggleSpeaker: Turning Speaker OFF, routing to earpiece")
-                audioManager.isSpeakerphoneOn = false
+                // Log state after change
+                Log.d(TAG, "toggleSpeaker: AFTER - isSpeakerphoneOn=${audioManager.isSpeakerphoneOn}, isBluetoothScoOn=${audioManager.isBluetoothScoOn}")
                 
-                // For Android 12+, clear and set earpiece
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    try {
-                        Log.d(TAG, "toggleSpeaker: Android 12+, clearing and setting earpiece")
-                        audioManager.clearCommunicationDevice()
-                        val earpieceDevice = audioManager.availableCommunicationDevices
-                            .firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE }
-                        if (earpieceDevice != null) {
-                            val result = audioManager.setCommunicationDevice(earpieceDevice)
-                            Log.d(TAG, "toggleSpeaker: setCommunicationDevice to EARPIECE result=$result")
-                        } else {
-                            Log.w(TAG, "toggleSpeaker: No earpiece device found!")
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "toggleSpeaker: Failed to set communication device", e)
-                    }
+                // Broadcast speaker state change (must be on main thread for LocalBroadcastManager)
+                Handler(Looper.getMainLooper()).post {
+                    Log.d(TAG, "toggleSpeaker: Broadcasting EVENT_SPEAKER with state=$newState")
+                    onEvent?.onChange(TVNativeCallEvents.EVENT_SPEAKER, Bundle().apply {
+                        putBoolean(TVBroadcastReceiver.EXTRA_CALL_SPEAKER_STATE, newState)
+                        putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callParams?.callSid)
+                    })
                 }
             }
-            
-            // Log state after change
-            Log.d(TAG, "toggleSpeaker: AFTER - isSpeakerphoneOn=${audioManager.isSpeakerphoneOn}, isBluetoothScoOn=${audioManager.isBluetoothScoOn}")
-            
-            // Broadcast speaker state change
-            Log.d(TAG, "toggleSpeaker: Broadcasting EVENT_SPEAKER with state=$newState")
-            onEvent?.onChange(TVNativeCallEvents.EVENT_SPEAKER, Bundle().apply {
-                putBoolean(TVBroadcastReceiver.EXTRA_CALL_SPEAKER_STATE, newState)
-                putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callParams?.callSid)
-            })
         }
         Log.d(TAG, "=== toggleSpeaker END ===")
     }
@@ -1365,6 +1395,17 @@ open class TVCallConnection(
      */
     fun toggleBluetooth(newState: Boolean) {
         Log.d(TAG, "=== toggleBluetooth START === newState=$newState, state=$state, callAudioState=$callAudioState")
+
+        // PERF: Early-return when turning BT off but it's already off.
+        // This avoids unnecessary AudioManager work (and lock contention) when
+        // the Dart side fires ToggleBluetooth(false) from earpiece→speaker transitions.
+        if (!newState && !wasOnBluetooth) {
+            val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            if (!audioManager.isBluetoothScoOn) {
+                Log.d(TAG, "toggleBluetooth: BT already off (wasOnBluetooth=false, scoOff), skipping")
+                return
+            }
+        }
 
         // Update ringback Bluetooth audio route if playing
         try {
@@ -1389,103 +1430,112 @@ open class TVCallConnection(
 
             if (newState) wasOnBluetooth = true else wasOnBluetooth = false
         } else {
-            // Use AudioManager directly when callAudioState is null or disconnected
-            Log.d(TAG, "toggleBluetooth: callAudioState is null or disconnected, using AudioManager directly")
-            val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
-            
-            // Log current state before change
-            Log.d(TAG, "toggleBluetooth: BEFORE - isSpeakerphoneOn=${audioManager.isSpeakerphoneOn}, isBluetoothScoOn=${audioManager.isBluetoothScoOn}")
-            
-            if (newState) {
-                // Turning Bluetooth ON - turn off speaker first
-                Log.d(TAG, "toggleBluetooth: Turning Bluetooth ON")
-                audioManager.isSpeakerphoneOn = false
+            // Use AudioManager directly when callAudioState is null or disconnected.
+            // PERF: Submit to the shared single-thread executor so that concurrent
+            // toggleSpeaker + toggleBluetooth calls are serialized. This avoids two
+            // threads racing on AudioManager's internal lock.
+            Log.d(TAG, "toggleBluetooth: callAudioState is null or disconnected, submitting AudioManager work to audioExecutor")
+            audioExecutor.submit {
+                val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
                 
-                // For Android 12+, clear then set Bluetooth
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    try {
-                        Log.d(TAG, "toggleBluetooth: Android 12+, clearing communication device first")
-                        audioManager.clearCommunicationDevice()
-                        
-                        val availableDevices = audioManager.availableCommunicationDevices
-                        Log.d(TAG, "toggleBluetooth: Available devices: ${availableDevices.map { "type=${it.type}" }}")
-                        
-                        // Look for any Bluetooth device type (SCO, BLE headset, hearing aid, BLE speaker)
-                        val bluetoothDevice = availableDevices.firstOrNull { 
-                            it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
-                            it.type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
-                            it.type == AudioDeviceInfo.TYPE_HEARING_AID ||
-                            it.type == AudioDeviceInfo.TYPE_BLE_SPEAKER
-                        }
-                        if (bluetoothDevice != null) {
-                            Log.d(TAG, "toggleBluetooth: Found Bluetooth device type=${bluetoothDevice.type}")
-                            val result = audioManager.setCommunicationDevice(bluetoothDevice)
-                            Log.d(TAG, "toggleBluetooth: setCommunicationDevice to BLUETOOTH result=$result")
-                            if (result) {
+                // Log current state before change
+                Log.d(TAG, "toggleBluetooth: BEFORE - isSpeakerphoneOn=${audioManager.isSpeakerphoneOn}, isBluetoothScoOn=${audioManager.isBluetoothScoOn}")
+                
+                if (newState) {
+                    // Turning Bluetooth ON - turn off speaker first
+                    Log.d(TAG, "toggleBluetooth: Turning Bluetooth ON")
+                    audioManager.isSpeakerphoneOn = false
+                    
+                    // For Android 12+, use setCommunicationDevice (preferred, skips legacy)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        try {
+                            Log.d(TAG, "toggleBluetooth: Android 12+, clearing communication device first")
+                            audioManager.clearCommunicationDevice()
+                            
+                            val availableDevices = audioManager.availableCommunicationDevices
+                            Log.d(TAG, "toggleBluetooth: Available devices: ${availableDevices.map { "type=${it.type}" }}")
+                            
+                            // Look for any Bluetooth device type (SCO, BLE headset, hearing aid, BLE speaker)
+                            val bluetoothDevice = availableDevices.firstOrNull { 
+                                it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                                it.type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
+                                it.type == AudioDeviceInfo.TYPE_HEARING_AID ||
+                                it.type == AudioDeviceInfo.TYPE_BLE_SPEAKER
+                            }
+                            if (bluetoothDevice != null) {
+                                Log.d(TAG, "toggleBluetooth: Found Bluetooth device type=${bluetoothDevice.type}")
+                                val result = audioManager.setCommunicationDevice(bluetoothDevice)
+                                Log.d(TAG, "toggleBluetooth: setCommunicationDevice to BLUETOOTH result=$result")
+                                if (result) {
+                                    wasOnBluetooth = true
+                                }
+                            } else {
+                                Log.w(TAG, "toggleBluetooth: No Bluetooth device found in availableCommunicationDevices, using legacy")
+                                audioManager.startBluetoothSco()
+                                audioManager.isBluetoothScoOn = true
                                 wasOnBluetooth = true
                             }
-                        } else {
-                            Log.w(TAG, "toggleBluetooth: No Bluetooth device found in availableCommunicationDevices!")
-                            Log.d(TAG, "toggleBluetooth: Trying legacy startBluetoothSco()")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "toggleBluetooth: Failed to set communication device, using legacy", e)
                             audioManager.startBluetoothSco()
                             audioManager.isBluetoothScoOn = true
                             wasOnBluetooth = true
                         }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "toggleBluetooth: Failed to set communication device, using legacy", e)
+                    } else {
+                        // Pre-Android 12: use legacy methods
+                        Log.d(TAG, "toggleBluetooth: Pre-Android 12, using legacy startBluetoothSco()")
                         audioManager.startBluetoothSco()
                         audioManager.isBluetoothScoOn = true
                         wasOnBluetooth = true
                     }
                 } else {
-                    Log.d(TAG, "toggleBluetooth: Pre-Android 12, using legacy startBluetoothSco()")
-                    audioManager.startBluetoothSco()
-                    audioManager.isBluetoothScoOn = true
-                    wasOnBluetooth = true
-                }
-            } else {
-                // Turning Bluetooth OFF - route to earpiece
-                Log.d(TAG, "toggleBluetooth: Turning Bluetooth OFF, routing to earpiece")
-                wasOnBluetooth = false
-                
-                // For Android 12+, clear then set earpiece
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    try {
-                        Log.d(TAG, "toggleBluetooth: Android 12+, clearing and setting earpiece")
-                        audioManager.clearCommunicationDevice()
-                        
-                        val availableDevices = audioManager.availableCommunicationDevices
-                        Log.d(TAG, "toggleBluetooth: Available devices: ${availableDevices.map { "type=${it.type}" }}")
-                        
-                        val earpieceDevice = availableDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE }
-                        if (earpieceDevice != null) {
-                            val result = audioManager.setCommunicationDevice(earpieceDevice)
-                            Log.d(TAG, "toggleBluetooth: setCommunicationDevice to EARPIECE result=$result")
-                        } else {
-                            Log.w(TAG, "toggleBluetooth: No earpiece device found!")
+                    // Turning Bluetooth OFF - route to earpiece
+                    Log.d(TAG, "toggleBluetooth: Turning Bluetooth OFF, routing to earpiece")
+                    wasOnBluetooth = false
+                    
+                    // For Android 12+, use setCommunicationDevice (preferred, skips legacy)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        try {
+                            Log.d(TAG, "toggleBluetooth: Android 12+, clearing and setting earpiece")
+                            audioManager.clearCommunicationDevice()
+                            
+                            val availableDevices = audioManager.availableCommunicationDevices
+                            Log.d(TAG, "toggleBluetooth: Available devices: ${availableDevices.map { "type=${it.type}" }}")
+                            
+                            val earpieceDevice = availableDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE }
+                            if (earpieceDevice != null) {
+                                val result = audioManager.setCommunicationDevice(earpieceDevice)
+                                Log.d(TAG, "toggleBluetooth: setCommunicationDevice to EARPIECE result=$result")
+                            } else {
+                                Log.w(TAG, "toggleBluetooth: No earpiece device found!")
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "toggleBluetooth: Failed to set communication device", e)
                         }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "toggleBluetooth: Failed to set communication device", e)
+                    }
+                    
+                    // Legacy methods - needed for pre-12 and as fallback
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+                        Log.d(TAG, "toggleBluetooth: Pre-Android 12, using legacy methods - stopBluetoothSco")
+                        audioManager.stopBluetoothSco()
+                        audioManager.isBluetoothScoOn = false
+                        audioManager.isSpeakerphoneOn = false
                     }
                 }
                 
-                // Also use legacy methods for compatibility
-                Log.d(TAG, "toggleBluetooth: Using legacy methods - stopBluetoothSco")
-                audioManager.stopBluetoothSco()
-                audioManager.isBluetoothScoOn = false
-                audioManager.isSpeakerphoneOn = false
+                // Log state after change
+                Log.d(TAG, "toggleBluetooth: AFTER - isSpeakerphoneOn=${audioManager.isSpeakerphoneOn}, isBluetoothScoOn=${audioManager.isBluetoothScoOn}")
+                
+                // Broadcast bluetooth state change (must be on main thread for LocalBroadcastManager)
+                Handler(Looper.getMainLooper()).post {
+                    Log.d(TAG, "toggleBluetooth: Broadcasting EVENT_BLUETOOTH with state=$newState")
+                    onEvent?.onChange(TVNativeCallEvents.EVENT_BLUETOOTH, Bundle().apply {
+                        putBoolean(TVBroadcastReceiver.EXTRA_CALL_BLUETOOTH_STATE, newState)
+                        putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callParams?.callSid)
+                    })
+                }
             }
-            
-            // Log state after change
-            Log.d(TAG, "toggleBluetooth: AFTER - isSpeakerphoneOn=${audioManager.isSpeakerphoneOn}, isBluetoothScoOn=${audioManager.isBluetoothScoOn}")
-            
-            // Broadcast bluetooth state change only in fallback path
-            Log.d(TAG, "toggleBluetooth: Broadcasting EVENT_BLUETOOTH with state=$newState")
-            onEvent?.onChange(TVNativeCallEvents.EVENT_BLUETOOTH, Bundle().apply {
-                putBoolean(TVBroadcastReceiver.EXTRA_CALL_BLUETOOTH_STATE, newState)
-                putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callParams?.callSid)
-            })
         }
         Log.d(TAG, "=== toggleBluetooth END ===")
     }
