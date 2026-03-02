@@ -15,9 +15,11 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.telecom.CallAudioState
+import android.telecom.CallEndpoint
 import android.telecom.Connection
 import android.telecom.DisconnectCause
 import android.util.Log
+import androidx.annotation.RequiresApi
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.twilio.twilio_voice.audio.RingbackManager
 import com.twilio.twilio_voice.call.TVParameters
@@ -55,7 +57,7 @@ class TVCallInviteConnection(
     }
 
  override fun onAnswer() {
-    Log.d(TAG, "onAnswer: onAnswer")
+    Log.d(TAG, "onAnswer: CALLED — source could be UI button, BT headset button, or system. State=${state}, callSid=${callInvite.callSid}")
     super.onAnswer()
     
     // Request audio focus to pause any playing music and route audio properly
@@ -106,6 +108,35 @@ class TVCallInviteConnection(
         setDisconnected(DisconnectCause(DisconnectCause.REJECTED))
         destroy()
     }
+
+    /**
+     * Called by the system for self-managed ConnectionService to show its own incoming call UI.
+     * For self-managed apps, Android calls this on the Connection returned from
+     * onCreateIncomingConnection() instead of showing the system's default incoming call screen.
+     * Our IncomingCallActivity is already launched via the notification's fullScreenIntent
+     * in startIncomingCallForegroundService(), so we just log here.
+     */
+    override fun onShowIncomingCallUi() {
+        Log.d(TAG, "onShowIncomingCallUi: System requesting incoming call UI (self-managed)")
+        // Our notification with fullScreenIntent already handles the UI:
+        //   - Device locked/screen off → full-screen IncomingCallActivity
+        //   - Device unlocked/in use → heads-up notification
+        // No additional action needed.
+    }
+
+    /**
+     * Called by the system when the user presses volume-down during an incoming call.
+     * Available on API 29+ (Android 10+). Both test devices support this:
+     *   - Redmi Note 7 Pro: SDK 29
+     *   - Samsung Galaxy A15: SDK 36
+     * 
+     * Expected behavior: silence the ringtone but keep the call in ringing state.
+     * The user can still answer or reject the call after silencing.
+     */
+    override fun onSilence() {
+        Log.d(TAG, "onSilence: User pressed volume-down to silence ringtone")
+        onSilenceCallback?.invoke()
+    }
 }
 
 open class TVCallConnection(
@@ -141,6 +172,12 @@ open class TVCallConnection(
     
     // Flag to ignore the initial callback firing when callback is first registered
     private var ignoreInitialAudioDeviceCallback = true
+    
+    // API 34+ (Gap 5/6): Track available call endpoints for requestCallEndpointChange().
+    // Populated by onAvailableCallEndpointsChanged(). MUST use these endpoints — creating
+    // custom CallEndpoint objects will fail.
+    @Volatile
+    private var availableCallEndpoints: List<Any> = emptyList()  // List<CallEndpoint> at runtime on API 34+
     
     companion object {
         /**
@@ -205,6 +242,11 @@ open class TVCallConnection(
         this.onDisconnected = onDisconnected
         this.onEvent = onEvent
         this.onAction = onAction
+        // PROPERTY_SELF_MANAGED tells the system this Connection belongs to a self-managed
+        // VoIP app. Required for proper HFP (Bluetooth headset) integration — without it,
+        // the system may not route HFP indicators (ring, answer, reject) to BT headsets.
+        // See: BLE Audio managed calls guide — setConnectionProperties(PROPERTY_SELF_MANAGED)
+        connectionProperties = PROPERTY_SELF_MANAGED
         audioModeIsVoip = true
         connectionCapabilities = CAPABILITY_MUTE or CAPABILITY_HOLD or CAPABILITY_SUPPORT_HOLD
         audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -689,6 +731,13 @@ open class TVCallConnection(
      * OS (Android 12+/16) will kill the foreground notification for the remaining call.
      */
     var hasOtherActiveCalls: (() -> Boolean)? = null
+
+    /**
+     * Callback to silence the ringtone when onSilence() is called by the system.
+     * Set by TVConnectionService.attachCallEventListeners().
+     * Called when the user presses volume-down during incoming call ringing.
+     */
+    var onSilenceCallback: (() -> Unit)? = null
 
     /**
      * Force disconnect with extra logging for debugging decline issues.
@@ -1195,6 +1244,80 @@ open class TVCallConnection(
         }
     }
 
+    // =========================================================================
+    // API 34+ CallEndpoint-based audio callbacks (Gap 5)
+    // These replace the deprecated onCallAudioStateChanged() on Android 14+.
+    // We convert CallEndpoint data into CallAudioState for backward compatibility
+    // with the existing broadcast mechanism that TwilioVoicePlugin.handleBroadcastIntent
+    // depends on.
+    // =========================================================================
+
+    /**
+     * Called when the current audio endpoint changes (API 34+).
+     * Replaces the deprecated onCallAudioStateChanged() for audio route tracking.
+     */
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    override fun onCallEndpointChanged(callEndpoint: CallEndpoint) {
+        Log.d(TAG, "onCallEndpointChanged: endpoint=${callEndpoint.endpointName}, type=${callEndpoint.endpointType}")
+        super.onCallEndpointChanged(callEndpoint)
+
+        // Map CallEndpoint type to CallAudioState route for backward compatibility
+        val route = when (callEndpoint.endpointType) {
+            CallEndpoint.TYPE_EARPIECE -> CallAudioState.ROUTE_EARPIECE
+            CallEndpoint.TYPE_SPEAKER -> CallAudioState.ROUTE_SPEAKER
+            CallEndpoint.TYPE_BLUETOOTH -> CallAudioState.ROUTE_BLUETOOTH
+            CallEndpoint.TYPE_WIRED_HEADSET -> CallAudioState.ROUTE_WIRED_HEADSET
+            CallEndpoint.TYPE_STREAMING -> CallAudioState.ROUTE_EARPIECE // fallback
+            else -> CallAudioState.ROUTE_EARPIECE
+        }
+
+        // Track Bluetooth state for toggleBluetooth early-return optimization
+        wasOnBluetooth = callEndpoint.endpointType == CallEndpoint.TYPE_BLUETOOTH
+
+        // Build a CallAudioState to broadcast — this is what TwilioVoicePlugin.handleBroadcastIntent expects
+        @Suppress("DEPRECATION")
+        val syntheticAudioState = CallAudioState(
+            false, // mute state is handled separately by onMuteStateChanged
+            route,
+            route // supportedRouteMask — simplified, actual available routes tracked by availableCallEndpoints
+        )
+
+        Intent(TVBroadcastReceiver.ACTION_AUDIO_STATE).apply {
+            putExtra(TVBroadcastReceiver.EXTRA_AUDIO_STATE, syntheticAudioState)
+        }.also {
+            sendBroadcast(context, it)
+        }
+    }
+
+    /**
+     * Called when the list of available audio endpoints changes (API 34+).
+     * Stores the endpoints for use by requestCallEndpointChange() in toggleSpeaker/toggleBluetooth.
+     */
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    override fun onAvailableCallEndpointsChanged(availableEndpoints: List<CallEndpoint>) {
+        Log.d(TAG, "onAvailableCallEndpointsChanged: ${availableEndpoints.map { "${it.endpointName}(type=${it.endpointType})" }}")
+        super.onAvailableCallEndpointsChanged(availableEndpoints)
+        // Store as List<Any> to avoid class verification issues on pre-34 devices.
+        // At runtime on API 34+ these are always CallEndpoint instances.
+        availableCallEndpoints = availableEndpoints
+    }
+
+    /**
+     * Called when the mute state changes (API 34+).
+     * Replaces the mute tracking from onCallAudioStateChanged().
+     */
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    override fun onMuteStateChanged(isMuted: Boolean) {
+        Log.d(TAG, "onMuteStateChanged: isMuted=$isMuted")
+        super.onMuteStateChanged(isMuted)
+
+        // Broadcast mute state change using the same mechanism
+        onEvent?.onChange(TVNativeCallEvents.EVENT_MUTE, Bundle().apply {
+            putBoolean(TVBroadcastReceiver.EXTRA_CALL_MUTE_STATE, isMuted)
+            putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callParams?.callSid)
+        })
+    }
+
     override fun onStateChanged(state: Int) {
         super.onStateChanged(state)
         Log.d(TAG, "onStateChanged: $state")
@@ -1246,24 +1369,34 @@ open class TVCallConnection(
     /**
      * Toggle mute state of the call.
      * @param newState: true to mute, false to unmute
-     * Note: [getCallAudioState] and [onCallAudioStateChanged] has been deprecated in API 34,
-     * however this will be used until [getCurrentCallEndpoint], [onCallEndpointChanged] and [onMuteStateChanged] has been implemented.
+     * API 34+: Uses onMuteStateChanged() callback.
+     * Pre-34: Uses deprecated callAudioState.copyWith() path.
      */
     @Suppress("DEPRECATION")
     fun toggleMute(newState: Boolean) {
-        //TODO(cybex-dev) implement API 34 endpoint & mute state change listeners
         twilioCall?.let {
             it.mute(newState)
-            callAudioState?.let { a ->
-                val newAudioRoute = a.copyWith(newState)
-                onCallAudioStateChanged(newAudioRoute)
-            } ?: run {
-                // Fallback: Broadcast mute state change directly when not using TelecomManager
-                Log.d(TAG, "toggleMute: Using direct mute, newState=$newState")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                // API 34+: onMuteStateChanged() will fire automatically from the system
+                // when the mute state changes. We also emit directly for immediate UI update.
+                Log.d(TAG, "toggleMute: API 34+ — muted via Twilio SDK, onMuteStateChanged will fire")
                 onEvent?.onChange(TVNativeCallEvents.EVENT_MUTE, Bundle().apply {
                     putBoolean(TVBroadcastReceiver.EXTRA_CALL_MUTE_STATE, newState)
                     putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callParams?.callSid)
                 })
+            } else {
+                // Pre-API 34: Use deprecated callAudioState path
+                callAudioState?.let { a ->
+                    val newAudioRoute = a.copyWith(newState)
+                    onCallAudioStateChanged(newAudioRoute)
+                } ?: run {
+                    // Fallback: Broadcast mute state change directly when not using TelecomManager
+                    Log.d(TAG, "toggleMute: Using direct mute, newState=$newState")
+                    onEvent?.onChange(TVNativeCallEvents.EVENT_MUTE, Bundle().apply {
+                        putBoolean(TVBroadcastReceiver.EXTRA_CALL_MUTE_STATE, newState)
+                        putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callParams?.callSid)
+                    })
+                }
             }
         } ?: run {
             Log.e(TAG, "toggleMute: Unable to toggle mute, active call is null")
@@ -1287,17 +1420,38 @@ open class TVCallConnection(
             Log.e(TAG, "Failed to update ringback audio route: ${e.message}")
         }
 
-        // When the connection is alive AND TelecomManager is tracking audio state,
-        // use setAudioRoute() which is the official API. When callAudioState is null
-        // (e.g. self-managed connection or after call-waiting), setAudioRoute() silently
-        // fails because TelecomManager has no audio state to route. In that case we must
-        // manipulate AudioManager directly — same as the disconnected path.
-        if (state != STATE_DISCONNECTED && callAudioState != null) {
-            Log.d(TAG, "toggleSpeaker: Using TelecomManager setAudioRoute, newState=$newState")
-            if (newState) {
-                setAudioRoute(CallAudioState.ROUTE_SPEAKER)
+        // When the connection is alive, use the official TelecomManager audio routing API.
+        // API 34+: requestCallEndpointChange() (new, non-deprecated)
+        // Pre-34:  setAudioRoute() (deprecated but works)
+        // When callAudioState is null (e.g. after call-waiting), these silently fail
+        // so we must manipulate AudioManager directly — same as the disconnected path.
+        if (state != STATE_DISCONNECTED && (callAudioState != null || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && availableCallEndpoints.isNotEmpty()))) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                // API 34+: Use requestCallEndpointChange with endpoints from onAvailableCallEndpointsChanged
+                val targetType = if (newState) CallEndpoint.TYPE_SPEAKER else CallEndpoint.TYPE_EARPIECE
+                @Suppress("UNCHECKED_CAST")
+                val endpoints = availableCallEndpoints as List<CallEndpoint>
+                val targetEndpoint = endpoints.firstOrNull { it.endpointType == targetType }
+                if (targetEndpoint != null) {
+                    Log.d(TAG, "toggleSpeaker: API 34+ requestCallEndpointChange to ${targetEndpoint.endpointName} (type=$targetType)")
+                    requestCallEndpointChange(targetEndpoint, { it.run() }, object : android.os.OutcomeReceiver<Void?, android.telecom.CallEndpointException> {
+                        override fun onResult(result: Void?) {
+                            Log.d(TAG, "toggleSpeaker: requestCallEndpointChange succeeded")
+                        }
+                        override fun onError(error: android.telecom.CallEndpointException) {
+                            Log.e(TAG, "toggleSpeaker: requestCallEndpointChange failed: ${error.message}")
+                        }
+                    })
+                } else {
+                    Log.w(TAG, "toggleSpeaker: No endpoint of type $targetType found in ${endpoints.map { it.endpointType }}, falling back to setAudioRoute")
+                    @Suppress("DEPRECATION")
+                    if (newState) setAudioRoute(CallAudioState.ROUTE_SPEAKER) else setAudioRoute(CallAudioState.ROUTE_WIRED_OR_EARPIECE)
+                }
             } else {
-                setAudioRoute(CallAudioState.ROUTE_WIRED_OR_EARPIECE)
+                // Pre-API 34: Use deprecated setAudioRoute
+                Log.d(TAG, "toggleSpeaker: Using TelecomManager setAudioRoute, newState=$newState")
+                @Suppress("DEPRECATION")
+                if (newState) setAudioRoute(CallAudioState.ROUTE_SPEAKER) else setAudioRoute(CallAudioState.ROUTE_WIRED_OR_EARPIECE)
             }
         } else {
             // Use AudioManager directly when callAudioState is null or disconnected.
@@ -1417,15 +1571,36 @@ open class TVCallConnection(
             Log.e(TAG, "Failed to update ringback bluetooth route: ${e.message}")
         }
 
-        // When the connection is alive AND TelecomManager is tracking audio state,
-        // use setAudioRoute(). When callAudioState is null, setAudioRoute() silently
-        // fails so we must use AudioManager directly.
-        if (state != STATE_DISCONNECTED && callAudioState != null) {
-            Log.d(TAG, "toggleBluetooth: Using TelecomManager setAudioRoute, newState=$newState")
-            if (newState) {
-                setAudioRoute(CallAudioState.ROUTE_BLUETOOTH)
+        // When the connection is alive, use the official TelecomManager audio routing API.
+        // API 34+: requestCallEndpointChange() (new, non-deprecated)
+        // Pre-34:  setAudioRoute() (deprecated but works)
+        if (state != STATE_DISCONNECTED && (callAudioState != null || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && availableCallEndpoints.isNotEmpty()))) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                // API 34+: Use requestCallEndpointChange with endpoints from onAvailableCallEndpointsChanged
+                val targetType = if (newState) CallEndpoint.TYPE_BLUETOOTH else CallEndpoint.TYPE_EARPIECE
+                @Suppress("UNCHECKED_CAST")
+                val endpoints = availableCallEndpoints as List<CallEndpoint>
+                val targetEndpoint = endpoints.firstOrNull { it.endpointType == targetType }
+                if (targetEndpoint != null) {
+                    Log.d(TAG, "toggleBluetooth: API 34+ requestCallEndpointChange to ${targetEndpoint.endpointName} (type=$targetType)")
+                    requestCallEndpointChange(targetEndpoint, { it.run() }, object : android.os.OutcomeReceiver<Void?, android.telecom.CallEndpointException> {
+                        override fun onResult(result: Void?) {
+                            Log.d(TAG, "toggleBluetooth: requestCallEndpointChange succeeded")
+                        }
+                        override fun onError(error: android.telecom.CallEndpointException) {
+                            Log.e(TAG, "toggleBluetooth: requestCallEndpointChange failed: ${error.message}")
+                        }
+                    })
+                } else {
+                    Log.w(TAG, "toggleBluetooth: No endpoint of type $targetType found in ${endpoints.map { it.endpointType }}, falling back to setAudioRoute")
+                    @Suppress("DEPRECATION")
+                    if (newState) setAudioRoute(CallAudioState.ROUTE_BLUETOOTH) else setAudioRoute(CallAudioState.ROUTE_WIRED_OR_EARPIECE)
+                }
             } else {
-                setAudioRoute(CallAudioState.ROUTE_WIRED_OR_EARPIECE)
+                // Pre-API 34: Use deprecated setAudioRoute
+                Log.d(TAG, "toggleBluetooth: Using TelecomManager setAudioRoute, newState=$newState")
+                @Suppress("DEPRECATION")
+                if (newState) setAudioRoute(CallAudioState.ROUTE_BLUETOOTH) else setAudioRoute(CallAudioState.ROUTE_WIRED_OR_EARPIECE)
             }
 
             if (newState) wasOnBluetooth = true else wasOnBluetooth = false
@@ -1542,23 +1717,49 @@ open class TVCallConnection(
 
     /**
      * Toggle audio route of the call.
-     * @param newAudioRoute: the new audio route to set
+     * @param newAudioRoute: the new audio route to set (CallAudioState.ROUTE_*)
      * @param condition: true to use [newAudioRoute], false to use [fallback]
      * @param fallback: the fallback audio route to use if [condition] is false
      *
-     * Note: [getCallAudioState] and [onCallAudioStateChanged] has been deprecated in API 34,
-     * however this will be used until [getCurrentCallEndpoint], [onCallEndpointChanged] and [onMuteStateChanged] has been implemented.
+     * Supports API 34+ via requestCallEndpointChange() and falls back to
+     * deprecated setAudioRoute() on older devices.
      */
     @Suppress("DEPRECATION")
     private fun toggleAudioRoute(newAudioRoute: Int, condition: Boolean? = null, fallback: Int = CallAudioState.ROUTE_WIRED_OR_EARPIECE) {
-        //TODO(cybex-dev) implement API 34 endpoint & mute state change listeners
+        val targetRoute = if (condition ?: (newAudioRoute == fallback)) newAudioRoute else fallback
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && availableCallEndpoints.isNotEmpty()) {
+            // API 34+: Map CallAudioState route to CallEndpoint type
+            val targetEndpointType = when (targetRoute) {
+                CallAudioState.ROUTE_SPEAKER -> CallEndpoint.TYPE_SPEAKER
+                CallAudioState.ROUTE_BLUETOOTH -> CallEndpoint.TYPE_BLUETOOTH
+                CallAudioState.ROUTE_WIRED_HEADSET -> CallEndpoint.TYPE_WIRED_HEADSET
+                else -> CallEndpoint.TYPE_EARPIECE
+            }
+            @Suppress("UNCHECKED_CAST")
+            val endpoints = availableCallEndpoints as List<CallEndpoint>
+            val targetEndpoint = endpoints.firstOrNull { it.endpointType == targetEndpointType }
+            if (targetEndpoint != null) {
+                Log.d(TAG, "toggleAudioRoute: API 34+ requestCallEndpointChange to ${targetEndpoint.endpointName}")
+                requestCallEndpointChange(targetEndpoint, { it.run() }, object : android.os.OutcomeReceiver<Void?, android.telecom.CallEndpointException> {
+                    override fun onResult(result: Void?) {
+                        Log.d(TAG, "toggleAudioRoute: requestCallEndpointChange succeeded")
+                    }
+                    override fun onError(error: android.telecom.CallEndpointException) {
+                        Log.e(TAG, "toggleAudioRoute: requestCallEndpointChange failed: ${error.message}")
+                    }
+                })
+                return
+            }
+            Log.w(TAG, "toggleAudioRoute: No endpoint of type $targetEndpointType, falling back to setAudioRoute")
+        }
+
         callAudioState?.let {
-            val newRoute = if (condition ?: (newAudioRoute == fallback)) newAudioRoute else fallback
-            setAudioRoute(newRoute)
+            setAudioRoute(targetRoute)
 
             // Since audio route onCallAudioStateChanged does not respond to changes when call is on hold, we invoke this change manually to notify the UI.
             if (state == STATE_HOLDING) {
-                onCallAudioStateChanged(callAudioState.copyWith(newRoute))
+                onCallAudioStateChanged(callAudioState.copyWith(targetRoute))
             }
         } ?: run {
             // Fallback for when not using TelecomManager

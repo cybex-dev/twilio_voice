@@ -467,10 +467,11 @@ class IncomingCallActivity : AppCompatActivity() {
             ringtone = RingtoneManager.getRingtone(applicationContext, ringtoneUri)
             
             ringtone?.let { ring ->
-                // Set audio attributes for ringtone (call category)
+                // Use USAGE_VOICE_COMMUNICATION_SIGNALLING so the ringtone routes through
+                // the voice call audio path — this makes it audible on Bluetooth headsets.
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                     val audioAttributes = AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                        .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION_SIGNALLING)
                         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                         .build()
                     ring.audioAttributes = audioAttributes

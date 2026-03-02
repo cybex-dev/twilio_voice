@@ -40,6 +40,40 @@ object TelecomManagerExtension {
 //            return
         }
 
+        buildAndRegisterPhoneAccount(ctx, phoneAccountHandle)
+    }
+
+    /**
+     * Ensure the PhoneAccount is registered with the system.
+     * Does NOT require READ_PHONE_STATE — safe to call from ConnectionService
+     * before addNewIncomingCall(). Uses getPhoneAccount() (no permission needed
+     * for self-managed accounts) to check, and registers if missing or stale.
+     */
+    fun TelecomManager.ensurePhoneAccountRegistered(ctx: Context): PhoneAccountHandle {
+        val phoneAccountHandle = getPhoneAccountHandle(ctx)
+        try {
+            val existing = getPhoneAccount(phoneAccountHandle)
+            if (existing != null && existing.capabilities == PhoneAccount.CAPABILITY_SELF_MANAGED) {
+                Log.d("TelecomManager", "ensurePhoneAccountRegistered: Already registered with SELF_MANAGED")
+                return phoneAccountHandle
+            }
+            if (existing != null) {
+                Log.w("TelecomManager", "ensurePhoneAccountRegistered: Stale capabilities=${existing.capabilities}, re-registering")
+            } else {
+                Log.w("TelecomManager", "ensurePhoneAccountRegistered: Not registered, registering now")
+            }
+        } catch (e: Exception) {
+            Log.w("TelecomManager", "ensurePhoneAccountRegistered: Cannot check account (${e.message}), registering anyway")
+        }
+        buildAndRegisterPhoneAccount(ctx, phoneAccountHandle)
+        return phoneAccountHandle
+    }
+
+    /**
+     * Build and register the PhoneAccount. Shared by registerPhoneAccount() and
+     * ensurePhoneAccountRegistered().
+     */
+    private fun TelecomManager.buildAndRegisterPhoneAccount(ctx: Context, phoneAccountHandle: PhoneAccountHandle) {
         val label = ctx.getString(R.string.phone_account_name).apply {
             this.ifEmpty {
                 ctx.appName
@@ -51,16 +85,19 @@ object TelecomManagerExtension {
             }
         }
 
-        // register phone account
+        // register phone account as SELF_MANAGED
+        // Self-managed ConnectionService handles its own UI (IncomingCallActivity)
+        // but gets system Bluetooth button→answer/reject integration,
+        // audio routing, and car Bluetooth support for free.
         val phoneAccount = PhoneAccount.builder(phoneAccountHandle, label)
-            .setCapabilities(PhoneAccount.CAPABILITY_CALL_PROVIDER or PhoneAccount.CAPABILITY_CONNECTION_MANAGER or PhoneAccount.CAPABILITY_CALL_SUBJECT)
+            .setCapabilities(PhoneAccount.CAPABILITY_SELF_MANAGED)
             .setShortDescription(description)
-//            .addSupportedUriScheme(TVConnectionService.TWI_SCHEME)
             .setIcon(Icon.createWithResource(ctx, ctx.applicationInfo.icon))
             .addSupportedUriScheme(PhoneAccount.SCHEME_TEL)
             .build()
 
         registerPhoneAccount(phoneAccount)
+        Log.d("TelecomManager", "buildAndRegisterPhoneAccount: Registered successfully")
     }
 
     fun TelecomManager.openPhoneAccountSettings(activity: Activity) {
@@ -189,33 +226,41 @@ object TelecomManagerExtension {
 
     /**
      * Check if a phone account has been registered with the system telecom manager
+     * For SELF_MANAGED accounts, uses getPhoneAccount() since they don't appear
+     * in callCapablePhoneAccounts.
      * @param ctx application context
      * @param name The name of the componentName Class (i.e. ConnectionService)
      */
     @RequiresPermission(value = "android.permission.READ_PHONE_STATE")
     fun TelecomManager.hasCallCapableAccount(ctx: Context, name: String): Boolean {
         if (!canReadPhoneState(ctx)) return false
-        return callCapablePhoneAccounts.any { it.componentName.className == name }
+        // Self-managed accounts don't appear in callCapablePhoneAccounts.
+        // Check via getPhoneAccount() instead.
+        val handle = getPhoneAccountHandle(ctx)
+        return try {
+            getPhoneAccount(handle) != null
+        } catch (e: Exception) {
+            Log.w("TelecomManagerExtension", "hasCallCapableAccount: ${e.message}")
+            false
+        }
     }
 
     /**
      * Check if phone account is registered without requiring READ_PHONE_STATE
-     * This is a best-effort check that may return false positives when permission is not available
+     * For SELF_MANAGED accounts, uses getPhoneAccount() since they don't appear
+     * in callCapablePhoneAccounts.
      * @param ctx application context
      * @param componentClassName The name of the componentName Class (i.e. ConnectionService)
      * @return Boolean True if the account is registered, or true if we can't check (assumes registered)
      */
     fun TelecomManager.hasCallCapableAccountSafe(ctx: Context, componentClassName: String): Boolean {
         return try {
-            if (ctx.hasReadPhoneStatePermission()) {
-                callCapablePhoneAccounts.any { it.componentName.className == componentClassName }
-            } else {
-                // Assume account is registered if we can't check
-                // The actual call will fail if it's not
-                Log.w("TelecomManagerExtension", "Cannot check call capable accounts without READ_PHONE_STATE permission, assuming registered")
-                true
-            }
+            val handle = getPhoneAccountHandle(ctx)
+            getPhoneAccount(handle) != null
         } catch (e: SecurityException) {
+            Log.w("TelecomManagerExtension", "Cannot check call capable accounts: ${e.message}")
+            true
+        } catch (e: Exception) {
             Log.w("TelecomManagerExtension", "Cannot check call capable accounts: ${e.message}")
             true
         }
@@ -229,10 +274,12 @@ object TelecomManagerExtension {
      */
     fun TelecomManager.isOnCallSafe(ctx: Context): Boolean {
         return try {
-            if (ctx.hasReadPhoneStatePermission()) {
-                if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.O) isInCall else isInManagedCall
+            // For self-managed ConnectionService, we track our own calls directly
+            // since isInSelfManagedCall is not a public TelecomManager API.
+            // Fallback to isInCall for legacy compatibility on older APIs.
+            if (ctx.hasReadPhoneStatePermission() && Build.VERSION.SDK_INT <= Build.VERSION_CODES.O) {
+                isInCall
             } else {
-                // Fall back to checking our own connection service
                 TVConnectionService.hasActiveCalls()
             }
         } catch (e: SecurityException) {
@@ -275,6 +322,8 @@ object TelecomManagerExtension {
     @RequiresPermission(value = "android.permission.READ_PHONE_STATE")
     fun TelecomManager.isOnCall(ctx: Context): Boolean {
         if (!canReadPhoneState(ctx)) return false
-        return if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.O) isInCall else isInManagedCall
+        // For self-managed ConnectionService, we track our own calls directly
+        return if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.O) isInCall
+               else TVConnectionService.hasActiveCalls()
     }
 }

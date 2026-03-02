@@ -22,6 +22,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.Icon
 import android.media.AudioAttributes
 import android.media.AudioDeviceInfo
+import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.Ringtone
 import android.media.RingtoneManager
@@ -61,6 +62,7 @@ import com.twilio.twilio_voice.types.ContextExtension.hasMicrophoneAccess
 import com.twilio.twilio_voice.types.IntentExtension.getParcelableExtraSafe
 import com.twilio.twilio_voice.types.TelecomManagerExtension.getPhoneAccountHandle
 import com.twilio.twilio_voice.types.TelecomManagerExtension.hasCallCapableAccountSafe
+import com.twilio.twilio_voice.types.TelecomManagerExtension.ensurePhoneAccountRegistered
 import com.twilio.twilio_voice.types.TelecomManagerExtension.registerPhoneAccount
 import com.twilio.twilio_voice.types.ValueBundleChanged
 import com.twilio.voice.*
@@ -72,6 +74,12 @@ class TVConnectionService : ConnectionService() {
         val TAG = "TwilioVoiceConnectionService"
 
         val activeConnections = HashMap<String, TVCallConnection>()
+        
+        // Temporary storage for CallInvites waiting for onCreateIncomingConnection.
+        // When addNewIncomingCall() is called, the system asynchronously calls
+        // onCreateIncomingConnection(). We store the CallInvite here so it can be
+        // retrieved in that callback. Removed after connection is created.
+        val pendingCallInvites = HashMap<String, CallInvite>()
         
         // Track the start time of each call for notification Chronometer.
         // When a held call resumes, we use the original start time instead of
@@ -706,6 +714,7 @@ class TVConnectionService : ConnectionService() {
     private var ringtone: Ringtone? = null
     private var vibrator: Vibrator? = null
     private var isRinging = false
+    private var ringtoneAudioFocusRequest: AudioFocusRequest? = null
 
     // Deduplication guard for ACTION_ANSWER from notification PendingIntent.
     // On some devices (Samsung SDK 36), the PendingIntent can fire multiple times
@@ -1071,114 +1080,41 @@ class TVConnectionService : ConnectionService() {
                     startIncomingCallForegroundService(callInvite)
                     Log.d(TAG, "[SVC-$shortSid] Foreground service started")
 
-                    // Bypass TelecomManager - handle incoming call directly without PhoneAccount
-                    val mStorage: Storage = StorageImpl(applicationContext)
+                    // Use TelecomManager.addNewIncomingCall() for proper system integration.
+                    // This gives us: Bluetooth headset button → answer/reject, system audio
+                    // routing, car Bluetooth integration — all handled by Android automatically.
+                    // The system will call onCreateIncomingConnection() where we create the Connection.
+                    val tm = getSystemService(Context.TELECOM_SERVICE) as TelecomManager
+                    // Ensure PhoneAccount is registered BEFORE addNewIncomingCall().
+                    // This is critical: without a registered account, addNewIncomingCall()
+                    // throws SecurityException and we fall back to a non-system-managed
+                    // connection that has NO Bluetooth headset integration.
+                    val phoneAccountHandle = tm.ensurePhoneAccountRegistered(applicationContext)
                     
-                    // Get call parameters from invite
-                    val callParams = TVCallInviteParametersImpl(mStorage, callInvite)
-                    Log.d(TAG, "ACTION_INCOMING_CALL: Call params created")
+                    // Store the CallInvite so onCreateIncomingConnection can retrieve it
+                    pendingCallInvites[callInvite.callSid] = callInvite
                     
-                    // Create incoming call connection with required parameters
-                    val connection = TVCallInviteConnection(applicationContext, callInvite, callParams)
-                    Log.d(TAG, "ACTION_INCOMING_CALL: Connection created")
-                    
-                    val callSid = callInvite.callSid
-                    
-                    // Apply parameters and attach listeners
-                    applyParameters(connection, callParams, callInvite.from ?: "")
-                    attachCallEventListeners(connection, callSid)
-                    // Mark connection as ringing (matches onCreateIncomingConnection behavior).
-                    // Without this, connection.state stays STATE_NEW and multi-call
-                    // disconnect handlers can't identify it as an unanswered incoming call.
-                    connection.setRinging()
-                    Log.d(TAG, "ACTION_INCOMING_CALL: Event listeners attached, state=RINGING")
-                    
-                    // Set call disconnected listener
-                    val onCallDisconnectedListener: CompletionHandler<DisconnectCause> = CompletionHandler {
-                        // onCallStateListener fires BEFORE this handler (see TVConnection.onDisconnected order).
-                        // If it already removed callSid and handled remaining-call logic, just do cleanup.
-                        val alreadyHandled = !activeConnections.containsKey(callSid)
-                        if (!alreadyHandled) {
-                            activeConnections.remove(callSid)
-                        }
-                        // Clear pending call if this was the pending one
-                        if (getPendingIncomingCallSidFromPrefs(applicationContext) == callSid) {
-                            clearPendingIncomingCallFromPrefs(applicationContext)
-                        }
-                        // Only cancel incoming call notification/ringtone if no other calls
-                        // are still ringing. Otherwise we'd kill Call B's notification when
-                        // Call A (which was also created via ACTION_INCOMING_CALL) disconnects.
-                        val hasOtherRingingCall = activeConnections.values.any { conn ->
-                            conn.state == Connection.STATE_RINGING || conn.state == Connection.STATE_NEW
-                        }
-                        if (!hasOtherRingingCall) {
-                            cancelIncomingCallNotification()
-                            releaseWakeLock()
-                        } else {
-                            Log.d(TAG, "[ACTION_INCOMING_CALL onDisconnected] Skipping cancelIncomingCallNotification - another call is still ringing")
-                        }
-
-                        if (alreadyHandled) {
-                            Log.d(TAG, "[ACTION_INCOMING_CALL onDisconnected] Call $callSid already handled by onCallState, skipping remaining-call logic")
-                            if (!hasActiveCalls()) {
-                                stopForegroundService()
-                                stopSelfSafe()
-                            }
-                            return@CompletionHandler
-                        }
-
-                        // Only send ACTION_CALL_ENDED and stop service if no other calls remain
-                        if (!hasActiveCalls()) {
-                            sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, callSid, connection.extras)
-                            stopForegroundService()
-                            stopSelfSafe()
-                        } else {
-                            Log.d(TAG, "[ACTION_INCOMING_CALL onDisconnected] Call $callSid ended but other calls still active (${activeConnections.size} remaining), suppressing ACTION_CALL_ENDED")
-                            // Unhold remaining call if it was on hold
-                            val remainingHandle = getActiveCallHandle()
-                            if (remainingHandle != null) {
-                                val remainingConn = getConnection(remainingHandle)
-                                val remainingNumber = getConnectionDisplayName(remainingConn)
-                                
-                                if (remainingConn?.state == Connection.STATE_RINGING || remainingConn?.state == Connection.STATE_NEW) {
-                                    // Remaining call is an unanswered incoming call.
-                                    // IncomingCallActivity is already showing — do NOT bring
-                                    // MainActivity to front (that would cover it).
-                                    // Cancel the ongoing-call notification — it belongs to the
-                                    // call that just ended; the ringing call has its own notification.
-                                    cancelOngoingCallNotification()
-                                    // Send ACTION_CALL_ENDED so Flutter resets its call UI.
-                                    Log.d(TAG, "[ACTION_INCOMING_CALL onDisconnected] Remaining call $remainingHandle is RINGING/NEW (state=${remainingConn?.state}) - sending Call Ended, cancelled ongoing notification")
-                                    sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, callSid, Bundle().apply {
-                                        putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callSid)
-                                    })
-                                } else {
-                                    showOngoingCallNotification(remainingHandle, remainingNumber)
-                                    if (remainingConn?.state == Connection.STATE_HOLDING) {
-                                        // The remaining call is ON HOLD → the ACTIVE call ended.
-                                        // Do NOT send ACTION_HELD_CALL_ENDED — the held call is still alive.
-                                        remainingConn.toggleHold(false)
-                                        Log.d(TAG, "[ACTION_INCOMING_CALL onDisconnected] Unholding remaining call $remainingHandle")
-                                    } else {
-                                        // The remaining call is NOT on hold → the HELD call ended.
-                                        // Notify Flutter to clear the held call banner.
-                                        sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_HELD_CALL_ENDED, callSid, connection.extras)
-                                    }
-                                    bringMainActivityToFront()
-                                }
-                            }
-                        }
+                    val extras = Bundle().apply {
+                        putBundle(TelecomManager.EXTRA_INCOMING_CALL_EXTRAS, Bundle().apply {
+                            putParcelable(EXTRA_INCOMING_CALL_INVITE, callInvite)
+                            putString(EXTRA_CALL_HANDLE, callInvite.callSid)
+                        })
+                        // Required for self-managed: set EXTRA_PHONE_ACCOUNT_HANDLE
+                        putParcelable(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, phoneAccountHandle)
                     }
-                    connection.setOnCallDisconnected(onCallDisconnectedListener)
                     
-                    // Notify about incoming call
-                    sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_INCOMING_CALL, callSid, connection.extras)
-                    sendBroadcastCallHandle(applicationContext, callSid)
+                    try {
+                        tm.addNewIncomingCall(phoneAccountHandle, extras)
+                        Log.d(TAG, "[SVC-$shortSid] addNewIncomingCall() succeeded — onCreateIncomingConnection will fire")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "[SVC-$shortSid] addNewIncomingCall() FAILED: ${e.message}", e)
+                        // Fallback: create connection directly (preserves old behavior)
+                        Log.w(TAG, "[SVC-$shortSid] Falling back to direct connection creation")
+                        pendingCallInvites.remove(callInvite.callSid)
+                        createIncomingConnectionDirectly(callInvite)
+                    }
                     
-                    // Note: IncomingCallActivity is launched automatically by Android via the
-                    // notification's fullScreenIntent (locked → full-screen, unlocked → heads-up)
-                    
-                    Log.d(TAG, "========== ACTION_INCOMING_CALL END - callSid: $callSid ==========")
+                    Log.d(TAG, "========== ACTION_INCOMING_CALL END - callSid: ${callInvite.callSid} ==========")
                 }
 
                 ACTION_ANSWER -> {
@@ -2022,40 +1958,227 @@ class TVConnectionService : ConnectionService() {
         super.onCreateIncomingConnection(connectionManagerPhoneAccount, request)
         Log.d(TAG, "onCreateIncomingConnection")
 
+        // Retrieve CallInvite. The Twilio CallInvite Parcelable often fails to
+        // survive IPC through TelecomManager (the system process doesn't have
+        // Twilio's class loader). We use pendingCallInvites (in-process HashMap)
+        // as the PRIMARY source, falling back to the extras Bundle only if needed.
         val extras = request?.extras
-        val myBundle: Bundle = extras?.getBundle(TelecomManager.EXTRA_INCOMING_CALL_EXTRAS) ?: run {
-            Log.e(TAG, "onCreateIncomingConnection: request is missing Bundle EXTRA_INCOMING_CALL_EXTRAS")
-            throw Exception("onCreateIncomingConnection: request is missing Bundle EXTRA_INCOMING_CALL_EXTRAS");
-        }
+        val myBundle: Bundle? = extras?.getBundle(TelecomManager.EXTRA_INCOMING_CALL_EXTRAS)
 
-        myBundle.classLoader = CallInvite::class.java.classLoader
-        val ci: CallInvite = myBundle.getParcelableSafe(EXTRA_INCOMING_CALL_INVITE) ?: run {
-            Log.e(TAG, "onCreateIncomingConnection: request is missing CallInvite EXTRA_INCOMING_CALL_INVITE")
-            throw Exception("onCreateIncomingConnection: request is missing CallInvite EXTRA_INCOMING_CALL_INVITE");
-        }
+        // Try to get callSid from the extras (String survives IPC safely)
+        val callSidFromExtras = myBundle?.getString(EXTRA_CALL_HANDLE)
+        Log.d(TAG, "onCreateIncomingConnection: callSidFromExtras=$callSidFromExtras, pendingCallInvites keys=${pendingCallInvites.keys}")
+
+        // Strategy 1: Get CallInvite from in-process pendingCallInvites map (most reliable)
+        val ci: CallInvite = (if (callSidFromExtras != null) pendingCallInvites.remove(callSidFromExtras) else null)
+            // Strategy 2: If no callSid in extras, try any pending invite (should only be one)
+            ?: pendingCallInvites.values.firstOrNull()?.also { pendingCallInvites.remove(it.callSid) }
+            // Strategy 3: Last resort — try to deserialize from the Bundle (may fail on some devices)
+            ?: run {
+                Log.w(TAG, "onCreateIncomingConnection: CallInvite not found in pendingCallInvites, trying Bundle deserialization")
+                myBundle?.classLoader = CallInvite::class.java.classLoader
+                myBundle?.getParcelableSafe<CallInvite>(EXTRA_INCOMING_CALL_INVITE)
+            }
+            ?: run {
+                Log.e(TAG, "onCreateIncomingConnection: FAILED to retrieve CallInvite from any source")
+                throw Exception("onCreateIncomingConnection: unable to retrieve CallInvite")
+            }
+
+        val callSid = ci.callSid
+        val shortSid = callSid.takeLast(6)
+        Log.d(TAG, "[onCreateIncomingConnection-$shortSid] Creating connection for callSid=$callSid")
+
+        // Clean up pending invites (in case retrieved via Strategy 2/3)
+        pendingCallInvites.remove(callSid)
 
         // Create storage instance for call parameters
         val storage: Storage = StorageImpl(applicationContext)
 
         // Resolve call parameters
-        val callParams: TVParameters = TVCallInviteParametersImpl(storage, ci);
+        val callParams: TVParameters = TVCallInviteParametersImpl(storage, ci)
 
         // Create connection
         val connection = TVCallInviteConnection(applicationContext, ci, callParams)
 
         // Remove call invite from extras, causes marshalling error i.e. Class not found.
-        val requestBundle = request.extras.also { it ->
+        val requestBundle = request?.extras?.also { it ->
             it.remove(TelecomManager.EXTRA_INCOMING_CALL_EXTRAS)
         }
-        connection.extras = requestBundle
+        if (requestBundle != null) {
+            connection.extras = requestBundle
+        }
 
         // Setup connection event listeners and UI parameters
-        attachCallEventListeners(connection, ci.callSid)
-        applyParameters(connection, callParams,null)
+        attachCallEventListeners(connection, callSid)
+        applyParameters(connection, callParams, ci.from ?: "")
         connection.setRinging()
+        Log.d(TAG, "[onCreateIncomingConnection-$shortSid] Event listeners attached, state=RINGING")
 
-        startForegroundService()
+        // Gap 4: Start ringtone AFTER setRinging().
+        // setRinging() sends HFP indicators to Bluetooth headsets, telling them
+        // about the incoming call. Starting the ringtone after this ensures:
+        //   1. BT headset knows about the call → headset button can answer/reject
+        //   2. Audio routing is established → ringtone plays through BT if connected
+        // Previously the ringtone started in startIncomingCallForegroundService()
+        // which runs BEFORE addNewIncomingCall() → before setRinging().
+        startRinging()
+        Log.d(TAG, "[onCreateIncomingConnection-$shortSid] Ringtone started (after setRinging for BT HFP)")
+
+        // Set call disconnected listener with full multi-call handling
+        val onCallDisconnectedListener: CompletionHandler<DisconnectCause> = CompletionHandler {
+            // onCallStateListener fires BEFORE this handler (see TVConnection.onDisconnected order).
+            // If it already removed callSid and handled remaining-call logic, just do cleanup.
+            val alreadyHandled = !activeConnections.containsKey(callSid)
+            if (!alreadyHandled) {
+                activeConnections.remove(callSid)
+            }
+            // Clear pending call if this was the pending one
+            if (getPendingIncomingCallSidFromPrefs(applicationContext) == callSid) {
+                clearPendingIncomingCallFromPrefs(applicationContext)
+            }
+            // Only cancel incoming call notification/ringtone if no other calls
+            // are still ringing. Otherwise we'd kill Call B's notification when
+            // Call A disconnects.
+            val hasOtherRingingCall = activeConnections.values.any { conn ->
+                conn.state == Connection.STATE_RINGING || conn.state == Connection.STATE_NEW
+            }
+            if (!hasOtherRingingCall) {
+                cancelIncomingCallNotification()
+                releaseWakeLock()
+            } else {
+                Log.d(TAG, "[onCreateIncomingConnection onDisconnected] Skipping cancelIncomingCallNotification - another call is still ringing")
+            }
+
+            if (alreadyHandled) {
+                Log.d(TAG, "[onCreateIncomingConnection onDisconnected] Call $callSid already handled by onCallState, skipping remaining-call logic")
+                if (!hasActiveCalls()) {
+                    stopForegroundService()
+                    stopSelfSafe()
+                }
+                return@CompletionHandler
+            }
+
+            // Only send ACTION_CALL_ENDED and stop service if no other calls remain
+            if (!hasActiveCalls()) {
+                sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, callSid, connection.extras)
+                stopForegroundService()
+                stopSelfSafe()
+            } else {
+                Log.d(TAG, "[onCreateIncomingConnection onDisconnected] Call $callSid ended but other calls still active (${activeConnections.size} remaining), suppressing ACTION_CALL_ENDED")
+                // Unhold remaining call if it was on hold
+                val remainingHandle = getActiveCallHandle()
+                if (remainingHandle != null) {
+                    val remainingConn = getConnection(remainingHandle)
+                    val remainingNumber = getConnectionDisplayName(remainingConn)
+                    
+                    if (remainingConn?.state == Connection.STATE_RINGING || remainingConn?.state == Connection.STATE_NEW) {
+                        // Remaining call is an unanswered incoming call.
+                        // IncomingCallActivity is already showing — do NOT bring
+                        // MainActivity to front (that would cover it).
+                        cancelOngoingCallNotification()
+                        Log.d(TAG, "[onCreateIncomingConnection onDisconnected] Remaining call $remainingHandle is RINGING/NEW (state=${remainingConn?.state}) - sending Call Ended, cancelled ongoing notification")
+                        sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, callSid, Bundle().apply {
+                            putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callSid)
+                        })
+                    } else {
+                        showOngoingCallNotification(remainingHandle, remainingNumber)
+                        if (remainingConn?.state == Connection.STATE_HOLDING) {
+                            remainingConn.toggleHold(false)
+                            Log.d(TAG, "[onCreateIncomingConnection onDisconnected] Unholding remaining call $remainingHandle")
+                        } else {
+                            sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_HELD_CALL_ENDED, callSid, connection.extras)
+                        }
+                        bringMainActivityToFront()
+                    }
+                }
+            }
+        }
+        connection.setOnCallDisconnected(onCallDisconnectedListener)
+
+        // Notify Flutter about the incoming call
+        sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_INCOMING_CALL, callSid, connection.extras)
+        sendBroadcastCallHandle(applicationContext, callSid)
+
+        Log.d(TAG, "[onCreateIncomingConnection-$shortSid] Connection created and returned to TelecomManager")
         return connection
+    }
+
+    /**
+     * Fallback method to create an incoming connection directly without TelecomManager.
+     * Used when addNewIncomingCall() fails (e.g., permission issues, PhoneAccount not registered).
+     */
+    private fun createIncomingConnectionDirectly(callInvite: CallInvite) {
+        val callSid = callInvite.callSid
+        val shortSid = callSid.takeLast(6)
+        Log.d(TAG, "[createIncomingConnectionDirectly-$shortSid] Creating connection directly (fallback)")
+
+        val mStorage: Storage = StorageImpl(applicationContext)
+        val callParams = TVCallInviteParametersImpl(mStorage, callInvite)
+        val connection = TVCallInviteConnection(applicationContext, callInvite, callParams)
+
+        applyParameters(connection, callParams, callInvite.from ?: "")
+        attachCallEventListeners(connection, callSid)
+        connection.setRinging()
+        Log.d(TAG, "[createIncomingConnectionDirectly-$shortSid] Event listeners attached, state=RINGING")
+
+        // Start ringtone after setRinging() — same ordering as onCreateIncomingConnection (Gap 4)
+        startRinging()
+        Log.d(TAG, "[createIncomingConnectionDirectly-$shortSid] Ringtone started (after setRinging)")
+
+        // Set call disconnected listener with full multi-call handling
+        val onCallDisconnectedListener: CompletionHandler<DisconnectCause> = CompletionHandler {
+            val alreadyHandled = !activeConnections.containsKey(callSid)
+            if (!alreadyHandled) {
+                activeConnections.remove(callSid)
+            }
+            if (getPendingIncomingCallSidFromPrefs(applicationContext) == callSid) {
+                clearPendingIncomingCallFromPrefs(applicationContext)
+            }
+            val hasOtherRingingCall = activeConnections.values.any { conn ->
+                conn.state == Connection.STATE_RINGING || conn.state == Connection.STATE_NEW
+            }
+            if (!hasOtherRingingCall) {
+                cancelIncomingCallNotification()
+                releaseWakeLock()
+            }
+            if (alreadyHandled) {
+                if (!hasActiveCalls()) {
+                    stopForegroundService()
+                    stopSelfSafe()
+                }
+                return@CompletionHandler
+            }
+            if (!hasActiveCalls()) {
+                sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, callSid, connection.extras)
+                stopForegroundService()
+                stopSelfSafe()
+            } else {
+                val remainingHandle = getActiveCallHandle()
+                if (remainingHandle != null) {
+                    val remainingConn = getConnection(remainingHandle)
+                    val remainingNumber = getConnectionDisplayName(remainingConn)
+                    if (remainingConn?.state == Connection.STATE_RINGING || remainingConn?.state == Connection.STATE_NEW) {
+                        cancelOngoingCallNotification()
+                        sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, callSid, Bundle().apply {
+                            putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callSid)
+                        })
+                    } else {
+                        showOngoingCallNotification(remainingHandle, remainingNumber)
+                        if (remainingConn?.state == Connection.STATE_HOLDING) {
+                            remainingConn.toggleHold(false)
+                        } else {
+                            sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_HELD_CALL_ENDED, callSid, connection.extras)
+                        }
+                        bringMainActivityToFront()
+                    }
+                }
+            }
+        }
+        connection.setOnCallDisconnected(onCallDisconnectedListener)
+
+        sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_INCOMING_CALL, callSid, connection.extras)
+        sendBroadcastCallHandle(applicationContext, callSid)
+        Log.d(TAG, "[createIncomingConnectionDirectly-$shortSid] Connection created (fallback complete)")
     }
 
     override fun onCreateOutgoingConnection(connectionManagerPhoneAccount: PhoneAccountHandle?, request: ConnectionRequest?): Connection {
@@ -2399,6 +2522,11 @@ class TVConnectionService : ConnectionService() {
             // We check if there are connections OTHER than this one.
             activeConnections.keys.any { it != callSid }
         }
+
+        // Gap 3: Wire up onSilence → silenceRingtone so volume-down stops the ringtone
+        connection.onSilenceCallback = {
+            silenceRingtone()
+        }
     }
 
     /**
@@ -2529,8 +2657,25 @@ class TVConnectionService : ConnectionService() {
 
     override fun onCreateIncomingConnectionFailed(connectionManagerPhoneAccount: PhoneAccountHandle?, request: ConnectionRequest?) {
         super.onCreateIncomingConnectionFailed(connectionManagerPhoneAccount, request)
-        Log.d(TAG, "onCreateIncomingConnectionFailed")
-        stopForegroundService()
+        Log.e(TAG, "onCreateIncomingConnectionFailed — system rejected addNewIncomingCall()")
+
+        // Try to recover: if we still have a pending CallInvite, create the connection directly.
+        // This can happen if the system rejects the call (e.g., too many self-managed calls,
+        // or another self-managed app has an active call).
+        val callSidFromExtras = request?.extras
+            ?.getBundle(TelecomManager.EXTRA_INCOMING_CALL_EXTRAS)
+            ?.getString(EXTRA_CALL_HANDLE)
+        
+        val callInvite = (if (callSidFromExtras != null) pendingCallInvites.remove(callSidFromExtras) else null)
+            ?: pendingCallInvites.values.firstOrNull()?.also { pendingCallInvites.remove(it.callSid) }
+
+        if (callInvite != null) {
+            Log.w(TAG, "onCreateIncomingConnectionFailed: Recovering via direct connection for callSid=${callInvite.callSid}")
+            createIncomingConnectionDirectly(callInvite)
+        } else {
+            Log.e(TAG, "onCreateIncomingConnectionFailed: No pending CallInvite found — call lost")
+            stopForegroundService()
+        }
     }
 
     private fun getOrCreateChannel(): NotificationChannel {
@@ -3485,9 +3630,13 @@ class TVConnectionService : ConnectionService() {
                 Log.d(TAG, "[SVC-$shortSid] │ Started foreground (pre-Android 10)")
             }
             
-            // Step 3: Start ringtone and vibration for incoming call
-            Log.d(TAG, "[SVC-$shortSid] │ Starting ringtone...")
-            startRinging()
+            // Ringtone and vibration are NOT started here.
+            // Gap 4 fix: Ringtone must start AFTER Connection.setRinging() is called
+            // in onCreateIncomingConnection(). setRinging() sends HFP indicators to
+            // Bluetooth headsets, telling them about the incoming call. If we start
+            // the ringtone before that, BT headsets won't hear the ring and the
+            // headset button won't work for answering.
+            // startRinging() is called from onCreateIncomingConnection() after setRinging().
             
             Log.d(TAG, "[SVC-$shortSid] │ Relying on fullScreenIntent for display:")
             Log.d(TAG, "[SVC-$shortSid] │   Locked → full-screen IncomingCallActivity")
@@ -3499,8 +3648,7 @@ class TVConnectionService : ConnectionService() {
             // Fallback: try without specific service type
             try {
                 startForeground(INCOMING_CALL_NOTIFICATION_ID, notification)
-                // Start ringtone even if fallback
-                startRinging()
+                // Ringtone deferred to onCreateIncomingConnection (Gap 4)
             } catch (e2: Exception) {
                 Log.e(TAG, "[SVC-$shortSid] Fallback foreground service also failed: $e2")
             }
@@ -3639,13 +3787,19 @@ class TVConnectionService : ConnectionService() {
         
         Log.d(TAG, "[VoiceConnectionService] Starting ringtone and vibration")
         
+        // Request audio focus to pause any playing music during ringing
+        requestRingtoneAudioFocus()
+        
         try {
             // Get the default ringtone URI
             val ringtoneUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
             ringtone = RingtoneManager.getRingtone(applicationContext, ringtoneUri)
             
             ringtone?.let { ring ->
-                // Set audio attributes for ringtone (call category)
+                // Use USAGE_NOTIFICATION_RINGTONE — the standard usage for ringtones.
+                // After Connection.setRinging() has been called (in onCreateIncomingConnection),
+                // Android's HFP layer knows about the call and routes the ringtone through
+                // the BT headset automatically. No manual startBluetoothSco() needed.
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                     val audioAttributes = AudioAttributes.Builder()
                         .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
@@ -3660,7 +3814,7 @@ class TVConnectionService : ConnectionService() {
                 }
                 
                 ring.play()
-                Log.d(TAG, "[VoiceConnectionService] Ringtone started playing")
+                Log.d(TAG, "[VoiceConnectionService] Ringtone started playing (USAGE_NOTIFICATION_RINGTONE)")
             }
         } catch (e: Exception) {
             Log.e(TAG, "[VoiceConnectionService] Error starting ringtone: ${e.message}", e)
@@ -3716,6 +3870,106 @@ class TVConnectionService : ConnectionService() {
             vibrator = null
         } catch (e: Exception) {
             Log.e(TAG, "[VoiceConnectionService] Error stopping vibration: ${e.message}", e)
+        }
+        
+        // Release ringtone audio focus (music can resume)
+        releaseRingtoneAudioFocus()
+    }
+
+    /**
+     * Request audio focus during ringing phase.
+     * This pauses any playing music and sets MODE_RINGTONE so the system
+     * knows we're in a ringing state.
+     */
+    private fun requestRingtoneAudioFocus() {
+        try {
+            val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+            Log.d(TAG, "[VoiceConnectionService] Requesting ringtone audio focus")
+            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val audioAttributes = AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
+                
+                ringtoneAudioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                    .setAudioAttributes(audioAttributes)
+                    .setAcceptsDelayedFocusGain(false)
+                    .setOnAudioFocusChangeListener { focusChange ->
+                        Log.d(TAG, "[VoiceConnectionService] Ringtone audio focus changed: $focusChange")
+                    }
+                    .build()
+                
+                val result = am.requestAudioFocus(ringtoneAudioFocusRequest!!)
+                Log.d(TAG, "[VoiceConnectionService] Ringtone audio focus request result: $result")
+            } else {
+                @Suppress("DEPRECATION")
+                am.requestAudioFocus(
+                    { focusChange -> Log.d(TAG, "[VoiceConnectionService] Ringtone audio focus changed: $focusChange") },
+                    AudioManager.STREAM_RING,
+                    AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
+                )
+            }
+            
+            // Set MODE_RINGTONE — this tells Android we're in a ringing state.
+            am.mode = AudioManager.MODE_RINGTONE
+            Log.d(TAG, "[VoiceConnectionService] Audio mode set to MODE_RINGTONE")
+        } catch (e: Exception) {
+            Log.e(TAG, "[VoiceConnectionService] Error requesting ringtone audio focus: ${e.message}", e)
+        }
+    }
+    
+    /**
+     * Release ringtone audio focus when ringing stops.
+     * Resets audio mode so the call's requestAudioFocus() can set MODE_IN_COMMUNICATION.
+     */
+    private fun releaseRingtoneAudioFocus() {
+        try {
+            val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                ringtoneAudioFocusRequest?.let {
+                    am.abandonAudioFocusRequest(it)
+                    ringtoneAudioFocusRequest = null
+                    Log.d(TAG, "[VoiceConnectionService] Ringtone audio focus released")
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                am.abandonAudioFocus(null)
+            }
+            
+            // Reset audio mode — the call's onAnswer() → requestAudioFocus()
+            // will set MODE_IN_COMMUNICATION when the call connects.
+            am.mode = AudioManager.MODE_NORMAL
+            Log.d(TAG, "[VoiceConnectionService] Audio mode reset to MODE_NORMAL")
+        } catch (e: Exception) {
+            Log.e(TAG, "[VoiceConnectionService] Error releasing ringtone audio focus: ${e.message}", e)
+        }
+    }
+    
+    /**
+     * Silence the ringtone only (stop sound) but keep the call in ringing state.
+     * Called when the user presses volume-down during an incoming call.
+     * Vibration is also stopped for a clean silence experience.
+     */
+    fun silenceRingtone() {
+        Log.d(TAG, "[VoiceConnectionService] silenceRingtone: Silencing ringtone (call remains ringing)")
+        try {
+            ringtone?.let { ring ->
+                if (ring.isPlaying) {
+                    ring.stop()
+                }
+            }
+            ringtone = null
+        } catch (e: Exception) {
+            Log.e(TAG, "[VoiceConnectionService] silenceRingtone: Error stopping ringtone: ${e.message}", e)
+        }
+        
+        try {
+            vibrator?.cancel()
+            vibrator = null
+        } catch (e: Exception) {
+            Log.e(TAG, "[VoiceConnectionService] silenceRingtone: Error stopping vibration: ${e.message}", e)
         }
     }
 }

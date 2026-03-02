@@ -21,6 +21,7 @@ import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
 import android.telecom.CallAudioState
+import android.telecom.PhoneAccount
 import android.telecom.PhoneAccountHandle
 import android.telecom.TelecomManager
 import android.util.Log
@@ -1281,13 +1282,34 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             }
 
             TVMethodChannels.HAS_BLUETOOTH_PERMISSION -> {
-                // Deprecated in favour of native call screen handling these permissions
-                result.success(false)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    val granted = activity?.checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) ==
+                        android.content.pm.PackageManager.PERMISSION_GRANTED
+                    Log.d(TAG, "hasBluetoothPermission: BLUETOOTH_CONNECT granted=$granted")
+                    result.success(granted)
+                } else {
+                    // Pre-Android 12: BLUETOOTH is a normal permission, always granted
+                    result.success(true)
+                }
             }
 
             TVMethodChannels.REQUEST_BLUETOOTH_PERMISSION -> {
-                // Deprecated in favour of native call screen handling these permissions
-                result.success(false)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    val act = activity
+                    if (act != null) {
+                        Log.d(TAG, "requestBluetoothPermission: Requesting BLUETOOTH_CONNECT")
+                        act.requestPermissions(arrayOf(android.Manifest.permission.BLUETOOTH_CONNECT), 9876)
+                        // Note: result is returned immediately with true. 
+                        // The actual grant/deny is handled by the system dialog.
+                        // Caller should re-check hasBluetoothPermission after this.
+                        result.success(true)
+                    } else {
+                        Log.w(TAG, "requestBluetoothPermission: No activity available")
+                        result.success(false)
+                    }
+                } else {
+                    result.success(true)
+                }
             }
 
             TVMethodChannels.BACKGROUND_CALL_UI -> {
@@ -1891,7 +1913,18 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                         return true
                     }
 
-                    // account is ready to use
+                    // Account exists — always re-register to ensure capabilities are up to date.
+                    // This handles the case where we migrated from CAPABILITY_CALL_PROVIDER to
+                    // CAPABILITY_SELF_MANAGED (or vice versa). Without re-registering, the old
+                    // capabilities would remain cached by the system.
+                    val currentCapabilities = phoneAccount.capabilities
+                    val expectedCapabilities = PhoneAccount.CAPABILITY_SELF_MANAGED
+                    if (currentCapabilities != expectedCapabilities) {
+                        Log.w(TAG, "registerPhoneAccount: Capabilities mismatch (current=$currentCapabilities, expected=$expectedCapabilities), re-registering")
+                        tm.registerPhoneAccount(ctx, phoneAccountHandle)
+                    } else {
+                        Log.d(TAG, "registerPhoneAccount: Account already registered with correct capabilities")
+                    }
                     return true
                 }
 
