@@ -38,6 +38,7 @@ import androidx.core.content.ContextCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.twilio.twilio_voice.receivers.TVBroadcastReceiver
 import com.twilio.twilio_voice.service.TVConnectionService
+import com.twilio.twilio_voice.types.TVNativeCallActions
 import com.twilio.voice.CallInvite
 
 /**
@@ -156,11 +157,28 @@ class IncomingCallActivity : AppCompatActivity() {
         return match?.groups?.get(1)?.value ?: input
     }
     
-    // Broadcast receiver to listen for call ended events (e.g., from notification decline)
+    // Broadcast receiver to listen for call ended/answered events (e.g., from notification decline or BT headset answer)
     private val callEndedReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val action = intent?.action
             android.util.Log.d(TAG, "Received broadcast: $action")
+            if (action == TVNativeCallActions.ACTION_ANSWERED) {
+                // Call was answered externally (e.g. BT headset button, notification action)
+                // while this IncomingCallActivity is still showing on the lock screen.
+                // We need to dismiss ourselves — the call is already connected.
+                val answeredCallHandle = intent?.getStringExtra(TVBroadcastReceiver.EXTRA_CALL_HANDLE)
+                android.util.Log.d(TAG, "callEndedReceiver: ACTION_ANSWERED received for call $answeredCallHandle (our call=$callSid)")
+                if (answeredCallHandle != null && callSid != null && answeredCallHandle != callSid) {
+                    android.util.Log.d(TAG, "callEndedReceiver: ACTION_ANSWERED is for a DIFFERENT call, ignoring")
+                    return
+                }
+                stopRinging()
+                callHandled = true
+                releaseWakeLock()
+                android.util.Log.d(TAG, "callEndedReceiver: Call answered externally — dismissing IncomingCallActivity")
+                finishAndRemoveTask()
+                return
+            }
             if (action == TVBroadcastReceiver.ACTION_CALL_ENDED) {
                 // Check which call ended — if it's a DIFFERENT call (e.g. Call A ended
                 // while Call B is ringing), we must NOT close Call B's IncomingCallActivity.
@@ -545,6 +563,7 @@ class IncomingCallActivity : AppCompatActivity() {
     private fun registerCallEndedReceiver() {
         try {
             val filter = IntentFilter(TVBroadcastReceiver.ACTION_CALL_ENDED)
+            filter.addAction(TVNativeCallActions.ACTION_ANSWERED)
             LocalBroadcastManager.getInstance(this).registerReceiver(callEndedReceiver, filter)
             android.util.Log.d(TAG, "Registered call ended broadcast receiver")
         } catch (e: Exception) {
