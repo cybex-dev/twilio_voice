@@ -59,6 +59,14 @@ class TVCallInviteConnection(
  override fun onAnswer() {
     Log.d(TAG, "onAnswer: CALLED — source could be UI button, BT headset button, or system. State=${state}, callSid=${callInvite.callSid}")
     super.onAnswer()
+
+    // If there's an active call (Call A), hold it before answering this new call (Call B).
+    // This mirrors ACTION_ANSWER_WITH_HOLD behavior for BT headset button presses.
+    val otherCallsExist = hasOtherActiveCalls?.invoke() ?: false
+    if (otherCallsExist) {
+        Log.d(TAG, "onAnswer: Other active calls detected — holding active call before answering")
+        holdActiveCallCallback?.invoke()
+    }
     
     // Request audio focus to pause any playing music and route audio properly
     requestAudioFocus()
@@ -745,6 +753,15 @@ open class TVCallConnection(
      * Called when the user presses volume-down during incoming call ringing.
      */
     var onSilenceCallback: (() -> Unit)? = null
+
+    /**
+     * Callback invoked when onAnswer() is triggered by the system (e.g. BT headset button)
+     * and there is already an active call. Holds the active call before accepting the new one.
+     * Set by TVConnectionService.attachCallEventListeners().
+     * Without this, answering Call B via BT headset leaves Call A active (not held),
+     * causing audio conflicts and both calls ending when one is disconnected.
+     */
+    var holdActiveCallCallback: (() -> Unit)? = null
 
     /**
      * Callback invoked when onAnswer() is triggered by the system (e.g. BT headset button).

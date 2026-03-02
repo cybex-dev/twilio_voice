@@ -1244,12 +1244,13 @@ class TVConnectionService : ConnectionService() {
                             return@let
                         }
                         
-                        // Null out onAnswerCallback BEFORE calling acceptInvite().
+                        // Null out onAnswerCallback and holdActiveCallCallback BEFORE calling acceptInvite().
                         // ACTION_ANSWER already handles notification management (cancelIncomingCallNotification,
                         // releaseWakeLock, showOngoingCallNotification, MainActivity launch).
                         // onAnswerCallback is only needed when the system triggers onAnswer() directly
                         // (e.g. BT headset button), bypassing ACTION_ANSWER entirely.
                         connection.onAnswerCallback = null
+                        connection.holdActiveCallCallback = null
                         connection.acceptInvite()
                         
                         // Clear pending call state now that the call has been answered.
@@ -1402,10 +1403,11 @@ class TVConnectionService : ConnectionService() {
                     
                     if (connection is TVCallInviteConnection) {
                         if (applicationContext.hasMicrophoneAccess()) {
-                            // Null out onAnswerCallback BEFORE calling acceptInvite().
+                            // Null out onAnswerCallback and holdActiveCallCallback BEFORE calling acceptInvite().
                             // This path already handles notification management above,
                             // so prevent duplicate work if onAnswer() fires from system.
                             connection.onAnswerCallback = null
+                            connection.holdActiveCallCallback = null
                             connection.acceptInvite()
                             clearPendingIncomingCall() // Clear pending state so future calls can come through
                             val callInvite = connection.callInvite
@@ -1483,10 +1485,11 @@ class TVConnectionService : ConnectionService() {
                     
                     if (connection is TVCallInviteConnection) {
                         if (applicationContext.hasMicrophoneAccess()) {
-                            // Null out onAnswerCallback BEFORE calling acceptInvite().
+                            // Null out onAnswerCallback and holdActiveCallCallback BEFORE calling acceptInvite().
                             // This path already handles notification management above,
                             // so prevent duplicate work if onAnswer() fires from system.
                             connection.onAnswerCallback = null
+                            connection.holdActiveCallCallback = null
                             connection.acceptInvite()
                             clearPendingIncomingCall() // Clear pending state so future calls can come through
                             val callInvite = connection.callInvite
@@ -2100,7 +2103,12 @@ class TVConnectionService : ConnectionService() {
                             remainingConn.toggleHold(false)
                             Log.d(TAG, "[onCreateIncomingConnection onDisconnected] Unholding remaining call $remainingHandle")
                         } else {
-                            sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_HELD_CALL_ENDED, callSid, connection.extras)
+                            // Remaining call is STATE_ACTIVE — do NOT send ACTION_HELD_CALL_ENDED.
+                            // The ended call was a RINGING call that was rejected (Call B), not a held call.
+                            // Sending ACTION_HELD_CALL_ENDED here would cause Flutter to incorrectly
+                            // process a "held call ended" event, and combined with the ACTION_REJECTED
+                            // logEvent, would cause Call A to disappear from the Flutter UI.
+                            Log.d(TAG, "[onCreateIncomingConnection onDisconnected] Remaining call $remainingHandle is ACTIVE (state=${remainingConn?.state}) — not sending ACTION_HELD_CALL_ENDED (rejected ringing call, not held call)")
                         }
                         bringMainActivityToFront()
                     }
@@ -2181,7 +2189,9 @@ class TVConnectionService : ConnectionService() {
                         if (remainingConn?.state == Connection.STATE_HOLDING) {
                             remainingConn.toggleHold(false)
                         } else {
-                            sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_HELD_CALL_ENDED, callSid, connection.extras)
+                            // Remaining call is STATE_ACTIVE — do NOT send ACTION_HELD_CALL_ENDED.
+                            // Same reasoning as onCreateIncomingConnection handler above.
+                            Log.d(TAG, "[createIncomingConnectionDirectly onDisconnected] Remaining call $remainingHandle is ACTIVE — not sending ACTION_HELD_CALL_ENDED")
                         }
                         bringMainActivityToFront()
                     }
@@ -2542,6 +2552,23 @@ class TVConnectionService : ConnectionService() {
             silenceRingtone()
         }
 
+        // Wire up holdActiveCallCallback for multi-call BT headset answer.
+        // When the system triggers Connection.onAnswer() directly (e.g. BT headset single-tap),
+        // this callback holds the currently active call before the new call is accepted.
+        // This mirrors ACTION_ANSWER_WITH_HOLD behavior.
+        if (connection is TVCallInviteConnection) {
+            connection.holdActiveCallCallback = {
+                val activeHandle = getActiveCallHandle()
+                if (activeHandle != null && activeHandle != callSid) {
+                    val activeConn = getConnection(activeHandle)
+                    if (activeConn != null && activeConn.state == Connection.STATE_ACTIVE) {
+                        activeConn.toggleHold(true)
+                        Log.d(TAG, "[holdActiveCallCallback-$callSid] Held active call $activeHandle before answering via BT headset")
+                    }
+                }
+            }
+        }
+
         // Wire up onAnswer callback for when the system triggers Connection.onAnswer()
         // directly (e.g. BT headset button press). In that case ACTION_ANSWER in
         // onStartCommand is NOT reached, so the incoming call notification stays visible.
@@ -2604,6 +2631,9 @@ class TVConnectionService : ConnectionService() {
                 } catch (e: Exception) {
                     Log.w(TAG, "[onAnswerCallback-$callSid] Could not handle post-answer flow: ${e.message}")
                 }
+
+                // 5. Clear call-waiting state (same as ACTION_ANSWER_WITH_HOLD)
+                clearCallWaitingState()
             }
         }
     }

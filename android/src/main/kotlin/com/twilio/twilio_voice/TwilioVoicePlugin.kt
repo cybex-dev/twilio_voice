@@ -2692,14 +2692,50 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             }
 
             TVNativeCallActions.ACTION_REJECTED -> {
-                logEvent("Call Rejected")
-                callSid = null
+                val rejectedHandle = intent.getStringExtra(TVBroadcastReceiver.EXTRA_CALL_HANDLE)
+                // Only clear callSid if the REJECTED call is actually the plugin's active call.
+                // When Call B is rejected while Call A is active, the plugin's callSid still
+                // refers to Call A — don't touch it. Otherwise Flutter's declined handler
+                // sees nativeActiveCall == null and incorrectly treats the held call as "stale",
+                // clearing the entire session — causing Call A to disappear from UI.
+                if (rejectedHandle != null && rejectedHandle != callSid) {
+                    // The rejected call is NOT the plugin's active call (e.g., Call B rejected
+                    // while Call A is active). Don't touch callSid and don't send logEvent to Flutter.
+                    // Sending "Call Rejected" would cause Flutter to process CallEvent.declined,
+                    // which (after heldCallEnded removes the held session) would clear all sessions
+                    // and cause Call A to disappear from the UI.
+                    Log.d(TAG, "handleBroadcastIntent: Call Rejected ($rejectedHandle) is not the active call ($callSid) - keeping callSid unchanged, suppressing logEvent")
+                } else {
+                    // The rejected call IS the plugin's active call — check for remaining calls
+                    val remainingHandle = TVConnectionService.getActiveCallHandle()
+                    if (remainingHandle != null) {
+                        Log.d(TAG, "handleBroadcastIntent: Call Rejected ($rejectedHandle), remaining call active - setting callSid=$remainingHandle")
+                        callSid = remainingHandle
+                    } else {
+                        Log.d(TAG, "handleBroadcastIntent: Call Rejected ($rejectedHandle), no remaining calls - clearing callSid")
+                        callSid = null
+                    }
+                    logEvent("Call Rejected")
+                }
             }
 
             TVNativeCallActions.ACTION_ABORT -> {
-                Log.d(TAG, "handleBroadcastIntent: Abort")
+                val abortedHandle = intent.getStringExtra(TVBroadcastReceiver.EXTRA_CALL_HANDLE)
+                Log.d(TAG, "handleBroadcastIntent: Abort (abortedHandle=$abortedHandle, callSid=$callSid)")
                 logEvent("", "Call Ended|${callSid ?: ""}")
-                callSid = null
+                // Same multi-call guard as ACTION_REJECTED: only clear callSid
+                // if the aborted call is the plugin's active call
+                if (abortedHandle != null && abortedHandle != callSid) {
+                    Log.d(TAG, "handleBroadcastIntent: Abort ($abortedHandle) is not the active call ($callSid) - keeping callSid unchanged")
+                } else {
+                    val remainingHandleAbort = TVConnectionService.getActiveCallHandle()
+                    if (remainingHandleAbort != null) {
+                        Log.d(TAG, "handleBroadcastIntent: Abort, remaining call active - setting callSid=$remainingHandleAbort")
+                        callSid = remainingHandleAbort
+                    } else {
+                        callSid = null
+                    }
+                }
             }
 
             TVNativeCallActions.ACTION_HOLD -> {
