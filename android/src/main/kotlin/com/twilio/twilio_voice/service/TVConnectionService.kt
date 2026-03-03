@@ -2747,6 +2747,9 @@ class TVConnectionService : ConnectionService() {
         super.onCreateOutgoingConnectionFailed(connectionManagerPhoneAccount, request)
         Log.e(TAG, "onCreateOutgoingConnectionFailed — system rejected placeCall()")
         
+        // Clear pending outgoing params — onCreateOutgoingConnection won't be called
+        pendingOutgoingParams = null
+        
         // Send call ended event to Flutter so the UI doesn't stay in a "calling" state
         sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, "", Bundle())
         
