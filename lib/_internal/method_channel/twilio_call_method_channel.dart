@@ -155,6 +155,11 @@ class MethodChannelTwilioCall extends TwilioCallPlatform {
   }
 
   @override
+  Future<bool?> showAudioRoutePicker() {
+    return _channel.invokeMethod('showAudioRoutePicker', <String, dynamic>{});
+  }
+
+  @override
   Future<bool?> connect({Map<String, dynamic>? extraOptions}) {
     _activeCall =
         ActiveCall(from: "", to: "", callDirection: CallDirection.outgoing);

@@ -96,6 +96,12 @@ abstract class TwilioCallPlatform extends SharedPlatformInterface {
   /// Gets the current audio route: 'earpiece', 'speaker', 'bluetooth', 'wired_headset'
   Future<String?> getAudioRoute();
 
+  /// Shows the native system audio route picker (iOS only).
+  /// This displays ALL audio output devices including BT devices connected
+  /// to other Apple devices in the same iCloud account.
+  /// Returns true if the picker was shown successfully.
+  Future<bool?> showAudioRoutePicker();
+
   /// Send digits to active call
   Future<bool?> sendDigits(String digits);
 
