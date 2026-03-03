@@ -83,6 +83,7 @@ class IncomingCallActivity : AppCompatActivity() {
         const val EXTRA_ACTIVE_CALLER_NAME = "EXTRA_ACTIVE_CALLER_NAME"
         const val EXTRA_ACTIVE_CALLER_NUMBER = "EXTRA_ACTIVE_CALLER_NUMBER"
         const val EXTRA_ACTIVE_CALL_HANDLE = "EXTRA_ACTIVE_CALL_HANDLE"
+        const val EXTRA_WAS_APP_IN_FOREGROUND = "EXTRA_WAS_APP_IN_FOREGROUND"
         private const val REQUEST_RECORD_AUDIO_PERMISSION = 200
 
         fun createIntent(context: Context, callInvite: CallInvite): Intent {
@@ -150,6 +151,13 @@ class IncomingCallActivity : AppCompatActivity() {
     // the keyguard is still engaged and the user hasn't authenticated.
     private var wasDeviceLockedOnCreate = false
     
+    // Tracks whether the main app (Flutter activity) was in the foreground when this
+    // IncomingCallActivity was created. Passed as an intent extra from TVConnectionService.
+    // Used to decide whether to bring the app back after decline:
+    // - true  → user was actively using the app → restore app to front after decline
+    // - false → app was backgrounded or device was locked → just dismiss quietly
+    private var wasAppInForegroundOnCreate = false
+    
     // Helper function to extract user number from Twilio format
     private fun extractUserNumber(input: String): String {
         val pattern = Regex("""user_number:([^\s:]+)""")
@@ -176,7 +184,7 @@ class IncomingCallActivity : AppCompatActivity() {
                 callHandled = true
                 releaseWakeLock()
                 android.util.Log.d(TAG, "callEndedReceiver: Call answered externally — dismissing IncomingCallActivity")
-                finishAndRemoveTask()
+                finish()
                 return
             }
             if (action == TVBroadcastReceiver.ACTION_CALL_ENDED) {
@@ -200,11 +208,16 @@ class IncomingCallActivity : AppCompatActivity() {
                 if (hasActiveCall) {
                     android.util.Log.d(TAG, "callEndedReceiver: Has active call, restoring active call UI")
                     launchMainActivityForActiveCall()
+                } else if (wasAppInForegroundOnCreate) {
+                    // App was in the foreground when this call came. Bring it back.
+                    android.util.Log.d(TAG, "callEndedReceiver: No active call, app was in foreground — restoring app to front")
+                    bringMainAppTaskToFront()
                 } else {
-                    android.util.Log.d(TAG, "callEndedReceiver: No active call, dismissing quietly without launching app")
+                    // App was backgrounded or device was locked — just dismiss quietly.
+                    android.util.Log.d(TAG, "callEndedReceiver: No active call, app was not in foreground — dismissing quietly")
                 }
                 
-                finishAndRemoveTask()
+                finish()
             }
         }
     }
@@ -328,6 +341,10 @@ class IncomingCallActivity : AppCompatActivity() {
         // After setShowWhenLocked, isKeyguardLocked will return false even though
         // the device is still locked. This cached value is used by isDeviceLocked().
         wasDeviceLockedOnCreate = isDeviceLockedOnCreate
+        // Read whether the main app was in the foreground when the call came.
+        // This is set by TVConnectionService.createIncomingCallNotification().
+        wasAppInForegroundOnCreate = intent.getBooleanExtra(EXTRA_WAS_APP_IN_FOREGROUND, false)
+        android.util.Log.d(TAG, "[ACT-$shortSid] wasDeviceLockedOnCreate=$wasDeviceLockedOnCreate, wasAppInForegroundOnCreate=$wasAppInForegroundOnCreate")
         if (isMiuiDevice() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && isDeviceLockedOnCreate) {
             try {
                 if (android.provider.Settings.canDrawOverlays(this)) {
@@ -787,7 +804,7 @@ class IncomingCallActivity : AppCompatActivity() {
                 // Store pending data and finish immediately. User unlocks normally.
                 android.util.Log.d(TAG, "handleAnswerFromNotification: Device is locked - storing pending call data and finishing activity")
                 storePendingCallDataForMainActivity()
-                finishAndRemoveTask()
+                finish()
                 return
             } else {
                 // UNLOCKED FLOW: Dismiss keyguard (for non-secure lock) and launch MainActivity.
@@ -825,7 +842,7 @@ class IncomingCallActivity : AppCompatActivity() {
             android.util.Log.e(TAG, "handleAnswerFromNotification: sid is NULL - cannot answer call!")
         }
         android.util.Log.d(TAG, "handleAnswerFromNotification: COMPLETED - finishing activity")
-        finishAndRemoveTask()
+        finish()
     }
 
     @SuppressLint("WakelockTimeout")
@@ -1406,7 +1423,7 @@ class IncomingCallActivity : AppCompatActivity() {
         stopRinging()
         if (callHandled) {
             android.util.Log.w(TAG, "answerCallWithHold: Call already handled, ignoring")
-            finishAndRemoveTask()
+            finish()
             return
         }
         
@@ -1441,14 +1458,14 @@ class IncomingCallActivity : AppCompatActivity() {
             // Use call-waiting variant that doesn't destroy Flutter activity
             launchMainActivityForCallWaiting()
         }
-        finishAndRemoveTask()
+        finish()
     }
     
     private fun answerCallWithEndFirst() {
         stopRinging()
         if (callHandled) {
             android.util.Log.w(TAG, "answerCallWithEndFirst: Call already handled, ignoring")
-            finishAndRemoveTask()
+            finish()
             return
         }
         
@@ -1480,7 +1497,7 @@ class IncomingCallActivity : AppCompatActivity() {
             // Use call-waiting variant that doesn't destroy Flutter activity
             launchMainActivityForCallWaiting()
         }
-        finishAndRemoveTask()
+        finish()
     }
 
     private fun answerCall() {
@@ -1490,7 +1507,7 @@ class IncomingCallActivity : AppCompatActivity() {
         // Idempotency check - prevent double handling
         if (callHandled) {
             android.util.Log.w(TAG, "answerCall: Call already handled, ignoring")
-            finishAndRemoveTask()
+            finish()
             return
         }
         
@@ -1595,7 +1612,7 @@ class IncomingCallActivity : AppCompatActivity() {
                 android.util.Log.d(TAG, "proceedWithAnswer: Device is locked - storing pending call data and finishing activity")
                 android.util.Log.d(TAG, "proceedWithAnswer: Call audio is connected via foreground service. User will unlock normally and MainActivity.onResume() will handle navigation.")
                 storePendingCallDataForMainActivity()
-                finishAndRemoveTask()
+                finish()
                 return
             } else {
                 // UNLOCKED FLOW: Device is not locked — immediately dismiss keyguard
@@ -1633,7 +1650,7 @@ class IncomingCallActivity : AppCompatActivity() {
             android.util.Log.e(TAG, "proceedWithAnswer: callSid is null - cannot answer call!")
         }
         android.util.Log.d(TAG, "proceedWithAnswer: Finishing IncomingCallActivity")
-        finishAndRemoveTask()
+        finish()
     }
     
     /**
@@ -1675,7 +1692,7 @@ class IncomingCallActivity : AppCompatActivity() {
         // Idempotency check - prevent double handling
         if (callHandled) {
             android.util.Log.w(TAG, "declineCall: Call already handled, ignoring")
-            finishAndRemoveTask()
+            finish()
             return
         }
         callHandled = true
@@ -1707,13 +1724,18 @@ class IncomingCallActivity : AppCompatActivity() {
             // Only launch main activity if there's an active call that needs its UI restored
             android.util.Log.d(TAG, "declineCall: Has active call, launching main activity to restore call UI")
             launchMainActivityForActiveCall()
+        } else if (wasAppInForegroundOnCreate) {
+            // The app was in the foreground when this call came. Since IncomingCallActivity
+            // runs in its own task (singleInstance + taskAffinity=""), finish() alone would
+            // send the user to the home screen instead of back to the app. Bring it back.
+            android.util.Log.d(TAG, "declineCall: No active call, app was in foreground — restoring app to front")
+            bringMainAppTaskToFront()
         } else {
-            // No active call — just dismiss quietly. Don't open the app.
-            // The user declined the call, so they should return to wherever they were
-            // (lock screen, home screen, or another app).
-            android.util.Log.d(TAG, "declineCall: No active call, dismissing quietly without launching app")
+            // App was backgrounded or device was locked — just dismiss quietly.
+            // User returns to wherever they were (home screen or lock screen).
+            android.util.Log.d(TAG, "declineCall: No active call, app was not in foreground — dismissing quietly")
         }
-        finishAndRemoveTask()
+        finish()
     }
 
     /**
@@ -1729,6 +1751,24 @@ class IncomingCallActivity : AppCompatActivity() {
                        Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
             startActivity(it)
             android.util.Log.d(TAG, "launchMainActivityForActiveCall: Brought main activity to front for active call - handle=$activeCallHandle")
+        }
+    }
+
+    /**
+     * Bring the main app's task back to the foreground without creating a new activity.
+     * Used when IncomingCallActivity (which runs in its own singleInstance task) is being
+     * dismissed after a decline, and the user was previously using the app (device was unlocked).
+     * Without this, finish() would send the user to the home screen since these are separate tasks.
+     */
+    private fun bringMainAppTaskToFront() {
+        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+        launchIntent?.let {
+            it.flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                       Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                       Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+            // Don't pass any extras — we just want to bring the existing task to front
+            startActivity(it)
+            android.util.Log.d(TAG, "bringMainAppTaskToFront: Restored main app task to foreground")
         }
     }
 
@@ -1749,7 +1789,7 @@ class IncomingCallActivity : AppCompatActivity() {
             // Store pending data and finish immediately. User unlocks normally.
             android.util.Log.d(TAG, "launchMainActivityForCallWaiting: Device is locked - storing pending call data and finishing activity")
             storePendingCallDataForMainActivity()
-            finishAndRemoveTask()
+            finish()
             return
         }
         

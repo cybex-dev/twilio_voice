@@ -1,6 +1,7 @@
 package com.twilio.twilio_voice.service
 
 import android.annotation.SuppressLint
+import android.app.ActivityManager
 import android.app.KeyguardManager
 import android.app.Notification
 import android.app.NotificationChannel
@@ -3472,6 +3473,25 @@ class TVConnectionService : ConnectionService() {
             .joinToString("") { it.first().uppercase() }
     }
 
+    /**
+     * Check if the main app (Flutter activity) is currently in the foreground.
+     * Uses RunningAppProcessInfo to determine if our process has IMPORTANCE_FOREGROUND,
+     * which means the user is actively viewing the app.
+     * This is used to decide whether IncomingCallActivity should bring the app back
+     * to the foreground after a decline (only if the user was actually using the app).
+     */
+    private fun isAppInForeground(): Boolean {
+        val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+        val appProcesses = activityManager?.runningAppProcesses ?: return false
+        val myPid = android.os.Process.myPid()
+        for (process in appProcesses) {
+            if (process.pid == myPid) {
+                return process.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
+            }
+        }
+        return false
+    }
+
     private fun createIncomingCallNotification(callInvite: CallInvite): Notification {
         val shortSid = callInvite.callSid.takeLast(6)
         Log.d(TAG, "[SVC-$shortSid] ┌─ createIncomingCallNotification ────────────────────┐")
@@ -3482,6 +3502,12 @@ class TVConnectionService : ConnectionService() {
         // Use unique request code to avoid PendingIntent caching
         val fullScreenRequestCode = (callInvite.callSid.hashCode() and 0x7FFFFFFF) % 10000 + 1000
         val fullScreenIntent = IncomingCallActivity.createIntent(applicationContext, callInvite)
+        
+        // Check if the main app is currently in the foreground.
+        // This tells IncomingCallActivity whether to bring the app back after decline.
+        val isAppInForeground = isAppInForeground()
+        fullScreenIntent.putExtra(IncomingCallActivity.EXTRA_WAS_APP_IN_FOREGROUND, isAppInForeground)
+        Log.d(TAG, "[SVC-$shortSid] │ wasAppInForeground=$isAppInForeground")
         
         // IMPORTANT: Include active call extras in fullScreenIntent so that if the system
         // fires the fullScreenIntent (e.g. lock screen), the IncomingCallActivity knows
