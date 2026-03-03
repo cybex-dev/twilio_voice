@@ -28,6 +28,7 @@ import com.twilio.twilio_voice.types.CallAudioStateExtension.copyWith
 import com.twilio.twilio_voice.types.CallDirection
 import com.twilio.twilio_voice.types.CallExceptionExtension.toBundle
 import com.twilio.twilio_voice.types.CompletionHandler
+import com.twilio.twilio_voice.types.ContextExtension.hasMicrophoneAccess
 import com.twilio.twilio_voice.types.TVNativeCallActions
 import com.twilio.twilio_voice.types.TVNativeCallEvents
 import java.util.concurrent.ExecutorService
@@ -58,6 +59,25 @@ class TVCallInviteConnection(
 
  override fun onAnswer() {
     Log.d(TAG, "onAnswer: CALLED — source could be UI button, BT headset button, or system. State=${state}, callSid=${callInvite.callSid}")
+
+    // CRITICAL: Check microphone permission BEFORE calling super.onAnswer() or callInvite.accept().
+    // 1. super.onAnswer() tells TelecomManager "call is being answered" — transitions state
+    //    away from RINGING, which kills the incoming call UI.
+    // 2. callInvite.accept() crashes with a hard native crash if RECORD_AUDIO is missing.
+    // If no mic permission: silently ignore the BT answer attempt. The call keeps ringing,
+    // the full-screen IncomingCallActivity stays visible, and the user can tap the on-screen
+    // Answer button which triggers IncomingCallActivity's own mic permission request flow
+    // (native Android dialog → on grant → auto-answer).
+    if (!context.hasMicrophoneAccess()) {
+        Log.e(TAG, "onAnswer: RECORD_AUDIO permission NOT granted — ignoring BT/system answer")
+        Log.e(TAG, "onAnswer: Call stays in RINGING state. User must answer from on-screen UI (which requests mic permission)")
+        // Do NOT call super.onAnswer() — keep the Connection in RINGING state.
+        // Do NOT call callInvite.accept() — that would crash.
+        // The IncomingCallActivity is already showing and will handle permission + answer.
+        return
+    }
+
+    // Permission granted — now safe to tell the system we're answering
     super.onAnswer()
 
     // If there's an active call (Call A), hold it before answering this new call (Call B).

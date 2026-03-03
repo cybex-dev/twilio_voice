@@ -7,7 +7,9 @@ import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.drawable.Icon
+import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.provider.Settings
 import java.util.Locale
 import android.telecom.PhoneAccount
@@ -325,5 +327,37 @@ object TelecomManagerExtension {
         // For self-managed ConnectionService, we track our own calls directly
         return if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.O) isInCall
                else TVConnectionService.hasActiveCalls()
+    }
+
+    /**
+     * Place an outgoing call through TelecomManager for proper system integration.
+     * This gives us: system-managed audio routing, Bluetooth HFP integration,
+     * car Bluetooth display, and consistent callAudioState management.
+     * The system will call onCreateOutgoingConnection() where we create the Connection.
+     *
+     * @param ctx application context
+     * @param outgoingParams Bundle containing EXTRA_TOKEN, EXTRA_TO, EXTRA_FROM,
+     *        EXTRA_CALLER_NAME, and EXTRA_OUTGOING_PARAMS
+     * @return true if placeCall succeeded, false on failure
+     */
+    fun TelecomManager.placeOutgoingCall(ctx: Context, outgoingParams: Bundle): Boolean {
+        val phoneAccountHandle = ensurePhoneAccountRegistered(ctx)
+
+        val extras = Bundle().apply {
+            putBundle(TVConnectionService.EXTRA_OUTGOING_PARAMS, outgoingParams)
+            putParcelable(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, phoneAccountHandle)
+        }
+
+        return try {
+            placeCall(Uri.fromParts(PhoneAccount.SCHEME_TEL, "outgoing", null), extras)
+            Log.d("TelecomManager", "placeOutgoingCall: placeCall() succeeded — onCreateOutgoingConnection will fire")
+            true
+        } catch (e: SecurityException) {
+            Log.e("TelecomManager", "placeOutgoingCall: SecurityException — ${e.message}", e)
+            false
+        } catch (e: Exception) {
+            Log.e("TelecomManager", "placeOutgoingCall: Failed — ${e.message}", e)
+            false
+        }
     }
 }
