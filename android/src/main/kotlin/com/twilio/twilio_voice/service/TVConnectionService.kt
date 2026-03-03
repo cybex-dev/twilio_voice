@@ -1186,13 +1186,11 @@ class TVConnectionService : ConnectionService() {
                                             // Do NOT send ACTION_HELD_CALL_ENDED — the held call is still alive.
                                             remainingConn.toggleHold(false)
                                             Log.d(TAG, "[ACTION_ANSWER onDisconnected] Unholding remaining call $remainingHandle")
-                                            bringMainActivityToFront()
                                         } else {
                                             showOngoingCallNotification(remainingHandle, remainingNumber)
                                             // The remaining call is NOT on hold → the HELD call ended.
                                             // Notify Flutter to clear the held call banner.
                                             sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_HELD_CALL_ENDED, callSid, newConnection.extras)
-                                            bringMainActivityToFront()
                                         }
                                     }
                                 }
@@ -1381,9 +1379,6 @@ class TVConnectionService : ConnectionService() {
                                     // Re-show ongoing notification and bring back call UI for the held call
                                     val heldNumber = getConnectionDisplayName(heldConnection)
                                     showOngoingCallNotification(activeHandle, heldNumber)
-                                    // Bring back the main activity to show the held call's UI
-                                    // Use bringMainActivityToFront() to avoid resetting Flutter call state
-                                    bringMainActivityToFront()
                                     // Don't send ACTION_CALL_ENDED to Flutter - the held call is still active
                                     // Flutter would close the call screen if it received "Call Ended"
                                     Log.d(TAG, "[ACTION_ANSWER_WITH_HOLD] Skipping ACTION_CALL_ENDED broadcast - held call still active")
@@ -1697,8 +1692,9 @@ class TVConnectionService : ConnectionService() {
                                     }
                                 }
                                 
-                                // Bring back the main activity to show the remaining call's UI
-                                bringMainActivityToFront()
+                                // Don't bring the app to front when a call ends.
+                                // The ongoing call notification is sufficient for the user to return.
+                                // This matches WhatsApp behavior where the app never auto-reopens on call end.
                             }
                         }
                     } else {
@@ -1838,7 +1834,6 @@ class TVConnectionService : ConnectionService() {
                                         // Notify Flutter to clear the held call banner.
                                         sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_HELD_CALL_ENDED, call.sid ?: "", connection.extras)
                                     }
-                                    bringMainActivityToFront()
                                 }
                             }
                         }
@@ -2110,7 +2105,7 @@ class TVConnectionService : ConnectionService() {
                             // logEvent, would cause Call A to disappear from the Flutter UI.
                             Log.d(TAG, "[onCreateIncomingConnection onDisconnected] Remaining call $remainingHandle is ACTIVE (state=${remainingConn?.state}) — not sending ACTION_HELD_CALL_ENDED (rejected ringing call, not held call)")
                         }
-                        bringMainActivityToFront()
+                        // Don't bring app to front when a call ends — notification is sufficient.
                     }
                 }
             }
@@ -2193,7 +2188,7 @@ class TVConnectionService : ConnectionService() {
                             // Same reasoning as onCreateIncomingConnection handler above.
                             Log.d(TAG, "[createIncomingConnectionDirectly onDisconnected] Remaining call $remainingHandle is ACTIVE — not sending ACTION_HELD_CALL_ENDED")
                         }
-                        bringMainActivityToFront()
+                        // Don't bring app to front when a call ends — notification is sufficient.
                     }
                 }
             }
@@ -2314,7 +2309,6 @@ class TVConnectionService : ConnectionService() {
                                 remainingConn.toggleHold(false)
                                 Log.d(TAG, "[onCallInitializingDisconnected] Unholding remaining call $remainingHandle")
                             }
-                            bringMainActivityToFront()
                         }
                     }
                 }
@@ -2419,7 +2413,6 @@ class TVConnectionService : ConnectionService() {
                         showOngoingCallNotification(remainingHandle, remainingNumber)
                         remainingConn.toggleHold(false)
                         Log.d(TAG, "[onDisconnect] Unholding remaining call $remainingHandle")
-                        bringMainActivityToFront()
                     } else {
                         // Remaining call is ACTIVE — the HELD call disconnected.
                         // Send ACTION_HELD_CALL_ENDED so Flutter clears the
@@ -2429,7 +2422,6 @@ class TVConnectionService : ConnectionService() {
                             putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callSid)
                         })
                         showOngoingCallNotification(remainingHandle, remainingNumber)
-                        bringMainActivityToFront()
                     }
                 }
             }
@@ -2505,7 +2497,6 @@ class TVConnectionService : ConnectionService() {
                             showOngoingCallNotification(remainingHandle, remainingNumber)
                             remainingConn.toggleHold(false)
                             Log.d(TAG, "[onCallState] Unholding remaining call $remainingHandle")
-                            bringMainActivityToFront()
                         } else {
                             // Remaining call is ACTIVE — the HELD call disconnected.
                             // Send ACTION_HELD_CALL_ENDED so Flutter clears the
@@ -2515,7 +2506,6 @@ class TVConnectionService : ConnectionService() {
                                 putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callSid)
                             })
                             showOngoingCallNotification(remainingHandle, remainingNumber)
-                            bringMainActivityToFront()
                         }
                     }
                 }
