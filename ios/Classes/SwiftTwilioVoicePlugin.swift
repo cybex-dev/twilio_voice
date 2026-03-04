@@ -438,7 +438,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                 let actualSystemRoute = self.getActualSystemAudioRoute()
                 
                 self.sendPhoneCallEvents(
-                    description: "LOG|handleAudioRouteChange categoryChange: desiredBT=\(self.desiredBluetoothState), actualSystemRoute=\(actualSystemRoute), btInRoute=\(btInRoute), btAvailable=\(isBluetoothAvailable)",
+                    description: "LOG|handleAudioRouteChange categoryChange: desiredBT=\(self.desiredBluetoothState), desiredSpeaker=\(self.desiredSpeakerState), actualSystemRoute=\(actualSystemRoute), btInRoute=\(btInRoute), btAvailable=\(isBluetoothAvailable)",
                     isError: false
                 )
 
@@ -452,6 +452,22 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                         self.forceEarpieceRoute()
                         self.isChangingAudioRoute = false
                     }
+                }
+
+                // Sync desiredSpeakerState with the actual system route.
+                // When the system picker fires an override, iOS may report a
+                // TRANSITIONAL route (builtInSpeaker) even when user picked
+                // "iPhone" (earpiece). The override handler sets desiredSpeakerState=true
+                // and schedules a deferred correction, but a categoryChange event
+                // can arrive BEFORE the correction fires and re-broadcast the wrong
+                // route. Fix: if the actual system route is earpiece but we think
+                // it's speaker, correct desiredSpeakerState here too.
+                if self.desiredSpeakerState && actualSystemRoute == "earpiece" {
+                    self.sendPhoneCallEvents(
+                        description: "LOG|categoryChange: correcting desiredSpeakerState (was true but actualSystemRoute=earpiece)",
+                        isError: false
+                    )
+                    self.desiredSpeakerState = false
                 }
 
                 let currentRoute = self.getAudioRoute()
@@ -3220,6 +3236,42 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                 return
             }
 
+            // CRITICAL FIX: Verify BT actually made it into currentRoute.outputs.
+            // If desiredBluetoothState=true but BT is only in availableInputs (not
+            // in currentRoute.outputs), it means applyBluetoothRoute() silently
+            // failed. This happens when AirPods are connected to iPhone but actively
+            // in use by Mac (iCloud automatic switching) — iOS can't steal them.
+            // In this case, reset desiredBluetoothState and report the ACTUAL route.
+            if self.desiredBluetoothState {
+                let audioSession = AVAudioSession.sharedInstance()
+                let route = audioSession.currentRoute
+                var btInOutputs = false
+                for output in route.outputs {
+                    if output.portType == .bluetoothHFP || output.portType == .bluetoothA2DP || output.portType == .bluetoothLE {
+                        btInOutputs = true
+                        break
+                    }
+                }
+                // Also check inputs — during CallKit, BT mic might be the indicator
+                if !btInOutputs {
+                    for input in route.inputs {
+                        if input.portType == .bluetoothHFP || input.portType == .bluetoothA2DP || input.portType == .bluetoothLE {
+                            btInOutputs = true
+                            break
+                        }
+                    }
+                }
+
+                if !btInOutputs {
+                    self.sendPhoneCallEvents(
+                        description: "LOG|sendDefinitiveAudioRoute: desiredBluetoothState=true but BT NOT in currentRoute outputs/inputs after \(delay)s — applyBluetoothRoute silently failed (AirPods may be in use by another device). Resetting desiredBluetoothState.",
+                        isError: false
+                    )
+                    self.desiredBluetoothState = false
+                    self.cachedBluetoothAvailable = false
+                }
+            }
+
             // Use clean BT check — during active CallKit call this will trust
             // availableInputs (non-destructive path) instead of running the
             // destructive checkBluetoothWithCategoryChange() test
@@ -3554,11 +3606,21 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     }
     
     public func provider(_ provider: CXProvider, perform action: CXSetMutedCallAction) {
-        self.sendPhoneCallEvents(description: "LOG|provider:performSetMutedAction: uuid=\(action.callUUID)", isError: false)
+        self.sendPhoneCallEvents(description: "LOG|provider:performSetMutedAction: uuid=\(action.callUUID) isMuted=\(action.isMuted)", isError: false)
         
         if let call = self.calls[action.callUUID] {
             call.isMuted = action.isMuted
             action.fulfill()
+            
+            // Notify Dart of mute state change.
+            // This is critical for mute/unmute triggered via CallKit (e.g., AirPods
+            // squeeze, Control Center, CarPlay, lock screen) — those go through
+            // CXSetMutedCallAction, NOT the toggleMute method channel. Without this,
+            // the Twilio SDK call gets muted but the Dart UI never updates.
+            self.sendPhoneCallEvents(
+                description: action.isMuted ? "Mute" : "Unmute",
+                isError: false
+            )
         } else {
             action.fail()
         }
