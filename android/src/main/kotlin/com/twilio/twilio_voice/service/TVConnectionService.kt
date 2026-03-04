@@ -738,6 +738,37 @@ class TVConnectionService : ConnectionService() {
      * Returns "speaker", "bluetooth", or "earpiece".
      * Called BEFORE a connection disconnects so we can restore the route later.
      */
+    /**
+     * Plays the call-end tone if no other calls remain.
+     * Uses the last known audio route from the disconnecting connection (captured before
+     * releaseAudioFocus reset it), so the tone plays through whatever device was active.
+     * @param audioRoute The audio route snapshot ("speaker", "bluetooth", "earpiece").
+     *                   If null, falls back to detecting current route (may be stale after release).
+     */
+    private fun playCallEndToneIfFinalCall(audioRoute: String? = null) {
+        if (hasActiveCalls()) {
+            Log.d(TAG, "[CallEndTone] Other calls still active, skipping call end tone")
+            return
+        }
+        try {
+            // Use provided route snapshot, or try to get from the most recently disconnected connection,
+            // or fall back to detecting current route
+            val route = audioRoute 
+                ?: run {
+                    val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                    if (am != null) detectCurrentAudioRoute(am) else "earpiece"
+                }
+            val useSpeaker = route == "speaker"
+            val useBluetooth = route == "bluetooth"
+            Log.d(TAG, "[CallEndTone] Playing call end tone (route=$route, speaker=$useSpeaker, bluetooth=$useBluetooth)")
+
+            val callEndToneManager = com.twilio.twilio_voice.audio.CallEndToneManager.getInstance(applicationContext)
+            callEndToneManager.playCallEndTone(useSpeaker, useBluetooth)
+        } catch (e: Exception) {
+            Log.e(TAG, "[CallEndTone] Failed to play call end tone: ${e.message}")
+        }
+    }
+
     private fun detectCurrentAudioRoute(am: AudioManager): String {
         // Android 12+: use communicationDevice for accurate detection
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -1591,13 +1622,12 @@ class TVConnectionService : ConnectionService() {
                         // ── Snapshot the audio route before disconnect resets it ──
                         // forceDisconnectWithLogging → releaseAudioFocus clears speaker,
                         // stops BT SCO, and resets MODE to NORMAL.  We snapshot the route
-                        // here so we can restore it on the remaining connection.
-                        if (otherCallsRemain) {
-                            val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-                            if (am != null) {
-                                savedAudioRoute = detectCurrentAudioRoute(am)
-                                Log.d(TAG, "[Decline] Saved audio route before disconnect: $savedAudioRoute")
-                            }
+                        // here so we can restore it on the remaining connection (multi-call)
+                        // or to play the call-end tone through the correct device (single-call).
+                        val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                        if (am != null) {
+                            savedAudioRoute = detectCurrentAudioRoute(am)
+                            Log.d(TAG, "[Decline] Saved audio route before disconnect: $savedAudioRoute")
                         }
                         
                         connection.forceDisconnectWithLogging()
@@ -1684,6 +1714,16 @@ class TVConnectionService : ConnectionService() {
                         }
                     } else {
                         // No more active calls - clean up everything
+                        // Play call-end tone using the saved audio route (captured before disconnect reset it)
+                        try {
+                            val useSpeaker = savedAudioRoute == "speaker"
+                            val useBluetooth = savedAudioRoute == "bluetooth"
+                            Log.d(TAG, "[Decline] Playing call end tone (savedRoute=$savedAudioRoute, speaker=$useSpeaker, bluetooth=$useBluetooth)")
+                            val callEndToneManager = com.twilio.twilio_voice.audio.CallEndToneManager.getInstance(applicationContext)
+                            callEndToneManager.playCallEndTone(useSpeaker, useBluetooth)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "[Decline] Failed to play call end tone: ${e.message}")
+                        }
                         cancelOngoingCallNotification()
                         stopForegroundService()
                         stopSelfSafe()
@@ -2382,6 +2422,7 @@ class TVConnectionService : ConnectionService() {
             }
             // Only stop service if no other calls remain
             if (!hasActiveCalls()) {
+                playCallEndToneIfFinalCall(connection.lastAudioRouteBeforeRelease)
                 clearCallWaitingState()
                 stopForegroundService()
                 stopSelfSafe()
@@ -2461,6 +2502,7 @@ class TVConnectionService : ConnectionService() {
                 }
                 // Only stop service if no other calls remain
                 if (!hasActiveCalls()) {
+                    playCallEndToneIfFinalCall(connection.lastAudioRouteBeforeRelease)
                     clearCallWaitingState()
                     stopForegroundService()
                     stopSelfSafe()

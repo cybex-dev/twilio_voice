@@ -118,6 +118,9 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     // MARK: Ringback Tone Management
     private var ringbackPlayer: AVAudioPlayer?
     private var isPlayingRingback: Bool = false
+    // MARK: Call End Tone Management
+    private var callEndPlayer: AVAudioPlayer?
+    private var isPlayingCallEndTone: Bool = false
     // Transitional state: set to true when we've removed .allowBluetooth from category
     // options (to prevent auto-switch) but BT is still physically connected.
     // During this window, isBluetoothAvailableClean() cannot see the BT device because
@@ -1668,6 +1671,13 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             completion(false)
         }
         
+        // Play call-end tone BEFORE callDisconnected() resets audio state,
+        // but only if this is the final call ending.
+        let isFinalCall = self.calls.count <= 1
+        if isFinalCall {
+            playCallEndTone()
+        }
+        
         if let uuid = call.uuid {
             callKitProvider.reportCall(with: uuid, endedAt: Date(), reason: CXCallEndedReason.failed)
             callDisconnected(uuid: uuid)
@@ -1708,6 +1718,13 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         // active call. We need the original value to correctly determine whether
         // the ending call was the active call (Call B) or the held call (Call A).
         let wasActiveCallUUID = self.activeCallUUID
+
+        // Play call-end tone BEFORE callDisconnected() resets audio state,
+        // but only if this is the final call ending.
+        let isFinalCall = self.calls.count <= 1
+        if isFinalCall {
+            playCallEndTone()
+        }
 
         if let uuid = call.uuid {
             callDisconnected(uuid: uuid)
@@ -3083,10 +3100,15 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     // MARK: - AVAudioPlayerDelegate
 
     public func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        // This shouldn't be called since we loop indefinitely, but handle it just in case
+        // Handle ringback player
         if player == ringbackPlayer && !flag {
             self.sendPhoneCallEvents(description: "LOG|Ringback playback finished unexpectedly", isError: false)
             isPlayingRingback = false
+        }
+        // Handle call-end tone player — normal completion (played once)
+        if player == callEndPlayer {
+            self.sendPhoneCallEvents(description: "LOG|Call end tone finished playing", isError: false)
+            stopCallEndTone()
         }
     }
 
@@ -3095,6 +3117,126 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             self.sendPhoneCallEvents(description: "LOG|Ringback decode error: \(error?.localizedDescription ?? "unknown")", isError: false)
             stopRingbackTone()
         }
+        if player == callEndPlayer {
+            self.sendPhoneCallEvents(description: "LOG|Call end tone decode error: \(error?.localizedDescription ?? "unknown")", isError: false)
+            stopCallEndTone()
+        }
+    }
+
+    // MARK: - Call End Tone Management
+
+    /// Plays a short call-end tone to inform the user that the call has ended.
+    /// Respects the current audio output device (speaker, bluetooth, earpiece).
+    /// Only plays once (not looped). Called only when the final call ends.
+    private func playCallEndTone() {
+        guard !isPlayingCallEndTone else {
+            self.sendPhoneCallEvents(description: "LOG|Call end tone already playing", isError: false)
+            return
+        }
+
+        // Stop ringback if still playing (shouldn't be, but just in case)
+        stopRingbackTone()
+
+        guard let callEndURL = findCallEndAudioFile() else {
+            self.sendPhoneCallEvents(description: "LOG|Call end audio file not found", isError: false)
+            return
+        }
+
+        do {
+            // Snapshot current audio route preferences BEFORE callDisconnected resets them
+            let snapshotSpeaker = desiredSpeakerState
+            let snapshotBluetooth = desiredBluetoothState
+
+            // Configure audio session — use the snapshot so the tone plays through
+            // whatever device was active during the call
+            let audioSession = AVAudioSession.sharedInstance()
+            var categoryOptions: AVAudioSession.CategoryOptions = [.allowBluetooth, .allowBluetoothA2DP]
+            if snapshotSpeaker {
+                categoryOptions.insert(.defaultToSpeaker)
+            }
+            try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: categoryOptions)
+            try audioSession.setActive(true)
+
+            if snapshotSpeaker {
+                try audioSession.overrideOutputAudioPort(.speaker)
+            } else if snapshotBluetooth {
+                try audioSession.overrideOutputAudioPort(.none)
+                if let availableInputs = audioSession.availableInputs {
+                    for input in availableInputs {
+                        if input.portType == .bluetoothHFP || input.portType == .bluetoothA2DP || input.portType == .bluetoothLE {
+                            try audioSession.setPreferredInput(input)
+                            break
+                        }
+                    }
+                }
+            } else {
+                try audioSession.overrideOutputAudioPort(.none)
+            }
+
+            // Create and configure the audio player
+            callEndPlayer = try AVAudioPlayer(contentsOf: callEndURL)
+            callEndPlayer?.delegate = self
+            callEndPlayer?.numberOfLoops = 0 // Play once
+            callEndPlayer?.volume = 1.0
+
+            callEndPlayer?.prepareToPlay()
+            callEndPlayer?.play()
+            isPlayingCallEndTone = true
+
+            self.sendPhoneCallEvents(description: "LOG|Started call end tone, speaker: \(snapshotSpeaker), bluetooth: \(snapshotBluetooth)", isError: false)
+        } catch {
+            self.sendPhoneCallEvents(description: "LOG|Failed to play call end tone: \(error.localizedDescription)", isError: false)
+            stopCallEndTone()
+        }
+    }
+
+    /// Stops the call-end tone and cleans up.
+    private func stopCallEndTone() {
+        guard isPlayingCallEndTone || callEndPlayer != nil else { return }
+
+        callEndPlayer?.stop()
+        callEndPlayer = nil
+        isPlayingCallEndTone = false
+
+        self.sendPhoneCallEvents(description: "LOG|Stopped call end tone", isError: false)
+    }
+
+    /// Finds the call-end audio file in the plugin bundle.
+    /// - Returns: URL to the call_end audio file, or nil if not found.
+    private func findCallEndAudioFile() -> URL? {
+        let supportedExtensions = ["mp3", "wav", "m4a", "caf", "aiff"]
+        let fileName = "call_end"
+
+        // First, try to find in the main bundle (for when the file is in the app)
+        for ext in supportedExtensions {
+            if let url = Bundle.main.url(forResource: fileName, withExtension: ext) {
+                self.sendPhoneCallEvents(description: "LOG|Found call_end in main bundle: \(url.lastPathComponent)", isError: false)
+                return url
+            }
+        }
+
+        // Try to find in the plugin's bundle
+        let pluginBundle = Bundle(for: SwiftTwilioVoicePlugin.self)
+        for ext in supportedExtensions {
+            if let url = pluginBundle.url(forResource: fileName, withExtension: ext) {
+                self.sendPhoneCallEvents(description: "LOG|Found call_end in plugin bundle: \(url.lastPathComponent)", isError: false)
+                return url
+            }
+        }
+
+        // Try to find in a specific Assets folder within the plugin bundle
+        if let resourcePath = pluginBundle.resourcePath {
+            let assetsPath = (resourcePath as NSString).appendingPathComponent("Assets")
+            for ext in supportedExtensions {
+                let filePath = (assetsPath as NSString).appendingPathComponent("\(fileName).\(ext)")
+                if FileManager.default.fileExists(atPath: filePath) {
+                    self.sendPhoneCallEvents(description: "LOG|Found call_end in Assets: \(filePath)", isError: false)
+                    return URL(fileURLWithPath: filePath)
+                }
+            }
+        }
+
+        return nil
     }
 
     // MARK: CXProviderDelegate

@@ -196,6 +196,12 @@ open class TVCallConnection(
     private var audioFocusRequest: AudioFocusRequest? = null
     private var hasAudioFocus = false
     
+    // Snapshot of the audio route captured just before releaseAudioFocus() resets it.
+    // Used by TVConnectionService to play the call-end tone through the correct device.
+    @Volatile
+    var lastAudioRouteBeforeRelease: String = "earpiece"
+        private set
+    
     // Handler for audio device callbacks
     private val mainHandler = Handler(Looper.getMainLooper())
     
@@ -612,6 +618,32 @@ open class TVCallConnection(
     protected fun releaseAudioFocus() {
         val am = audioManager ?: return
         Log.d(TAG, "releaseAudioFocus: Releasing audio focus")
+        
+        // Snapshot the current audio route BEFORE resetting anything.
+        // TVConnectionService uses this to play the call-end tone through the correct device.
+        lastAudioRouteBeforeRelease = when {
+            am.isBluetoothScoOn -> "bluetooth"
+            am.isSpeakerphoneOn -> "speaker"
+            else -> {
+                // Android 12+: check communication device
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    try {
+                        val commDevice = am.communicationDevice
+                        when (commDevice?.type) {
+                            AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> "speaker"
+                            AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+                            AudioDeviceInfo.TYPE_BLE_HEADSET,
+                            AudioDeviceInfo.TYPE_HEARING_AID,
+                            AudioDeviceInfo.TYPE_BLE_SPEAKER -> "bluetooth"
+                            else -> "earpiece"
+                        }
+                    } catch (e: Exception) {
+                        "earpiece"
+                    }
+                } else "earpiece"
+            }
+        }
+        Log.d(TAG, "releaseAudioFocus: Snapshot audio route before release: $lastAudioRouteBeforeRelease")
         
         // Unregister audio device callback
         unregisterAudioDeviceCallback()
