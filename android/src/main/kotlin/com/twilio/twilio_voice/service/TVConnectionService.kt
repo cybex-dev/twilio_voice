@@ -905,8 +905,8 @@ class TVConnectionService : ConnectionService() {
                             val channel = getOrCreateIncomingCallChannel()
                             val notification = Notification.Builder(this, channel.id).apply {
                                 setSmallIcon(R.drawable.ic_transparent)
-                                setContentTitle("Call Cancelled")
-                                setContentText("The call was cancelled")
+                                setContentTitle("Easify")
+                                setContentText("Processing call update...")
                                 setCategory(Notification.CATEGORY_CALL)
                                 setAutoCancel(true)
                             }.build()
