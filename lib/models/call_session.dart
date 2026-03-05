@@ -54,6 +54,10 @@ class CallSession {
   /// Whether this is an incoming or outgoing call.
   final CallDirection direction;
 
+  /// Whether this call was muted when it was placed on hold.
+  /// Used to restore mute state after unholding.
+  final bool isMuted;
+
   const CallSession({
     required this.callSid,
     this.activeCall,
@@ -65,6 +69,7 @@ class CallSession {
     this.callerProfileDetails,
     required this.startedAt,
     required this.direction,
+    this.isMuted = false,
   });
 
   /// Creates a copy with the given fields replaced.
@@ -79,6 +84,7 @@ class CallSession {
     Map<String, dynamic>? callerProfileDetails,
     DateTime? startedAt,
     CallDirection? direction,
+    bool? isMuted,
     // Explicit null setters for nullable fields
     bool clearActiveCall = false,
     bool clearCallerProfileDetails = false,
@@ -96,6 +102,7 @@ class CallSession {
           : (callerProfileDetails ?? this.callerProfileDetails),
       startedAt: startedAt ?? this.startedAt,
       direction: direction ?? this.direction,
+      isMuted: isMuted ?? this.isMuted,
     );
   }
 
@@ -124,7 +131,8 @@ class CallSession {
           callerNumber == other.callerNumber &&
           myNumber == other.myNumber &&
           startedAt == other.startedAt &&
-          direction == other.direction;
+          direction == other.direction &&
+          isMuted == other.isMuted;
 
   @override
   int get hashCode =>
@@ -136,7 +144,8 @@ class CallSession {
       callerNumber.hashCode ^
       myNumber.hashCode ^
       startedAt.hashCode ^
-      direction.hashCode;
+      direction.hashCode ^
+      isMuted.hashCode;
 
   @override
   String toString() {
@@ -146,7 +155,8 @@ class CallSession {
         'callerName: $callerName, '
         'callerNumber: $callerNumber, '
         'direction: $direction, '
-        'connectionStatus: $connectionStatus'
+        'connectionStatus: $connectionStatus, '
+        'isMuted: $isMuted'
         '}';
   }
 }

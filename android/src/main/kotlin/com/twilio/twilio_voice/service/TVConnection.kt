@@ -1665,11 +1665,28 @@ open class TVCallConnection(
     /**
      * Called when the mute state changes (API 34+).
      * Replaces the mute tracking from onCallAudioStateChanged().
+     *
+     * IMPORTANT: When a connection goes on hold (STATE_HOLDING), Android OS
+     * automatically fires onMuteStateChanged(false) even though the Twilio SDK
+     * mute state hasn't actually changed. If we broadcast this to Flutter, it
+     * overwrites the user's intentional mute state (isMuted=true → false), causing
+     * a desync where the UI shows "unmuted" but the Twilio call is still muted.
+     * We suppress these OS-triggered unmute events while held.
      */
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     override fun onMuteStateChanged(isMuted: Boolean) {
-        Log.d(TAG, "onMuteStateChanged: isMuted=$isMuted")
+        Log.d(TAG, "onMuteStateChanged: isMuted=$isMuted, connectionState=$state")
         super.onMuteStateChanged(isMuted)
+
+        // Suppress OS-triggered mute state changes while connection is held.
+        // The OS fires onMuteStateChanged(false) when a connection enters
+        // STATE_HOLDING, but the Twilio SDK's actual mute state is unchanged.
+        // Broadcasting this false unmute to Flutter would overwrite the user's
+        // intentional mute, causing UI desync after unhold.
+        if (state == STATE_HOLDING) {
+            Log.d(TAG, "onMuteStateChanged: SUPPRESSED — connection is held (STATE_HOLDING), ignoring OS-triggered mute change")
+            return
+        }
 
         // Broadcast mute state change using the same mechanism
         onEvent?.onChange(TVNativeCallEvents.EVENT_MUTE, Bundle().apply {
