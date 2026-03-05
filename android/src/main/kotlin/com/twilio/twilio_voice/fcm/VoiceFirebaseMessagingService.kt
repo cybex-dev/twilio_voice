@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.PowerManager
-import android.telephony.TelephonyManager
 import android.util.Log
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.google.firebase.messaging.FirebaseMessagingService
@@ -270,19 +269,35 @@ class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageListene
 
     /**
      * Checks if the device is currently on a system (cellular/SIM) phone call.
-     * Uses TelephonyManager to detect active/ringing system calls.
+     * Uses TelecomManager to detect active managed calls (non-self-managed).
      * This does NOT detect Twilio VoIP calls - only native telephony calls.
      * 
-     * @return true if the device has an active or ringing system call
+     * NOTE: We use TelecomManager.isInManagedCall() instead of TelephonyManager.callState because:
+     * - TelephonyManager.callState requires READ_PHONE_STATE runtime permission on Android 12+
+     *   (manifest declaration alone is insufficient → SecurityException on Samsung/Android 16)
+     * - isInManagedCall() detects only managed (cellular) calls, excluding our self-managed VoIP calls
+     * - Both APIs technically require READ_PHONE_STATE, but isInManagedCall() is more robust
+     *   and the try-catch gracefully degrades to false if permission is not granted
+     * 
+     * @return true if the device has an active or ringing system call, false if no system call
+     *         or if permission check fails (graceful degradation — we just allow the Twilio call)
      */
+    @SuppressLint("MissingPermission")
     private fun isDeviceInSystemCall(): Boolean {
         return try {
-            val telephonyManager = getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
-            telephonyManager?.let {
-                val callState = it.callState
-                Log.d(TAG, "isDeviceInSystemCall: TelephonyManager.callState=$callState (IDLE=0, RINGING=1, OFFHOOK=2)")
-                callState != TelephonyManager.CALL_STATE_IDLE
+            val telecomManager = getSystemService(Context.TELECOM_SERVICE) as? android.telecom.TelecomManager
+            telecomManager?.let {
+                // isInManagedCall() returns true only for managed ConnectionService calls (cellular)
+                // and false for self-managed calls (our Twilio VoIP), which is exactly what we want.
+                val isInManagedCall = it.isInManagedCall
+                Log.d(TAG, "isDeviceInSystemCall: TelecomManager.isInManagedCall=$isInManagedCall")
+                isInManagedCall
             } ?: false
+        } catch (e: SecurityException) {
+            // READ_PHONE_STATE not granted at runtime — gracefully degrade.
+            // We just allow the Twilio call to proceed (better than crashing).
+            Log.w(TAG, "isDeviceInSystemCall: SecurityException (READ_PHONE_STATE not granted at runtime), allowing Twilio call")
+            false
         } catch (e: Exception) {
             Log.e(TAG, "isDeviceInSystemCall: Error checking call state: ${e.message}", e)
             false

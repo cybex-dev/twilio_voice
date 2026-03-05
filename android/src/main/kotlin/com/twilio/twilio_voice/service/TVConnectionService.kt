@@ -1676,12 +1676,13 @@ class TVConnectionService : ConnectionService() {
                                     Log.d(TAG, "[Decline] Unholding remaining call $remainingHandle")
                                 }
 
-                                // Re-request audio focus for the remaining call.
-                                // The disconnected call's forceDisconnectWithLogging() released audio focus
-                                // which reset MODE to NORMAL, cleared communication device, and stopped BT SCO.
-                                // Without re-requesting, audio toggles (speaker/earpiece/bluetooth) won't work.
+                                // Re-request audio focus for the remaining call if needed.
+                                // The disconnected call's forceDisconnectWithLogging() abandoned its
+                                // audio focus listener (via abandonAudioFocusOnly). The remaining call's
+                                // onUnhold() may have already called restoreAudioFocus() — if so, skip
+                                // to avoid a redundant requestAudioFocus that triggers another OS echo.
                                 remainingConnection?.let { conn ->
-                                    Log.d(TAG, "[Decline] Restoring audio focus for remaining call $remainingHandle")
+                                    Log.d(TAG, "[Decline] Checking audio focus for remaining call $remainingHandle (hasAudioFocus will be checked by restoreAudioFocus)")
                                     conn.restoreAudioFocus()
                                     
                                     // ── Restore the audio route the user had selected ──

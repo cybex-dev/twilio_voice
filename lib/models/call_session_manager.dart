@@ -63,6 +63,26 @@ class CallSessionManager {
     return null;
   }
 
+  /// Returns a session whose callSid starts with `pending_` or `pending_hold_`,
+  /// meaning it was created before the real Twilio SID was known.
+  /// Returns `null` if no pending-SID session exists.
+  CallSession? get pendingSidSession {
+    for (final s in _sessions) {
+      if (s.callSid.startsWith('pending_')) return s;
+    }
+    return null;
+  }
+
+  /// Replaces a session's callSid with a new one (e.g., upgrading from a
+  /// synthetic pending SID to the real Twilio SID).
+  /// Returns `true` if the session was found and replaced.
+  bool replaceSessionSid(String oldSid, String newSid) {
+    final index = _sessions.indexWhere((s) => s.callSid == oldSid);
+    if (index == -1) return false;
+    _sessions[index] = _sessions[index].copyWith(callSid: newSid);
+    return true;
+  }
+
   /// The currently active (connected, not held) call session, or `null`.
   CallSession? get activeSession {
     for (final s in _sessions) {

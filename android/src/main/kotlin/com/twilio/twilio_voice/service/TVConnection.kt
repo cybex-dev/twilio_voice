@@ -196,6 +196,38 @@ open class TVCallConnection(
     private var audioFocusRequest: AudioFocusRequest? = null
     private var hasAudioFocus = false
     
+    // Track transient audio focus loss (e.g., native call steals focus).
+    // When AUDIOFOCUS_GAIN fires after a transient loss, we must fully restore
+    // MODE_IN_COMMUNICATION and audio routing — not just flip a boolean.
+    @Volatile
+    private var hadTransientAudioFocusLoss = false
+    
+    // Track if we auto-muted the Twilio call due to audio focus loss.
+    // On AUDIOFOCUS_LOSS_TRANSIENT (e.g., native call), we mute so the other party
+    // hears silence instead of dead air. On AUDIOFOCUS_GAIN, we unmute — but ONLY
+    // if we auto-muted (don't override user's intentional mute).
+    @Volatile
+    private var wasAutoMutedByFocusLoss = false
+    
+    // Track if we auto-held the call due to audio focus loss (native call).
+    // WhatsApp-like behavior: on LOSS_TRANSIENT, hold the call so the UI shows
+    // an "Unhold" button. On AUDIOFOCUS_GAIN (native call ended), auto-unhold.
+    @Volatile
+    private var wasAutoHeldByFocusLoss = false
+    
+    // Timestamp of the last requestAudioFocus() call.
+    // Used to distinguish OS echo LOSS_TRANSIENT (fires ~2ms after DELAYED result)
+    // from real native call interruptions (fires seconds/minutes later).
+    // On Samsung/Android 16, requestAudioFocus returns DELAYED and then immediately
+    // fires LOSS_TRANSIENT via the listener — this is NOT a real interruption.
+    @Volatile
+    private var lastAudioFocusRequestTime = 0L
+    
+    // Grace period (ms) after requestAudioFocus to ignore LOSS_TRANSIENT.
+    // On Samsung/Android 16, the OS fires LOSS_TRANSIENT within ~2ms of a DELAYED result.
+    // A real native call interruption would come well after this window.
+    private val AUDIO_FOCUS_SETTLE_MS = 3000L
+    
     // Snapshot of the audio route captured just before releaseAudioFocus() resets it.
     // Used by TVConnectionService to play the call-end tone through the correct device.
     @Volatile
@@ -296,6 +328,11 @@ open class TVCallConnection(
     /**
      * Request audio focus for voice call.
      * This will pause any playing music and route audio to the appropriate device (earpiece/speaker/bluetooth)
+     * 
+     * IMPORTANT: We accept delayed focus grants (AUDIOFOCUS_REQUEST_DELAYED = 2).
+     * When focus is delayed, the OS will fire AUDIOFOCUS_GAIN via our listener when it
+     * becomes available (e.g., after a native phone call ends). The listener then calls
+     * [onAudioFocusGained] to fully restore audio routing.
      */
     protected fun requestAudioFocus() {
         if (hasAudioFocus) {
@@ -306,6 +343,9 @@ open class TVCallConnection(
         val am = audioManager ?: return
         Log.d(TAG, "requestAudioFocus: Requesting audio focus for voice call")
         
+        // Record timestamp so we can ignore spurious LOSS_TRANSIENT from OS
+        lastAudioFocusRequestTime = System.currentTimeMillis()
+        
         // Register audio device callback to detect Bluetooth connect/disconnect during calls
         registerAudioDeviceCallback()
         
@@ -315,6 +355,14 @@ open class TVCallConnection(
                 .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                 .build()
             
+            // Abandon any previous AudioFocusRequest before creating a new one.
+            // This prevents orphaned listeners that could fire stale LOSS_TRANSIENT
+            // events with outdated lastAudioFocusRequestTime values.
+            audioFocusRequest?.let { oldRequest ->
+                am.abandonAudioFocusRequest(oldRequest)
+                Log.d(TAG, "requestAudioFocus: Abandoned previous AudioFocusRequest before creating new one")
+            }
+            
             audioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
                 .setAudioAttributes(audioAttributes)
                 .setAcceptsDelayedFocusGain(true)
@@ -322,23 +370,103 @@ open class TVCallConnection(
                     Log.d(TAG, "Audio focus changed: $focusChange")
                     when (focusChange) {
                         AudioManager.AUDIOFOCUS_LOSS -> {
-                            Log.d(TAG, "Audio focus lost")
+                            Log.d(TAG, "Audio focus lost (permanent) — another app took focus")
                             hasAudioFocus = false
+                            hadTransientAudioFocusLoss = false
                         }
                         AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
-                            Log.d(TAG, "Audio focus lost transient")
+                            // Guard: Skip if this connection is already disconnected/disconnecting.
+                            // A dead connection's listener can fire stale LOSS_TRANSIENT from the OS
+                            // responding to another connection's requestAudioFocus.
+                            if (state == STATE_DISCONNECTED || isDisconnectingOrDisconnected) {
+                                Log.d(TAG, "Audio focus lost transient — IGNORED (connection already disconnected)")
+                                return@setOnAudioFocusChangeListener
+                            }
+                            // Guard: Skip if this connection is on hold.
+                            // When Call A is held and Call B requests audio focus, Call A's listener
+                            // receives LOSS_TRANSIENT. But Call A is already muted by hold — auto-muting
+                            // would set wasAutoMutedByFocusLoss=true, causing incorrect unmute on GAIN.
+                            if (state == STATE_HOLDING) {
+                                Log.d(TAG, "Audio focus lost transient — IGNORED (connection is on hold)")
+                                return@setOnAudioFocusChangeListener
+                            }
+                            // On Samsung/Android 16, requestAudioFocus returns DELAYED and then
+                            // the OS immediately fires LOSS_TRANSIENT (~2ms later) via this listener.
+                            // This is NOT a real interruption — it's just the OS acknowledging that
+                            // focus isn't available yet. A real native call interruption would come
+                            // seconds/minutes later, well after our settle window.
+                            val elapsed = System.currentTimeMillis() - lastAudioFocusRequestTime
+                            if (elapsed < AUDIO_FOCUS_SETTLE_MS) {
+                                Log.d(TAG, "Audio focus lost transient — IGNORED (${elapsed}ms after request, within ${AUDIO_FOCUS_SETTLE_MS}ms settle window)")
+                                // Don't update hasAudioFocus — keep the state from requestAudioFocus
+                                // Don't auto-mute — this is a spurious OS echo, not a real interruption
+                                return@setOnAudioFocusChangeListener
+                            }
+                            // Real transient loss (native phone call or other genuine interruption).
+                            // WhatsApp-like behavior: put the call on hold so the Dart UI shows
+                            // an "Unhold" button. This also mutes via Twilio SDK's hold(true).
+                            // The CallSessionManager supports N held sessions, so even with 2
+                            // Twilio calls (A+B), holding both works correctly.
+                            Log.d(TAG, "Audio focus lost transient — REAL interruption (${elapsed}ms after request)")
+                            hasAudioFocus = false
+                            hadTransientAudioFocusLoss = true
+                            // Put call on hold (sends Hold event to Dart, sets STATE_HOLDING)
+                            wasAutoHeldByFocusLoss = true
+                            Log.d(TAG, "Audio focus lost transient — auto-holding call (wasAutoHeld=true)")
+                            onHold()
                         }
                         AudioManager.AUDIOFOCUS_GAIN -> {
-                            Log.d(TAG, "Audio focus gained")
+                            Log.d(TAG, "Audio focus gained (hadTransientLoss=$hadTransientAudioFocusLoss, wasAutoHeld=$wasAutoHeldByFocusLoss, wasAutoMuted=$wasAutoMutedByFocusLoss)")
                             hasAudioFocus = true
+                            if (hadTransientAudioFocusLoss) {
+                                hadTransientAudioFocusLoss = false
+                                // Auto-unhold if we auto-held (WhatsApp behavior).
+                                // onUnhold() calls twilioCall.hold(false), setActive(),
+                                // restoreAudioFocus(), and sends Unhold event to Dart.
+                                if (wasAutoHeldByFocusLoss) {
+                                    wasAutoHeldByFocusLoss = false
+                                    wasAutoMutedByFocusLoss = false
+                                    Log.d(TAG, "Audio focus gained — auto-unholding call")
+                                    onUnhold()
+                                } else if (wasAutoMutedByFocusLoss) {
+                                    // Legacy path: if only auto-muted (shouldn't happen with new code)
+                                    twilioCall?.mute(false)
+                                    wasAutoMutedByFocusLoss = false
+                                    Log.d(TAG, "Audio focus gained — auto-unmuted Twilio call")
+                                    onAudioFocusGained()
+                                } else {
+                                    // Focus returned after transient loss but we didn't auto-hold/mute.
+                                    // Still restore audio routing.
+                                    onAudioFocusGained()
+                                }
+                            }
                         }
                     }
                 }
                 .build()
             
             val result = am.requestAudioFocus(audioFocusRequest!!)
-            hasAudioFocus = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-            Log.d(TAG, "requestAudioFocus: Result = $result, hasAudioFocus = $hasAudioFocus")
+            // AUDIOFOCUS_REQUEST_GRANTED = 1, AUDIOFOCUS_REQUEST_DELAYED = 2, AUDIOFOCUS_REQUEST_FAILED = 0
+            when (result) {
+                AudioManager.AUDIOFOCUS_REQUEST_GRANTED -> {
+                    hasAudioFocus = true
+                    hadTransientAudioFocusLoss = false
+                    Log.d(TAG, "requestAudioFocus: GRANTED — hasAudioFocus = true")
+                }
+                AudioManager.AUDIOFOCUS_REQUEST_DELAYED -> {
+                    // Another app holds focus (e.g., ringtone still playing, or OS audio management).
+                    // Our listener will receive AUDIOFOCUS_GAIN when it becomes available.
+                    // NOTE: On Samsung/Android 16, DELAYED is the normal initial response even
+                    // without a native call. The OS fires LOSS_TRANSIENT ~2ms later as an echo.
+                    // We DON'T treat this as a transient loss — the settle window guard handles it.
+                    hasAudioFocus = false
+                    Log.d(TAG, "requestAudioFocus: DELAYED — will be granted later via callback. Proceeding with audio setup.")
+                }
+                else -> {
+                    hasAudioFocus = false
+                    Log.w(TAG, "requestAudioFocus: FAILED (result=$result) — audio focus not granted")
+                }
+            }
         } else {
             @Suppress("DEPRECATION")
             val result = am.requestAudioFocus(
@@ -350,7 +478,8 @@ open class TVCallConnection(
             Log.d(TAG, "requestAudioFocus (legacy): Result = $result, hasAudioFocus = $hasAudioFocus")
         }
         
-        // Set audio mode for voice call
+        // Set audio mode for voice call — even if focus is DELAYED,
+        // we need MODE_IN_COMMUNICATION set for when focus arrives
         am.mode = AudioManager.MODE_IN_COMMUNICATION
         
         // Ensure speaker is off by default for new calls
@@ -360,21 +489,117 @@ open class TVCallConnection(
             am.isSpeakerphoneOn = false
         }
         
-        // For Android 12+, explicitly route to earpiece first, then check for Bluetooth
+        // For Android 12+, explicitly set earpiece as communication device first,
+        // then try Bluetooth routing on top of that.
+        // CRITICAL: On Samsung/Android 16, requestAudioFocus returns DELAYED and
+        // AUDIOFOCUS_GAIN never fires, so the earpiece must be explicitly set here.
+        // Without this, clearCommunicationDevice leaves no device routed and audio
+        // goes silent after unhold (the OS doesn't auto-route to earpiece with DELAYED focus).
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             try {
                 // Clear any previous communication device setting
                 am.clearCommunicationDevice()
                 Log.d(TAG, "requestAudioFocus: Cleared communication device")
+                
+                // Explicitly set earpiece as the communication device
+                val availableDevices = am.availableCommunicationDevices
+                val earpieceDevice = availableDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE }
+                if (earpieceDevice != null) {
+                    val result = am.setCommunicationDevice(earpieceDevice)
+                    Log.d(TAG, "requestAudioFocus: setCommunicationDevice to EARPIECE result=$result")
+                } else {
+                    Log.w(TAG, "requestAudioFocus: No earpiece device found in available devices: ${availableDevices.map { "type=${it.type}, name=${it.productName}" }}")
+                }
             } catch (e: Exception) {
-                Log.e(TAG, "requestAudioFocus: Failed to clear communication device", e)
+                Log.e(TAG, "requestAudioFocus: Failed to set communication device", e)
             }
         }
         
-        // Route to Bluetooth if connected, otherwise audio will go to earpiece by default
+        // Route to Bluetooth if connected (overrides earpiece set above)
         routeAudioToBluetoothIfConnected()
     }
+    
+    /**
+     * Called when audio focus is regained after a transient loss (e.g., native phone call ended).
+     * Restores full audio routing: MODE_IN_COMMUNICATION, communication device, Bluetooth.
+     * 
+     * This is the fix for the scenario where:
+     * 1. User has two active Easify calls (A + B)
+     * 2. Native cellular call comes in → AUDIOFOCUS_LOSS_TRANSIENT
+     * 3. User answers + ends native call → AUDIOFOCUS_GAIN fires
+     * 4. Without this method, audio routing was broken — user couldn't hear A or B
+     */
+    private fun onAudioFocusGained() {
+        val am = audioManager ?: return
+        Log.d(TAG, "onAudioFocusGained: Restoring audio routing after transient focus loss")
+        
+        // Re-establish voice communication audio mode
+        if (am.mode != AudioManager.MODE_IN_COMMUNICATION) {
+            Log.d(TAG, "onAudioFocusGained: Restoring MODE_IN_COMMUNICATION (was ${am.mode})")
+            am.mode = AudioManager.MODE_IN_COMMUNICATION
+        }
+        
+        // For Android 12+, clear stale communication device and explicitly set earpiece,
+        // then try Bluetooth on top. Same pattern as requestAudioFocus.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try {
+                am.clearCommunicationDevice()
+                Log.d(TAG, "onAudioFocusGained: Cleared stale communication device")
+                
+                // Explicitly set earpiece as communication device
+                val availableDevices = am.availableCommunicationDevices
+                val earpieceDevice = availableDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE }
+                if (earpieceDevice != null) {
+                    val result = am.setCommunicationDevice(earpieceDevice)
+                    Log.d(TAG, "onAudioFocusGained: setCommunicationDevice to EARPIECE result=$result")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "onAudioFocusGained: Failed to set communication device", e)
+            }
+        }
+        
+        // Re-route to Bluetooth if connected (overrides earpiece set above)
+        routeAudioToBluetoothIfConnected()
+        
+        Log.d(TAG, "onAudioFocusGained: Audio routing restored — mode=${am.mode}, speaker=${am.isSpeakerphoneOn}, btSco=${am.isBluetoothScoOn}")
+    }
 
+    /**
+     * Abandon this connection's audio focus request WITHOUT resetting audio mode/routing.
+     * 
+     * Use this when disconnecting a call while other calls are still active.
+     * It unregisters the listener from AudioManager so stale LOSS_TRANSIENT events
+     * can't fire on the dead connection and auto-mute disconnected calls.
+     * 
+     * Unlike [releaseAudioFocus], this does NOT:
+     * - Reset MODE to MODE_NORMAL (would break remaining call's audio)
+     * - Clear communication device (would disconnect remaining call's audio route)
+     * - Stop Bluetooth SCO (would kill BT for remaining call)
+     * - Turn off speakerphone (would change remaining call's audio route)
+     */
+    internal fun abandonAudioFocusOnly() {
+        val am = audioManager ?: return
+        Log.d(TAG, "abandonAudioFocusOnly: Unregistering audio focus listener for dead connection")
+        
+        // Unregister audio device callback so no more BT connect/disconnect events fire
+        unregisterAudioDeviceCallback()
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            audioFocusRequest?.let {
+                am.abandonAudioFocusRequest(it)
+                Log.d(TAG, "abandonAudioFocusOnly: Abandoned AudioFocusRequest")
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            am.abandonAudioFocus(null)
+        }
+        
+        audioFocusRequest = null
+        hasAudioFocus = false
+        hadTransientAudioFocusLoss = false
+        wasAutoMutedByFocusLoss = false
+    }
+    
     /**
      * Force re-acquire audio focus for this connection.
      * Used when another connection's disconnect released the shared OS audio focus,
@@ -382,10 +607,36 @@ open class TVCallConnection(
      *
      * This resets [hasAudioFocus] so [requestAudioFocus] will perform a full re-acquire
      * including MODE_IN_COMMUNICATION, audio device callback, and Bluetooth routing.
+     * 
+     * Debounced: If called multiple times within 1 second (e.g., onUnhold + [Decline] block),
+     * the second call is a no-op to avoid redundant requestAudioFocus that triggers extra
+     * OS echo LOSS_TRANSIENT events on Samsung/Android 16.
      */
     internal fun restoreAudioFocus() {
+        val now = System.currentTimeMillis()
+        val elapsed = now - lastAudioFocusRequestTime
+        if (elapsed < 1000L && lastAudioFocusRequestTime > 0L) {
+            Log.d(TAG, "restoreAudioFocus: Skipping — already restored ${elapsed}ms ago (debounce)")
+            return
+        }
+        
         Log.d(TAG, "restoreAudioFocus: Forcing audio focus re-acquire (current hasAudioFocus=$hasAudioFocus)")
+        
+        // Abandon the old AudioFocusRequest first to prevent orphaned listeners.
+        // Without this, calling requestAudioFocus() overwrites the audioFocusRequest field
+        // but the old listener stays registered with AudioManager — it can fire stale
+        // LOSS_TRANSIENT events on this connection with an outdated lastAudioFocusRequestTime.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            audioFocusRequest?.let { oldRequest ->
+                audioManager?.abandonAudioFocusRequest(oldRequest)
+                Log.d(TAG, "restoreAudioFocus: Abandoned old AudioFocusRequest before re-acquire")
+            }
+        }
+        audioFocusRequest = null
+        
         hasAudioFocus = false
+        hadTransientAudioFocusLoss = false
+        wasAutoMutedByFocusLoss = false
         requestAudioFocus()
     }
 
@@ -658,6 +909,8 @@ open class TVCallConnection(
         }
         
         hasAudioFocus = false
+        hadTransientAudioFocusLoss = false
+        wasAutoMutedByFocusLoss = false
         wasOnBluetooth = false
         
         // Reset speaker state to ensure next call starts on earpiece (unless Bluetooth is connected)
@@ -840,10 +1093,14 @@ open class TVCallConnection(
         // Stop ringback tone if playing
         stopRingback()
 
-        // Release audio focus when disconnecting — but ONLY if no other calls are active.
-        // When other calls exist, releasing audio focus would kill their foreground notification.
+        // Release audio focus when disconnecting.
+        // When other calls exist, we can't do a full releaseAudioFocus() because that resets
+        // MODE to NORMAL, clears communication device, and stops BT SCO — killing audio for
+        // the remaining call. Instead, we just abandon our AudioFocusRequest listener so
+        // stale LOSS_TRANSIENT events can't fire on this dead connection and auto-mute.
         if (otherCallsActive) {
-            Log.d(TAG, "[Decline] Skipping releaseAudioFocus — other calls still active")
+            Log.d(TAG, "[Decline] Other calls still active — abandoning audio focus listener only (not full release)")
+            abandonAudioFocusOnly()
         } else {
             releaseAudioFocus()
         }
@@ -1262,9 +1519,27 @@ open class TVCallConnection(
 
     override fun onUnhold() {
         super.onUnhold()
-        Log.i(TAG, "onUnhold: onUnhold")
+        Log.i(TAG, "onUnhold: onUnhold (hasAudioFocus=$hasAudioFocus)")
         twilioCall?.hold(false)
         setActive()
+        
+        // When the system unholds this connection (e.g., after a native call ends),
+        // audio focus may have been lost during the interruption. Ensure we have it.
+        if (!hasAudioFocus) {
+            Log.d(TAG, "onUnhold: No audio focus — restoring")
+            restoreAudioFocus()
+        }
+        
+        // CRITICAL: Re-detect and route audio device after unhold.
+        // Same pattern as onConnected: 500ms delay to let audio routing settle.
+        // On Samsung/Android 16, AUDIOFOCUS_GAIN never fires after DELAYED,
+        // so onAudioFocusGained() never runs. This ensures audio is properly
+        // routed after unholding (earpiece or Bluetooth) even without GAIN.
+        mainHandler.postDelayed({
+            Log.d(TAG, "onUnhold: Running delayed audio device detection")
+            detectAndRouteToInitialAudioDevice()
+        }, 500)
+        
         onAction?.onChange(TVNativeCallActions.ACTION_UNHOLD, null)
 
         Intent(TVBroadcastReceiver.ACTION_CALL_STATE).apply {
