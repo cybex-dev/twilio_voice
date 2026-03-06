@@ -716,6 +716,33 @@ class TVConnectionService : ConnectionService() {
         return if (heldEntry != null) getConnectionDisplayName(heldEntry.value) else null
     }
 
+    /**
+     * Checks if the device is currently on a system (cellular/SIM) phone call.
+     * Uses TelecomManager to detect active managed calls (non-self-managed).
+     * This does NOT detect Twilio VoIP calls - only native telephony calls.
+     *
+     * Used to prevent auto-unholding a remaining VoIP call when another VoIP call
+     * ends during an active native call — the user should manually resume after
+     * the native call finishes.
+     */
+    @android.annotation.SuppressLint("MissingPermission")
+    private fun isDeviceInSystemCall(): Boolean {
+        return try {
+            val telecomManager = getSystemService(Context.TELECOM_SERVICE) as? android.telecom.TelecomManager
+            telecomManager?.let {
+                val inManagedCall = it.isInManagedCall
+                Log.d(TAG, "isDeviceInSystemCall: TelecomManager.isInManagedCall=$inManagedCall")
+                inManagedCall
+            } ?: false
+        } catch (e: SecurityException) {
+            Log.w(TAG, "isDeviceInSystemCall: SecurityException, assuming no system call")
+            false
+        } catch (e: Exception) {
+            Log.e(TAG, "isDeviceInSystemCall: Error: ${e.message}", e)
+            false
+        }
+    }
+
     // WakeLock to keep CPU awake during incoming call
     private var wakeLock: PowerManager.WakeLock? = null
     private var incomingCallWakeLock: PowerManager.WakeLock? = null
@@ -1224,14 +1251,21 @@ class TVConnectionService : ConnectionService() {
                                         } else if (remainingConn?.state == Connection.STATE_HOLDING) {
                                             // The remaining call is ON HOLD → the call ended.
                                             // Send ACTION_HELD_CALL_ENDED first so Flutter removes
-                                            // the ended call's session, then unhold the remaining call.
-                                            Log.d(TAG, "[ACTION_ANSWER onDisconnected] Call $callSid ended, remaining call $remainingHandle is HOLDING - sending Held Call Ended + unholding")
+                                            // the ended call's session.
+                                            Log.d(TAG, "[ACTION_ANSWER onDisconnected] Call $callSid ended, remaining call $remainingHandle is HOLDING - sending Held Call Ended")
                                             sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_HELD_CALL_ENDED, callSid, Bundle().apply {
                                                 putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callSid)
                                             })
                                             showOngoingCallNotification(remainingHandle, remainingNumber)
-                                            remainingConn.toggleHold(false)
-                                            Log.d(TAG, "[ACTION_ANSWER onDisconnected] Unholding remaining call $remainingHandle")
+                                            // Only auto-unhold if no native cellular call is active.
+                                            // If the user is on a native call, leave the VoIP call on hold
+                                            // so it doesn't compete for audio — user will resume manually.
+                                            if (!isDeviceInSystemCall()) {
+                                                remainingConn.toggleHold(false)
+                                                Log.d(TAG, "[ACTION_ANSWER onDisconnected] Unholding remaining call $remainingHandle")
+                                            } else {
+                                                Log.d(TAG, "[ACTION_ANSWER onDisconnected] Native call active - keeping remaining call $remainingHandle on hold")
+                                            }
                                         } else {
                                             showOngoingCallNotification(remainingHandle, remainingNumber)
                                             // The remaining call is NOT on hold → the HELD call ended.
@@ -2486,16 +2520,22 @@ class TVConnectionService : ConnectionService() {
                     } else if (remainingConn?.state == Connection.STATE_HOLDING) {
                         // Remaining call is HOLDING — the ACTIVE call disconnected.
                         // Send ACTION_HELD_CALL_ENDED first so Flutter removes the
-                        // ended call's session, THEN unhold the remaining call.
-                        // Without this, the stale session stays in Dart's SessionManager
-                        // and activeSession/hasHeldCall resolve incorrectly.
-                        Log.d(TAG, "[onDisconnect] Remaining call $remainingHandle is HOLDING (state=${remainingConn?.state}) - call $callSid ended, sending Held Call Ended + unholding remaining")
+                        // ended call's session. Without this, the stale session stays
+                        // in Dart's SessionManager and activeSession/hasHeldCall resolve incorrectly.
+                        Log.d(TAG, "[onDisconnect] Remaining call $remainingHandle is HOLDING (state=${remainingConn?.state}) - call $callSid ended, sending Held Call Ended")
                         sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_HELD_CALL_ENDED, callSid, Bundle().apply {
                             putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callSid)
                         })
                         showOngoingCallNotification(remainingHandle, remainingNumber)
-                        remainingConn.toggleHold(false)
-                        Log.d(TAG, "[onDisconnect] Unholding remaining call $remainingHandle")
+                        // Only auto-unhold if no native cellular call is active.
+                        // If the user is on a native call, leave the VoIP call on hold
+                        // so it doesn't compete for audio — user will resume manually.
+                        if (!isDeviceInSystemCall()) {
+                            remainingConn.toggleHold(false)
+                            Log.d(TAG, "[onDisconnect] Unholding remaining call $remainingHandle")
+                        } else {
+                            Log.d(TAG, "[onDisconnect] Native call active - keeping remaining call $remainingHandle on hold")
+                        }
                     } else {
                         // Remaining call is ACTIVE — the HELD call disconnected.
                         // Send ACTION_HELD_CALL_ENDED so Flutter clears the
@@ -2574,15 +2614,22 @@ class TVConnectionService : ConnectionService() {
                             })
                         } else if (remainingConn?.state == Connection.STATE_HOLDING) {
                             // Remaining call is HOLDING — the call disconnected.
-                            // Send ACTION_HELD_CALL_ENDED first so Flutter removes the
-                            // ended call's session, THEN unhold the remaining call.
-                            Log.d(TAG, "[onCallState] Remaining call $remainingHandle is HOLDING (state=${remainingConn?.state}) - call $callSid ended, sending Held Call Ended + unholding remaining")
+                            // Send ACTION_HELD_CALL_ENDED first so Flutter removes
+                            // the ended call's session.
+                            Log.d(TAG, "[onCallState] Remaining call $remainingHandle is HOLDING (state=${remainingConn?.state}) - call $callSid ended, sending Held Call Ended")
                             sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_HELD_CALL_ENDED, callSid, Bundle().apply {
                                 putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callSid)
                             })
                             showOngoingCallNotification(remainingHandle, remainingNumber)
-                            remainingConn.toggleHold(false)
-                            Log.d(TAG, "[onCallState] Unholding remaining call $remainingHandle")
+                            // Only auto-unhold if no native cellular call is active.
+                            // If the user is on a native call, leave the VoIP call on hold
+                            // so it doesn't compete for audio — user will resume manually.
+                            if (!isDeviceInSystemCall()) {
+                                remainingConn.toggleHold(false)
+                                Log.d(TAG, "[onCallState] Unholding remaining call $remainingHandle")
+                            } else {
+                                Log.d(TAG, "[onCallState] Native call active - keeping remaining call $remainingHandle on hold")
+                            }
                         } else {
                             // Remaining call is ACTIVE — the HELD call disconnected.
                             // Send ACTION_HELD_CALL_ENDED so Flutter clears the
