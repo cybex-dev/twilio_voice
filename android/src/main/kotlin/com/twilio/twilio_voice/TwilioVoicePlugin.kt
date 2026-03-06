@@ -750,6 +750,16 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                         val callDirection = activeConnection.callDirection ?: CallDirection.INCOMING
                         val activeSid = activeCallHandle ?: (activeConnection.twilioCall?.sid ?: "")
                         logEvents("", arrayOf("Connected", activeSid, from, to, callDirection.label ))
+
+                        // If this connection is actually on hold (STATE_HOLDING),
+                        // emit a Hold event right after Connected so the Dart side
+                        // correctly transitions the session to holding status.
+                        // This happens when all calls are on hold and getActiveCallHandle()
+                        // falls back to the first STATE_HOLDING connection.
+                        if (activeConnection.state == android.telecom.Connection.STATE_HOLDING) {
+                            Log.d(TAG, "GetActiveCallOnResumeFromTerminatedState: active call $activeSid is actually on hold (STATE_HOLDING), emitting Hold event")
+                            logEvents("", arrayOf("Hold", activeSid))
+                        }
                     }
 
                     // Check for held call(s) and emit HeldCallData for each
