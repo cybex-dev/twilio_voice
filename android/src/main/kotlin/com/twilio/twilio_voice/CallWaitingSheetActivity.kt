@@ -38,6 +38,12 @@ class CallWaitingSheetActivity : AppCompatActivity() {
         private const val TAG = "CallWaitingSheet"
         private const val REQUEST_RECORD_AUDIO = 200
 
+        /** Permissions required to answer a call */
+        private val REQUIRED_CALL_PERMISSIONS = arrayOf(
+            Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.READ_PHONE_STATE,
+        )
+
         // Intent extras — same keys as IncomingCallActivity for consistency
         const val EXTRA_CALL_SID = "extra_call_sid"
         const val EXTRA_CALL_INVITE = "extra_call_invite"
@@ -263,29 +269,74 @@ class CallWaitingSheetActivity : AppCompatActivity() {
         finishAndRemoveTask()
     }
 
-    // ── Microphone permission ────────────────────────────────────────────────
+    // ── Call permissions (mic + phone state) ───────────────────────────────
 
     private fun ensureMicPermission(action: PendingAction): Boolean {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
-            == PackageManager.PERMISSION_GRANTED) return true
+        val missing = REQUIRED_CALL_PERMISSIONS.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isEmpty()) return true
+
+        // Check for permanently denied permissions
+        val prefs = getSharedPreferences("easify_permissions", Context.MODE_PRIVATE)
+        val permanentlyDenied = missing.filter {
+            !ActivityCompat.shouldShowRequestPermissionRationale(this, it) &&
+                prefs.getBoolean("requested_$it", false)
+        }
+        if (permanentlyDenied.size == missing.size) {
+            android.util.Log.d(TAG, "ensureMicPermission: All missing permissions permanently denied — opening settings")
+            openAppSettings()
+            return false
+        }
+
+        // Track that we've requested these
+        prefs.edit().apply {
+            missing.forEach { putBoolean("requested_$it", true) }
+            apply()
+        }
+
         pendingAction = action
-        ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_RECORD_AUDIO)
+        ActivityCompat.requestPermissions(this, missing.toTypedArray(), REQUEST_RECORD_AUDIO)
         return false
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQUEST_RECORD_AUDIO) {
-            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            val allGranted = grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+            if (allGranted) {
                 when (pendingAction) {
                     PendingAction.HOLD_AND_ANSWER -> holdAndAnswer()
                     PendingAction.END_AND_ANSWER -> endAndAnswer()
                     PendingAction.NONE -> {}
                 }
             } else {
-                android.widget.Toast.makeText(this, "Microphone permission is required to answer calls", android.widget.Toast.LENGTH_LONG).show()
+                // Check if any permission is now permanently denied
+                val permanentlyDenied = permissions.filterIndexed { index, _ ->
+                    grantResults[index] != PackageManager.PERMISSION_GRANTED
+                }.filter { !ActivityCompat.shouldShowRequestPermissionRationale(this, it) }
+
+                if (permanentlyDenied.isNotEmpty()) {
+                    android.util.Log.d(TAG, "onRequestPermissionsResult: Permanently denied: $permanentlyDenied — opening settings")
+                    openAppSettings()
+                } else {
+                    android.widget.Toast.makeText(this, "Microphone and Phone State permissions are required to answer calls", android.widget.Toast.LENGTH_LONG).show()
+                }
             }
             pendingAction = PendingAction.NONE
+        }
+    }
+
+    private fun openAppSettings() {
+        try {
+            val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = android.net.Uri.fromParts("package", packageName, null)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+            android.widget.Toast.makeText(this, "Please enable the required permissions and try again", android.widget.Toast.LENGTH_LONG).show()
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "openAppSettings: Failed to open settings", e)
         }
     }
 

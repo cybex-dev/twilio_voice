@@ -45,6 +45,12 @@ class AnswerCallTrampolineActivity : AppCompatActivity() {
         private const val TAG = "AnswerTrampoline"
         private const val REQUEST_RECORD_AUDIO_PERMISSION = 201
 
+        /** Permissions required to answer a call */
+        private val REQUIRED_CALL_PERMISSIONS = arrayOf(
+            Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.READ_PHONE_STATE,
+        )
+
         const val EXTRA_CALL_SID = "extra_call_sid"
         const val EXTRA_CALL_INVITE = "extra_call_invite"
         const val EXTRA_CALLER_NAME = "extra_caller_name"
@@ -73,33 +79,74 @@ class AnswerCallTrampolineActivity : AppCompatActivity() {
             return
         }
 
-        // Check RECORD_AUDIO permission BEFORE sending ACTION_ANSWER.
+        // Check RECORD_AUDIO & READ_PHONE_STATE permissions BEFORE sending ACTION_ANSWER.
         // This prevents the Twilio SDK from crashing when callInvite.accept()
         // is called without microphone access.
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            Log.d(TAG, "onCreate: RECORD_AUDIO not granted — requesting permission")
-            // The permission dialog will appear over the notification/home screen.
-            // Since this activity is translucent, there's no black screen behind it.
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_RECORD_AUDIO_PERMISSION)
+        val missing = REQUIRED_CALL_PERMISSIONS.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isNotEmpty()) {
+            // Check for permanently denied permissions
+            val prefs = getSharedPreferences("easify_permissions", Context.MODE_PRIVATE)
+            val permanentlyDenied = missing.filter {
+                !ActivityCompat.shouldShowRequestPermissionRationale(this, it) &&
+                    prefs.getBoolean("requested_$it", false)
+            }
+            if (permanentlyDenied.size == missing.size) {
+                Log.d(TAG, "onCreate: All missing permissions permanently denied — opening settings")
+                openAppSettings()
+                finish()
+                return
+            }
+            // Track that we've requested these
+            prefs.edit().apply {
+                missing.forEach { putBoolean("requested_$it", true) }
+                apply()
+            }
+            Log.d(TAG, "onCreate: Missing permissions: $missing — requesting")
+            ActivityCompat.requestPermissions(this, missing.toTypedArray(), REQUEST_RECORD_AUDIO_PERMISSION)
             return  // Wait for onRequestPermissionsResult
         }
 
-        // Permission already granted — proceed immediately
-        Log.d(TAG, "onCreate: RECORD_AUDIO already granted — proceeding")
+        // Permissions already granted — proceed immediately
+        Log.d(TAG, "onCreate: All call permissions already granted — proceeding")
         proceedWithAnswer()
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQUEST_RECORD_AUDIO_PERMISSION) {
-            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                Log.d(TAG, "onRequestPermissionsResult: RECORD_AUDIO granted — proceeding with answer")
+            val allGranted = grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+            if (allGranted) {
+                Log.d(TAG, "onRequestPermissionsResult: All call permissions granted — proceeding with answer")
                 proceedWithAnswer()
             } else {
-                Log.w(TAG, "onRequestPermissionsResult: RECORD_AUDIO denied — cannot answer call")
-                Toast.makeText(this, "Microphone permission is required to answer calls", Toast.LENGTH_LONG).show()
+                // Check if any permission is now permanently denied
+                val permanentlyDenied = permissions.filterIndexed { index, _ ->
+                    grantResults[index] != PackageManager.PERMISSION_GRANTED
+                }.filter { !ActivityCompat.shouldShowRequestPermissionRationale(this, it) }
+
+                if (permanentlyDenied.isNotEmpty()) {
+                    Log.d(TAG, "onRequestPermissionsResult: Permanently denied: $permanentlyDenied — opening settings")
+                    openAppSettings()
+                } else {
+                    Toast.makeText(this, "Microphone and Phone State permissions are required to answer calls", Toast.LENGTH_LONG).show()
+                }
                 finish()
             }
+        }
+    }
+
+    private fun openAppSettings() {
+        try {
+            val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = android.net.Uri.fromParts("package", packageName, null)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+            Toast.makeText(this, "Please enable the required permissions and try again", Toast.LENGTH_LONG).show()
+        } catch (e: Exception) {
+            Log.e(TAG, "openAppSettings: Failed to open settings", e)
         }
     }
 
