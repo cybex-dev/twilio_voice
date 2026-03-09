@@ -1387,6 +1387,25 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
 
         if call.hasEnded {
             activeCXCalls.removeValue(forKey: uuid) // Remove ended calls
+            
+            // Check if the ended call was a non-Twilio (native/cellular) call.
+            // If so, and we have a VoIP call still on hold, auto-unhold it now
+            // that the native call is done (WhatsApp-like resume behavior).
+            let isTwilioCall = self.calls.keys.contains(uuid) || self.callInvites.keys.contains(uuid)
+            if !isTwilioCall && !self.calls.isEmpty {
+                self.sendPhoneCallEvents(description: "LOG|callObserver: Non-Twilio call ended (uuid=\(uuid)), checking if VoIP call needs unholding", isError: false)
+                // Small delay to let CallKit finish processing the native call end
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                    guard let self = self else { return }
+                    // Only unhold if no other native calls remain
+                    if !self.isDeviceOnNonTwilioCall() {
+                        self.sendPhoneCallEvents(description: "LOG|callObserver: No more native calls — auto-unholding remaining VoIP call", isError: false)
+                        self.unholdRemainingCall()
+                    } else {
+                        self.sendPhoneCallEvents(description: "LOG|callObserver: Other native calls still active — keeping VoIP on hold", isError: false)
+                    }
+                }
+            }
         } else {
             activeCXCalls[uuid] = call // Add or update call
         }
@@ -1688,8 +1707,14 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             self.sendPhoneCallEvents(description: "Call Ended|\(call.sid)", isError: false)
         } else {
             self.sendPhoneCallEvents(description: "LOG|Call failed but other calls remain, suppressing Call Ended", isError: false)
-            // Unhold the remaining call
-            unholdRemainingCall()
+            // Always send Held Call Ended so Flutter cleans up the ended call's session
+            self.sendPhoneCallEvents(description: "Held Call Ended|\(call.sid)", isError: false)
+            // Only auto-unhold if no native cellular call is active
+            if isDeviceOnNonTwilioCall() {
+                self.sendPhoneCallEvents(description: "LOG|Native call active — keeping remaining VoIP call on hold", isError: false)
+            } else {
+                unholdRemainingCall()
+            }
         }
     }
 
@@ -1713,11 +1738,9 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             }
         }
         
-        // IMPORTANT: Capture activeCallUUID BEFORE callDisconnected() clears it.
+        // IMPORTANT: Capture whether we initiated the disconnect.
         // callDisconnected sets activeCallUUID = nil when the ending call IS the
-        // active call. We need the original value to correctly determine whether
-        // the ending call was the active call (Call B) or the held call (Call A).
-        let wasActiveCallUUID = self.activeCallUUID
+        // active call.
 
         // Play call-end tone BEFORE callDisconnected() resets audio state,
         // but only if this is the final call ending.
@@ -1736,19 +1759,22 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         } else {
             self.sendPhoneCallEvents(description: "LOG|Call disconnected but other calls remain, suppressing Call Ended", isError: false)
             
-            // Check if the disconnected call was the held call (not the active one).
-            // Use the SAVED wasActiveCallUUID — not self.activeCallUUID which was
-            // already cleared by callDisconnected(). Without this, the check would
-            // always pass (uuid != nil) and incorrectly send "Held Call Ended" even
-            // when the ACTIVE call (Call B) ended, which would clear the saved
-            // held-call data (Call A) before the Unhold event can restore it.
-            if let uuid = call.uuid, uuid != wasActiveCallUUID {
-                // The held call ended remotely - notify Flutter to clear the held call banner
-                self.sendPhoneCallEvents(description: "Held Call Ended|\(call.sid)", isError: false)
-            }
+            // Always send Held Call Ended so Flutter's session manager removes
+            // the ended call's session. Without this, the stale session causes
+            // wrong caller info and suppressed callEnded when the last call ends.
+            // (Previously only sent when the held call ended — not the active one.)
+            self.sendPhoneCallEvents(description: "Held Call Ended|\(call.sid)", isError: false)
 
-            // Unhold the remaining call and restore its info
-            unholdRemainingCall()
+            // Only auto-unhold the remaining call if no native cellular call is
+            // active. If the user is on a native call (e.g., they ended one VoIP
+            // call to accept an incoming cellular call), leave the remaining VoIP
+            // call on hold so it doesn't compete for audio. The user will resume
+            // it manually after the native call ends.
+            if isDeviceOnNonTwilioCall() {
+                self.sendPhoneCallEvents(description: "LOG|Native call active — keeping remaining VoIP call on hold", isError: false)
+            } else {
+                unholdRemainingCall()
+            }
         }
     }
 
@@ -1788,11 +1814,29 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         self.sendPhoneCallEvents(description: "LOG|Call Disconnected uuid=\(uuid)", isError: false)
 
         // Clear pending swap state if the disconnected call was part of a pending swap
-        if self.pendingSwapHoldUUID == uuid || self.pendingSwapHoldUUID != nil {
-            self.sendPhoneCallEvents(description: "LOG|callDisconnected: clearing pendingSwapHoldUUID (was \(String(describing: self.pendingSwapHoldUUID)))", isError: false)
-            self.pendingSwapHoldUUID = nil
+        if let pendingHoldUUID = self.pendingSwapHoldUUID {
             self.pendingSwapSafetyTimer?.invalidate()
             self.pendingSwapSafetyTimer = nil
+
+            if pendingHoldUUID != uuid {
+                // The OTHER call (not the one being held) disconnected.
+                // The swap will never complete, so send the deferred Hold
+                // event now so Flutter knows the remaining call is on hold.
+                // This happens when e.g. a native call arrives while 2 Twilio
+                // calls exist: iOS holds one call (detected as swap), then the
+                // other call ends — the held call's Hold event was never sent.
+                if let heldCall = self.calls[pendingHoldUUID] {
+                    self.sendPhoneCallEvents(description: "LOG|callDisconnected: other call ended — sending deferred Hold for pendingSwapHoldUUID=\(pendingHoldUUID)", isError: false)
+                    self.sendPhoneCallEvents(description: "Hold|\(heldCall.sid)", isError: false)
+                } else {
+                    self.sendPhoneCallEvents(description: "LOG|callDisconnected: other call ended but pending hold call not found (uuid=\(pendingHoldUUID))", isError: false)
+                }
+            } else {
+                self.sendPhoneCallEvents(description: "LOG|callDisconnected: the pending-hold call itself disconnected, clearing without sending Hold", isError: false)
+            }
+
+            self.sendPhoneCallEvents(description: "LOG|callDisconnected: clearing pendingSwapHoldUUID (was \(String(describing: self.pendingSwapHoldUUID)))", isError: false)
+            self.pendingSwapHoldUUID = nil
         }
 
         // Remove this specific call from dictionaries

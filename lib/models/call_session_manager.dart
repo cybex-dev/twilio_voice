@@ -1,3 +1,4 @@
+import 'active_call.dart';
 import 'call_session.dart';
 
 /// Manages a list of active [CallSession]s.
@@ -69,6 +70,22 @@ class CallSessionManager {
   CallSession? get pendingSidSession {
     for (final s in _sessions) {
       if (s.callSid.startsWith('pending_')) return s;
+    }
+    return null;
+  }
+
+  /// Returns an outgoing session whose callSid is NOT a real Twilio SID
+  /// (i.e. does not start with 'CA'). This happens on iOS where the
+  /// Connecting event uses the CallKit UUID before the real SID is known.
+  /// Also matches sessions with synthetic `outgoing_` prefix.
+  /// Returns `null` if no such session exists.
+  CallSession? get outgoingPlaceholderSession {
+    for (final s in _sessions) {
+      if (s.direction == CallDirection.outgoing &&
+          !s.callSid.startsWith('CA') &&
+          !s.callSid.startsWith('pending_')) {
+        return s;
+      }
     }
     return null;
   }
