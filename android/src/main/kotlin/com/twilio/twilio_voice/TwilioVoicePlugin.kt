@@ -1236,14 +1236,17 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             }
 
             TVMethodChannels.HAS_READ_PHONE_STATE_PERMISSION -> {
-                // No longer required - always return true
-                result.success(true)
+                result.success(checkReadPhoneStatePermission())
             }
 
             TVMethodChannels.REQUEST_READ_PHONE_STATE_PERMISSION -> {
-                // No longer required - skip and return success
-                logEvent("requestingReadPhoneStatePermission - skipped, not required")
-                result.success(true)
+                if (!checkReadPhoneStatePermission()) {
+                    requestPermissionForPhoneState { granted ->
+                        result.success(granted)
+                    }
+                } else {
+                    result.success(true)
+                }
             }
 
             TVMethodChannels.HAS_CALL_PHONE_PERMISSION -> {

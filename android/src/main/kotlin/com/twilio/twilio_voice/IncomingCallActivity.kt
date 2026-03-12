@@ -86,6 +86,12 @@ class IncomingCallActivity : AppCompatActivity() {
         const val EXTRA_WAS_APP_IN_FOREGROUND = "EXTRA_WAS_APP_IN_FOREGROUND"
         private const val REQUEST_RECORD_AUDIO_PERMISSION = 200
 
+        /** Permissions required to answer a call */
+        private val REQUIRED_CALL_PERMISSIONS = arrayOf(
+            Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.READ_PHONE_STATE,
+        )
+
         fun createIntent(context: Context, callInvite: CallInvite): Intent {
             return Intent(context, IncomingCallActivity::class.java).apply {
                 // Flags for lock screen incoming call display
@@ -763,16 +769,14 @@ class IncomingCallActivity : AppCompatActivity() {
         
         android.util.Log.d(TAG, "handleAnswerFromNotification: Extracted caller info - name: $callerName, number: $callerNumber, myNumber: $myNumber")
         
-        // Check for RECORD_AUDIO permission before answering
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            android.util.Log.d(TAG, "handleAnswerFromNotification: Requesting RECORD_AUDIO permission")
+        // Check for RECORD_AUDIO & READ_PHONE_STATE permissions before answering
+        if (!ensureCallPermissions("handleAnswerFromNotification")) {
             // Reset callHandled so proceedWithAnswer can set it again
             callHandled = false
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_RECORD_AUDIO_PERMISSION)
             return
         }
         
-        android.util.Log.d(TAG, "handleAnswerFromNotification: RECORD_AUDIO permission GRANTED - proceeding to answer call")
+        android.util.Log.d(TAG, "handleAnswerFromNotification: Call permissions GRANTED - proceeding to answer call")
         
         if (sid != null) {
             android.util.Log.d(TAG, "handleAnswerFromNotification: Answering call with callSid: $sid, hasCallInvite: ${invite != null}")
@@ -1418,6 +1422,73 @@ class IncomingCallActivity : AppCompatActivity() {
         bitmap.setPixels(pix, 0, w, 0, 0, w, h)
         return bitmap
     }
+
+    /**
+     * Returns true if all [REQUIRED_CALL_PERMISSIONS] are granted.
+     * If any are missing, requests them (or opens app settings if permanently denied)
+     * and returns false.
+     */
+    private fun ensureCallPermissions(callerTag: String): Boolean {
+        val missing = REQUIRED_CALL_PERMISSIONS.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isEmpty()) return true
+
+        // Check if any missing permission is permanently denied ("Don't ask again").
+        // shouldShowRequestPermissionRationale returns false if:
+        //   1. Permission was never requested (first time), OR
+        //   2. User chose "Don't ask again"
+        // We can distinguish by checking if we can still request (the system dialog will appear).
+        // If ALL missing permissions return false for rationale AND have been requested before,
+        // the system won't show a dialog — we must redirect to app settings.
+        val permanentlyDenied = missing.filter {
+            !ActivityCompat.shouldShowRequestPermissionRationale(this, it)
+        }
+
+        // If some can still be requested via dialog, request them all.
+        // The system will only show dialogs for the ones that aren't permanently denied,
+        // and immediately return DENIED for permanently denied ones.
+        // However, if ALL missing are permanently denied, skip the useless request
+        // and go straight to settings.
+        if (permanentlyDenied.size == missing.size && permanentlyDenied.isNotEmpty()) {
+            // Check if this is truly "permanently denied" vs "never asked".
+            // On first request, shouldShowRequestPermissionRationale also returns false.
+            // Use SharedPreferences to track if we've asked before.
+            val prefs = getSharedPreferences("easify_permissions", Context.MODE_PRIVATE)
+            val allPreviouslyRequested = permanentlyDenied.all {
+                prefs.getBoolean("requested_$it", false)
+            }
+            if (allPreviouslyRequested) {
+                android.util.Log.d(TAG, "$callerTag: All missing permissions permanently denied, opening app settings: $missing")
+                openAppSettings()
+                return false
+            }
+        }
+
+        // Mark these permissions as having been requested
+        val prefs = getSharedPreferences("easify_permissions", Context.MODE_PRIVATE)
+        prefs.edit().apply {
+            missing.forEach { putBoolean("requested_$it", true) }
+            apply()
+        }
+
+        android.util.Log.d(TAG, "$callerTag: Requesting missing permissions: $missing")
+        ActivityCompat.requestPermissions(this, missing.toTypedArray(), REQUEST_RECORD_AUDIO_PERMISSION)
+        return false
+    }
+
+    private fun openAppSettings() {
+        try {
+            val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = android.net.Uri.fromParts("package", packageName, null)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+            android.widget.Toast.makeText(this, "Please enable the required permissions and try again", android.widget.Toast.LENGTH_LONG).show()
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "openAppSettings: Failed to open settings", e)
+        }
+    }
     
     private fun answerCallWithHold() {
         stopRinging()
@@ -1427,11 +1498,7 @@ class IncomingCallActivity : AppCompatActivity() {
             return
         }
         
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            android.util.Log.d(TAG, "answerCallWithHold: Requesting RECORD_AUDIO permission")
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_RECORD_AUDIO_PERMISSION)
-            return
-        }
+        if (!ensureCallPermissions("answerCallWithHold")) return
         
         callHandled = true
         // CRITICAL: Cancel all pending MIUI postDelayed callbacks BEFORE finishing.
@@ -1469,11 +1536,7 @@ class IncomingCallActivity : AppCompatActivity() {
             return
         }
         
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            android.util.Log.d(TAG, "answerCallWithEndFirst: Requesting RECORD_AUDIO permission")
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_RECORD_AUDIO_PERMISSION)
-            return
-        }
+        if (!ensureCallPermissions("answerCallWithEndFirst")) return
         
         callHandled = true
         cancelPendingCallbacks()
@@ -1511,12 +1574,8 @@ class IncomingCallActivity : AppCompatActivity() {
             return
         }
         
-        // Check for RECORD_AUDIO permission before answering
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            android.util.Log.d(TAG, "answerCall: Requesting RECORD_AUDIO permission")
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_RECORD_AUDIO_PERMISSION)
-            return
-        }
+        // Check for RECORD_AUDIO & READ_PHONE_STATE permissions before answering
+        if (!ensureCallPermissions("answerCall")) return
         
         proceedWithAnswer()
     }
@@ -1673,13 +1732,23 @@ class IncomingCallActivity : AppCompatActivity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         when (requestCode) {
             REQUEST_RECORD_AUDIO_PERMISSION -> {
-                if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                    android.util.Log.d(TAG, "onRequestPermissionsResult: RECORD_AUDIO permission granted, proceeding with answer")
+                val allGranted = grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+                if (allGranted) {
+                    android.util.Log.d(TAG, "onRequestPermissionsResult: All call permissions granted, proceeding with answer")
                     proceedWithAnswer()
                 } else {
-                    android.util.Log.w(TAG, "onRequestPermissionsResult: RECORD_AUDIO permission denied, cannot answer call")
-                    // Show toast or message that permission is required
-                    android.widget.Toast.makeText(this, "Microphone permission is required to answer calls", android.widget.Toast.LENGTH_LONG).show()
+                    android.util.Log.w(TAG, "onRequestPermissionsResult: Call permissions denied")
+                    // Check if any permission is now permanently denied
+                    val permanentlyDenied = permissions.filterIndexed { index, _ ->
+                        grantResults[index] != PackageManager.PERMISSION_GRANTED
+                    }.filter { !ActivityCompat.shouldShowRequestPermissionRationale(this, it) }
+
+                    if (permanentlyDenied.isNotEmpty()) {
+                        android.util.Log.d(TAG, "onRequestPermissionsResult: Permanently denied permissions: $permanentlyDenied — opening settings")
+                        openAppSettings()
+                    } else {
+                        android.widget.Toast.makeText(this, "Microphone and Phone State permissions are required to answer calls", android.widget.Toast.LENGTH_LONG).show()
+                    }
                 }
             }
         }
