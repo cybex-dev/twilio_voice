@@ -648,6 +648,12 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
     return Future.value(true);
   }
 
+  @override
+  Future<bool?> setConferenceMode(bool isConference) {
+    return _channel.invokeMethod(
+        'setConferenceMode', <String, dynamic>{"isConference": isConference});
+  }
+
   /// Whether or not should the user receive a notification after a missed call, default to true.
   ///
   /// Setting is persisted across restarts until overridden

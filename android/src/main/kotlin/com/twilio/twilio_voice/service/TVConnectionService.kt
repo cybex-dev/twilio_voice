@@ -122,6 +122,14 @@ class TVConnectionService : ConnectionService() {
     var suppressHoldUnholdBroadcasts: Boolean = false
     @Volatile
     var log_callWaitingCounter: Int = 0
+
+        /**
+         * Conference mode flag set from Dart via method channel.
+         * When true, incoming calls are silently rejected at the FCM level
+         * before any notification or UI is shown.
+         */
+        @Volatile
+        var isConferenceMode: Boolean = false
         
         fun clearCallWaitingState() {
             hasActiveCallDuringIncoming = false
@@ -339,6 +347,14 @@ class TVConnectionService : ConnectionService() {
                 val timestamp = System.currentTimeMillis()
                 Log.d(TAG, "[tryClaimFcmMessage] Checking at $timestamp on thread ${Thread.currentThread().name}")
                 
+                // CONFERENCE MODE CHECK: If a conference call is active, silently
+                // reject ALL incoming calls at the earliest possible point (before
+                // Voice.handleMessage) so no notification or UI is shown.
+                if (isConferenceMode) {
+                    Log.w(TAG, "[tryClaimFcmMessage] ❌ BLOCKING - Conference call is active, rejecting incoming call silently")
+                    return false
+                }
+                
                 // Check if there's a truly answered/connected call (not just ringing)
                 val hasAnsweredCall = activeConnections.values.any { 
                     it.state == Connection.STATE_ACTIVE || it.state == Connection.STATE_HOLDING 
@@ -436,6 +452,13 @@ class TVConnectionService : ConnectionService() {
                 Log.d(TAG, "│ Timestamp: $timestamp")
                 Log.d(TAG, "│ CallSid: $callSid (short: $shortSid)")
                 Log.d(TAG, "├─────────────────────────────────────────────────────────────────┤")
+                
+                // CONFERENCE MODE CHECK (safety net): Reject all incoming calls during conference
+                if (isConferenceMode) {
+                    Log.w(TAG, "│ ❌ REJECTED - Conference call is active, rejecting incoming call")
+                    Log.d(TAG, "└─────────────────────────────────────────────────────────────────┘")
+                    return false
+                }
                 
                 // FIRST CHECK: Is another call currently being processed?
                 Log.d(TAG, "│ Check 0 - Processing Flag:")

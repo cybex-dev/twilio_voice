@@ -84,6 +84,10 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     var calls: [UUID: Call] = [:]
     /// The UUID of the currently active (foreground) call
     var activeCallUUID: UUID?
+    
+    /// Conference mode flag set from Dart via method channel.
+    /// When true, incoming calls are silently rejected before any UI is shown.
+    var isConferenceMode: Bool = false
 
     // Legacy single-call accessors for backward compatibility in audio/misc code
     var call: Call? {
@@ -969,6 +973,12 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                 }
             }
         }
+        else if flutterCall.method == "setConferenceMode" {
+            let isConference = arguments["isConference"] as? Bool ?? false
+            self.sendPhoneCallEvents(description: "LOG|setConferenceMode: \(isConference)", isError: false)
+            self.isConferenceMode = isConference
+            result(true)
+        }
         else if flutterCall.method == "isHolding" {
             // guard call not nil
             guard let activeCall = self.call else {
@@ -1472,6 +1482,22 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             // Tell CallKit the call has ended (more reliable than performEndCallAction)
             self.callKitProvider.reportCall(with: callInvite.uuid, endedAt: Date(), reason: .declinedElsewhere)
             self.sendPhoneCallEvents(description: "LOG|callInviteReceived: Twilio call rejected (system call active)", isError: false)
+            return
+        }
+        // ============================================================
+
+        // ============================================================
+        // CONFERENCE MODE CHECK: If a conference call is active, reject
+        // the incoming call immediately. We still MUST report to CallKit
+        // (Apple PushKit requirement), then immediately end it.
+        // This prevents even a brief CallKit UI flash during conference.
+        // ============================================================
+        if self.isConferenceMode {
+            self.sendPhoneCallEvents(description: "LOG|callInviteReceived: Conference call active - rejecting incoming call silently", isError: false)
+            reportIncomingCall(from: callInvite.from ?? defaultCaller, uuid: callInvite.uuid)
+            callInvite.reject()
+            self.callKitProvider.reportCall(with: callInvite.uuid, endedAt: Date(), reason: .declinedElsewhere)
+            self.sendPhoneCallEvents(description: "LOG|callInviteReceived: Incoming call rejected (conference active)", isError: false)
             return
         }
         // ============================================================

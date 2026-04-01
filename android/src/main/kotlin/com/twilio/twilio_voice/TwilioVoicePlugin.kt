@@ -944,6 +944,13 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 }
             }
 
+            TVMethodChannels.SET_CONFERENCE_MODE -> {
+                val isConference = call.argument<Boolean>("isConference") ?: false
+                Log.d(TAG, "setConferenceMode invoked: isConference=$isConference")
+                TVConnectionService.isConferenceMode = isConference
+                result.success(true)
+            }
+
             TVMethodChannels.IS_HOLDING -> {
                 Log.d(TAG, "isHolding call invoked")
                 result.success(isHolding)

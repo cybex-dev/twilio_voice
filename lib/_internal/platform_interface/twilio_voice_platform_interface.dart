@@ -237,6 +237,11 @@ abstract class TwilioVoicePlatform extends SharedPlatformInterface {
   /// Sends call events
   CallEvent parseCallEvent(String state);
 
+  /// Notify the native layer about conference mode state.
+  /// When [isConference] is true, incoming calls are silently rejected
+  /// at the native level before any notification or UI is shown.
+  Future<bool?> setConferenceMode(bool isConference);
+
   /// Cached audio route data from the latest native AudioRoute event.
   /// Returns the route + Bluetooth availability without an extra method channel round-trip.
   AudioRouteData? get lastAudioRouteData;
