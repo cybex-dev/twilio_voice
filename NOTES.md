@@ -16,6 +16,7 @@ The javascript files required by `twilio_voice` is `twilio.min.js`, which is fou
 
 **Package Information:**
 > minSdkVersion: 26
+> 
 > compileSdkVersion: 34
 
 **Gradle:**
@@ -65,6 +66,11 @@ alternatively, this could be found in Phone App settings -> Other/Advanced Call 
 (if there is a method to programmatically open this, please submit a PR)
 
 ### iOS & macOS
+
+**iOS Pod Information:**
+> s.platform = :ios, '12.0'
+> 
+> s.ios.deployment_target = '12.0'
 
 If you encounter this error
 > warning: The macOS deployment target 'MACOSX_DEPLOYMENT_TARGET' is set to 10.XX, but the range of supported deployment target versions is 10.XY to 13.1.99. (in target 'ABCD' from project 'Pods')

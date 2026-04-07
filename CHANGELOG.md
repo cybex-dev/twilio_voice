@@ -1,6 +1,7 @@
 ## Next Release
 
-* BREAKING CHANGES:
+* **BREAKING CHANGES:**
+  * Minimum iOS deployment version updated to iOS 12.0 (from iOS 11.0) to support latest Twilio iOS SDK. 
   * Feat: Completed migration to Federated Plugin structure. This requires one change:
   ```dart
   /// old
@@ -9,6 +10,11 @@
   // new 
   TwilioVoicePlatform.instance
   ```
+* feat: [Android, iOS, Web, macOS] Update Twilio SDKs to latest versions, see release notes for:
+  * [Android 6.10.0](https://www.twilio.com/docs/voice/sdks/android/3x-changelog#6100), and
+  * [iOS 6.13.6](https://www.twilio.com/docs/voice/sdks/ios/changelog#6136), and
+  * [Web 2.18.0](https://www.twilio.com/docs/voice/sdks/javascript/changelog#2180-january-5-2026), and
+  * [macOS 2.18.0](https://www.twilio.com/docs/voice/sdks/javascript/changelog#2180-january-5-2026),
 * Feat: [Web] Add Twilio Device [DeviceState] accessor protecting un/registration.
 * Feat: [Web] Add Twilio Device `updateToken(String)` function to allow updating of active device tokens.
 * Fix: [Web] Twilio Device does not unregister on `unregister()` method call due to 'device.off' not visible in js object causing device event listeners to remain attached on unregistered device.
@@ -17,7 +23,7 @@
 * Fix: [Web] Await Twilio Device `register()` and `unregister()` method calls.
 * Fix: [Web] Prevent duplicate `TwilioVoiceWeb` instances.
 * Feat: [iOS] Add support for call logging via `enableCallLogging(bool)` to record call in recents. No other platform currently supports this, see [NOTES.md](NOTES.md#limitations) for more details.
-* Fix: `showMissedCallNotifications` method call not working due to incorrect method channel name. 
+* Fix: `showMissedCallNotifications` method call not working due to incorrect method channel name.
 * Feat: update example.
 * Docs: update CHANGELOG
 
