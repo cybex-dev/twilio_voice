@@ -341,7 +341,7 @@ public class JSObject: NSObject, WKScriptMessageHandler, Disposable {
     /// var device = new Twilio.Device();
     /// ```
     static func assign(webView: TVWebView, objectName: String, assignTo: String, mutatable: Bool = false, completionHandler: @escaping (_ result: Any?, _ error: String?) -> Void) {
-        let JS = "\(mutatable ? "var" : "const") \(assignTo) = new \(objectName)()';"
+        let JS = "\(mutatable ? "var" : "const") \(assignTo) = new \(objectName)();"
         webView.evaluateJavaScript(javascript: JS, sourceURL: "new_\(objectName)", completionHandler: completionHandler)
     }
 
