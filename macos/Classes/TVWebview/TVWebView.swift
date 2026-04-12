@@ -10,6 +10,7 @@ public class TVWebView: WKWebView, WKUIDelegate, WKNavigationDelegate {
     init(messageHandler: String, loggingEnabled: Bool = false) {
         super.init(frame: CGRect.zero, configuration: WKWebViewConfiguration())
         self.loggingEnabled = loggingEnabled
+        injectTwilioSdk()
 
         let bundle = Bundle(for: TwilioVoicePlugin.self)
         if let url = bundle.url(forResource: "Resources/index", withExtension: "html") {
@@ -30,11 +31,18 @@ public class TVWebView: WKWebView, WKUIDelegate, WKNavigationDelegate {
     required init?(coder: NSCoder) {
         super.init(coder: coder)
     }
+    private func injectTwilioSdk() {
+        let sdkMessageHandler = TwilioSdkLoadMessageHandler()
+        configuration.userContentController.add(sdkMessageHandler, name: TwilioSdkLoadMessageHandler.handlerName)
+        sdkMessageHandler.owner = self
+    }
 
     private func overrideLogging() {
         configuration.userContentController.addUserScript(WKUserScript(source: LoggingMessageHandler.js, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         configuration.userContentController.add(LoggingMessageHandler(), name: LoggingMessageHandler.handlerName)
     }
+
+
     // MARK: - WKNavigationDelegate
 
     public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
