@@ -3,6 +3,7 @@ import Foundation
 import WebKit
 
 public class TVWebView: WKWebView, WKUIDelegate {
+public class TVWebView: WKWebView, WKUIDelegate, WKNavigationDelegate {
 
     var loggingEnabled: Bool = false
 
@@ -33,6 +34,16 @@ public class TVWebView: WKWebView, WKUIDelegate {
     private func overrideLogging() {
         configuration.userContentController.addUserScript(WKUserScript(source: LoggingMessageHandler.js, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         configuration.userContentController.add(LoggingMessageHandler(), name: LoggingMessageHandler.handlerName)
+    }
+    // MARK: - WKNavigationDelegate
+
+    public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+    }
+
+    public func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+    }
+
+    public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
     }
 
     /// Request microphone permissions via `getUserMedia`. This will first request app microphone permissions, followed by webview permissions.
