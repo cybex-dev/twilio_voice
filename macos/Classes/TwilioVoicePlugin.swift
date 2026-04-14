@@ -20,10 +20,17 @@ public enum NotificationCategory: String {
     case incoming = "incoming-call"
 }
 
-public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, TVDeviceDelegate, TVCallDelegate, UNUserNotificationCenterDelegate, WKUIDelegate {
+public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, TVDeviceDelegate, TVCallDelegate, UNUserNotificationCenterDelegate, WKUIDelegate, TVWebViewSdkLoadDelegate {
 
 //    private var _result: FlutterResult?
     private var eventSink: FlutterEventSink?
+
+    /// macOS: Twilio JS SDK finished loading and `Twilio.Device` is available.
+    private var isTwilioSdkReady: Bool = false
+    /// macOS: last load failed or timed out; next `whenSdkReady` consumer triggers a webview reload to retry.
+    private var hasSdkLoadFailed: Bool = false
+    private var sdkReadyWaiters: [(Result<Void, Error>) -> Void] = []
+    private var sdkReadyTimeoutWorkItem: DispatchWorkItem?
 
     let kCachedDeviceToken = "CachedDeviceToken"
     let kCachedBindingDate = "CachedBindingDate"
@@ -81,6 +88,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
         super.init()
         webView = TVWebView(messageHandler: "twilio_voice")
         webView?.uiDelegate = self
+        webView?.sdkLoadDelegate = self
         webView?.configuration.preferences.setValue(true, forKey: "developerExtrasEnabled")
         Thread.sleep(forTimeInterval: 1)
         clients = UserDefaults.standard.object(forKey: kClientList) as? [String: String] ?? [:]
@@ -144,6 +152,81 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
         } else {
             return from
         }
+    }
+
+    // MARK: - macOS Twilio JS SDK readiness (WKWebView)
+
+    public func twilioWebView(_ webView: TVWebView, sdkLoadSucceeded: Bool, reason: String?) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            if sdkLoadSucceeded {
+                self.isTwilioSdkReady = true
+                self.hasSdkLoadFailed = false
+                self.logEvent(description: "Twilio Voice JS SDK ready")
+                self.flushSdkWaiters(success: true, error: nil)
+            } else {
+                self.isTwilioSdkReady = false
+                self.hasSdkLoadFailed = true
+                let msg = reason ?? "unknown error"
+                self.logEvent(description: "Twilio Voice JS SDK failed: \(msg)", isError: true)
+                let err = NSError(domain: "twilio_voice", code: -10, userInfo: [NSLocalizedDescriptionKey: msg])
+                self.flushSdkWaiters(success: false, error: err)
+            }
+        }
+    }
+
+    private func flushSdkWaiters(success: Bool, error: Error?) {
+        sdkReadyTimeoutWorkItem?.cancel()
+        sdkReadyTimeoutWorkItem = nil
+        let waiters = sdkReadyWaiters
+        sdkReadyWaiters.removeAll()
+        if success {
+            waiters.forEach { $0(.success(())) }
+        } else {
+            let err = error ?? NSError(domain: "twilio_voice", code: -10, userInfo: [NSLocalizedDescriptionKey: "Twilio Voice JS SDK load failed"])
+            waiters.forEach { $0(.failure(err)) }
+        }
+    }
+
+    private func scheduleSdkReadyTimeout() {
+        sdkReadyTimeoutWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            if self.isTwilioSdkReady {
+                return
+            }
+            self.hasSdkLoadFailed = true
+            let err = NSError(domain: "twilio_voice", code: -11, userInfo: [NSLocalizedDescriptionKey: "Twilio Voice JS SDK load timed out"])
+            self.logEvent(description: "Twilio Voice JS SDK load timed out", isError: true)
+            self.flushSdkWaiters(success: false, error: err)
+        }
+        sdkReadyTimeoutWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30, execute: work)
+    }
+
+    private func whenSdkReady(completion: @escaping (Result<Void, Error>) -> Void) {
+        if isTwilioSdkReady {
+            completion(.success(()))
+            return
+        }
+        sdkReadyWaiters.append(completion)
+        scheduleSdkReadyTimeout()
+        if sdkReadyWaiters.count == 1 && hasSdkLoadFailed {
+            hasSdkLoadFailed = false
+            webView?.reloadBootstrapPage()
+        }
+    }
+
+    private func flutterErrorForSdkLoadFailure(_ error: Error) -> FlutterError {
+        let ns = error as NSError
+        let code: String
+        switch ns.code {
+        case -11:
+            code = FlutterErrorCodes.SDK_LOAD_TIMEOUT
+        default:
+            code = FlutterErrorCodes.SDK_LOAD_FAILED
+        }
+        return FlutterError(code: code, message: ns.localizedDescription, details: nil)
     }
 
     /// Register device token with Twilio. If an active TwilioDevice is found, it attempts to update the token instead. Completion handler completes with true if successful
