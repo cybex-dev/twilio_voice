@@ -299,6 +299,17 @@ However, you'll need to:
    <key>com.apple.security.device.bluetooth</key>
    <true/>
    ```
+
+   For **sandboxed** apps, also allow outbound network (Twilio CDN/SDK) and, in **Debug/Profile** only, incoming local connections so the Dart VM service can bind to `127.0.0.1` (avoids `SocketException: Operation not permitted` when running `flutter run`):
+
+   ```xml
+   <key>com.apple.security.network.client</key>
+   <true/>
+   <key>com.apple.security.network.server</key>
+   <true/>
+   ```
+
+   Omit `com.apple.security.network.server` from **Release** entitlements if you distribute on the Mac App Store unless you have a documented need for it.
 3. Lastly and most importantly, ensure the `index.html` and `twilio.min.js` is bundled inside of `twilio_voice` package (this
    shouldn't be a problem, but just in case). Found in `twilio_voice.../.../Classes/Resources/*`.
 
