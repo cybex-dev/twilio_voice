@@ -5,6 +5,9 @@ import WebKit
 public class TVWebView: WKWebView, WKUIDelegate {
 public class TVWebView: WKWebView, WKUIDelegate, WKNavigationDelegate {
 
+    /// Default Twilio Voice JS SDK script URL (same as former `index.html` tag).
+    public static let defaultTwilioSdkScriptURL = "https://cdn.jsdelivr.net/npm/@twilio/voice-sdk@2.18.0/dist/twilio.min.js"
+
     var loggingEnabled: Bool = false
 
     init(messageHandler: String, loggingEnabled: Bool = false) {
