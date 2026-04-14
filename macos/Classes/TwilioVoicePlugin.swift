@@ -90,7 +90,6 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
         webView?.uiDelegate = self
         webView?.sdkLoadDelegate = self
         webView?.configuration.preferences.setValue(true, forKey: "developerExtrasEnabled")
-        Thread.sleep(forTimeInterval: 1)
         clients = UserDefaults.standard.object(forKey: kClientList) as? [String: String] ?? [:]
 
         // Register notification categories
