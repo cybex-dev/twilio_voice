@@ -12,5 +12,8 @@
 	<true/>
 	<key>com.apple.security.network.client</key>
 	<true/>
+	<!-- Required for Flutter debug/profile: Dart VM service binds to 127.0.0.1 (otherwise SocketException errno 1). -->
+	<key>com.apple.security.network.server</key>
+	<true/>
 </dict>
 </plist>
