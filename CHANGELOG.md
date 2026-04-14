@@ -24,6 +24,7 @@
 * Fix: [Web] Prevent duplicate `TwilioVoiceWeb` instances.
 * Feat: [iOS] Add support for call logging via `enableCallLogging(bool)` to record call in recents. No other platform currently supports this, see [NOTES.md](NOTES.md#limitations) for more details.
 * Fix: `showMissedCallNotifications` method call not working due to incorrect method channel name.
+* Feat: [MacOS] Load Twilio Voice Web SDK into WKWebView from CDN with `executeWhenSDKReady` method to ensure SDK is loaded before any plugin methods are called. This replaces the previous implementation of loading the SDK from a local file which caused issues with missing files when used as a dependency in other projects.
 * Feat: update example.
 * Docs: update CHANGELOG
 
