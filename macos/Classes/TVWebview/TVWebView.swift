@@ -179,7 +179,6 @@ public class TVWebView: WKWebView, WKUIDelegate, WKNavigationDelegate {
             }
             javascript += ";"
         }
-//        NSLog("[JS] exec: \(javascript)")
 
         evaluateJavaScript(javascript) { (any, error) in
             if (error != nil) {
