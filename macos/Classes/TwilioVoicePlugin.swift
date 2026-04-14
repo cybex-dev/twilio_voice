@@ -231,42 +231,92 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     /// Register device token with Twilio. If an active TwilioDevice is found, it attempts to update the token instead. Completion handler completes with true if successful
     ///
     /// - Parameter token: device token
-    /// - Parameter completionHandler: completion handler -> (Bool?)
-    private func setTokens(token: String, completionHandler: @escaping OnCompletionValueHandler<Bool>) -> Void {
+    /// - Parameter flutterResult: Flutter result; may be a [FlutterError] if the JS SDK is not ready
+    private func setTokens(token: String, flutterResult: @escaping FlutterResult) {
+        executeWhenSdkReady(flutterResult) {
+            self.setTokensAfterSdkReady(token: token, flutterResult: flutterResult)
+        }
+    }
+
+    private func setTokensAfterSdkReady(token: String, flutterResult: @escaping FlutterResult) {
         assert(token.isNotEmpty(), "Access token cannot be empty")
 
         let codecs: [String] = ["opus", "pcmu"]
         let options: DeviceInitOptions = DeviceInitOptions(logLevel: 1, codecPreferences: codecs, closeProtection: false, allowIncomingWhileBusy: false)
         if let device = twilioDevice {
             device.updateToken(token) { (value) in
-                completionHandler(value ?? false)
+                flutterResult(value ?? false)
             }
         } else {
             if let webView = webView {
-                twilioDevice = TVDevice(token, options: options, webView: webView) { (device, error) in
+                twilioDevice = TVDevice(token, options: options, webView: webView) { (_, error) in
                     if let error = error {
                         print("Error TVDevice:init : \(String(describing: error))")
-                        completionHandler(false)
+                        flutterResult(false)
                         return
                     }
 
                     if let device = self.twilioDevice {
-                        self.twilioDevice = device
                         device.deviceDelegate = self
                         device.attachEventListeners()
                         device.register { error in
                             if let error = error {
                                 print("Registering Error: \(String(describing: error))")
-                                completionHandler(false)
+                                flutterResult(false)
                             } else {
-                                completionHandler(true)
+                                flutterResult(true)
                             }
                         }
                     }
                 }
+            } else {
+                flutterResult(FlutterError(code: FlutterErrorCodes.INTERNAL_STATE_ERROR, message: "WebView not available", details: nil))
+            }
+        }
+    }
+
+    private func executeWhenSdkReady(_ flutterResult: @escaping FlutterResult, _ action: @escaping () -> Void) {
+        whenSdkReady { [weak self] loadResult in
+            guard let self = self else {
+                flutterResult(FlutterError(code: FlutterErrorCodes.UNAVAILABLE_ERROR, message: "Plugin released", details: nil))
+                return
+            }
+            switch loadResult {
+            case .failure(let error):
+                flutterResult(self.flutterErrorForSdkLoadFailure(error))
+            case .success:
+                action()
+            }
+        }
+    }
+
+    private func placeCall(from arguments: Dictionary<String, AnyObject>, flutterResult: @escaping FlutterResult) {
+        guard let to = arguments[Constants.PARAM_TO] as? String else {
+            let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.MALFORMED_ARGUMENTS, message: "No '\(Constants.PARAM_TO)' argument provided or invalid type", details: nil)
+            flutterResult(ferror)
+            return
+        }
+        guard let from = arguments[Constants.PARAM_FROM] as? String else {
+            let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.MALFORMED_ARGUMENTS, message: "No '\(Constants.PARAM_FROM)' argument provided or invalid type", details: nil)
+            flutterResult(ferror)
+            return
+        }
+        guard twilioDevice != nil else {
+            let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.INTERNAL_STATE_ERROR, message: "Twilio device not initialized. Call 'tokens' first.", details: nil)
+            flutterResult(ferror)
+            return
+        }
+
+        var params: [String: Any] = [:]
+        arguments.forEach { (key, value) in
+            if key != Constants.PARAM_TO && key != Constants.PARAM_FROM {
+                params[key] = value
             }
         }
 
+        place(from: from, to: to, extraOptions: params) { success in
+            flutterResult(success ?? false)
+        }
     }
 
 
@@ -310,20 +360,23 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
             }
         }
 
-        if let device = twilioDevice {
-            let options = TVDeviceConnectOptions(to: to, from: from, customParameters: params)
-            device.connect(options, assignTo: "_call") { call, s in
-                if let error = s {
-                    print("[TVPlugin:place] Error resolving call params: \(error)")
-                    completionHandler(nil)
-                    return
-                }
-                if let call = call {
-                    self.twilioCall = call
-                    completionHandler(true)
-                    return
-                }
+        guard let device = twilioDevice else {
+            completionHandler(false)
+            return
+        }
+        let options = TVDeviceConnectOptions(to: to, from: from, customParameters: params)
+        device.connect(options, assignTo: "_call") { call, s in
+            if let error = s {
+                print("[TVPlugin:place] Error resolving call params: \(error)")
+                completionHandler(false)
+                return
             }
+            if let call = call {
+                self.twilioCall = call
+                completionHandler(true)
+                return
+            }
+            completionHandler(false)
         }
     }
 
@@ -652,69 +705,37 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
                 return
             }
             logEvent(description: "Attempting to register with twilio")
-            setTokens(token: token) { success in
-                result(success ?? false)
-            }
+            setTokens(token: token, flutterResult: result)
             break
 
         case .makeCall:
-            guard let to = arguments[Constants.PARAM_TO] as? String else {
-                let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.MALFORMED_ARGUMENTS, message: "No '\(Constants.PARAM_TO)' argument provided or invalid type", details: nil)
-                result(ferror)
-                return
-            }
-            guard let from = arguments[Constants.PARAM_FROM] as? String else {
-                let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.MALFORMED_ARGUMENTS, message: "No '\(Constants.PARAM_FROM)' argument provided or invalid type", details: nil)
-                result(ferror)
-                return
-            }
-
-            var params: [String: Any] = [:]
-            arguments.forEach { (key, value) in
-                if key != Constants.PARAM_TO && key != Constants.PARAM_FROM {
-                    params[key] = value
-                }
-            }
-
-            place(from: from, to: to, extraOptions: params) { success in
-                result(success ?? false)
+            executeWhenSdkReady(result) {
+                self.placeCall(from: arguments, flutterResult: result)
             }
             break
         case .connect:
-            guard let to = arguments[Constants.PARAM_TO] as? String else {
-                return
-            }
-            guard let from = arguments[Constants.PARAM_FROM] as? String else {
-                return
-            }
-
-            var params: [String: Any] = [:]
-            arguments.forEach { (key, value) in
-                if key != Constants.PARAM_TO && key != Constants.PARAM_FROM {
-                    params[key] = value
-                }
-            }
-
-            place(from: from, to: to, extraOptions: params) { success in
-                result(success ?? false)
+            executeWhenSdkReady(result) {
+                self.placeCall(from: arguments, flutterResult: result)
             }
             break
         case .toggleMute:
-            guard let muted = arguments["muted"] as? Bool else {
-                let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.MALFORMED_ARGUMENTS, message: "No 'muted' argument provided", details: nil)
-                result(ferror)
-                return
-            }
+            executeWhenSdkReady(result) {
+                guard let muted = arguments["muted"] as? Bool else {
+                    let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.MALFORMED_ARGUMENTS, message: "No 'muted' argument provided", details: nil)
+                    result(ferror)
+                    return
+                }
 
-            guard twilioCall != nil else {
-                let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.INTERNAL_STATE_ERROR, message: "No call to be muted", details: nil)
-                result(ferror)
-                return
-            }
+                guard self.twilioCall != nil else {
+                    let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.INTERNAL_STATE_ERROR, message: "No call to be muted", details: nil)
+                    result(ferror)
+                    return
+                }
 
-            toggleMute(muted) { muted in
-                result(muted)
-            };
+                self.toggleMute(muted) { muted in
+                    result(muted)
+                };
+            }
             break
 
         case .isMuted:
@@ -847,74 +868,86 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
             break
 
         case .answer:
-            guard twilioCall != nil else {
-                let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.INTERNAL_STATE_ERROR, message: "No incoming call to answer", details: nil)
-                result(ferror)
-                return
-            }
+            executeWhenSdkReady(result) {
+                guard self.twilioCall != nil else {
+                    let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.INTERNAL_STATE_ERROR, message: "No incoming call to answer", details: nil)
+                    result(ferror)
+                    return
+                }
 
-            answer { success in
-                result(success ?? false)
+                self.answer { success in
+                    result(success ?? false)
+                }
             }
             break
 
         case .unregister:
-            guard twilioDevice != nil else {
-                result(false)
-                return;
-            }
+            executeWhenSdkReady(result) {
+                guard self.twilioDevice != nil else {
+                    result(false)
+                    return;
+                }
 
-            unregisterToken { success in
-                result(success ?? false)
+                self.unregisterToken { success in
+                    result(success ?? false)
+                }
             }
             break
 
         case .hangUp:
-            guard twilioCall != nil else {
-                let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.INTERNAL_STATE_ERROR, message: "No active call to hang up on", details: nil)
-                result(ferror)
-                return
-            }
+            executeWhenSdkReady(result) {
+                guard self.twilioCall != nil else {
+                    let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.INTERNAL_STATE_ERROR, message: "No active call to hang up on", details: nil)
+                    result(ferror)
+                    return
+                }
 
-            hangUp { success in
-                result(success ?? false)
+                self.hangUp { success in
+                    result(success ?? false)
+                }
             }
             break
 
         case .registerClient:
-            guard let clientId = arguments["id"] as? String else {
-                let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.MALFORMED_ARGUMENTS, message: "Argument 'id' missing or incorrect type", details: nil)
-                result(ferror)
-                return
-            }
+            executeWhenSdkReady(result) {
+                guard let clientId = arguments["id"] as? String else {
+                    let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.MALFORMED_ARGUMENTS, message: "Argument 'id' missing or incorrect type", details: nil)
+                    result(ferror)
+                    return
+                }
 
-            guard let clientName = arguments["name"] as? String else {
-                let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.MALFORMED_ARGUMENTS, message: "Argument 'name' missing or incorrect type", details: nil)
-                result(ferror)
-                return
-            }
+                guard let clientName = arguments["name"] as? String else {
+                    let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.MALFORMED_ARGUMENTS, message: "Argument 'name' missing or incorrect type", details: nil)
+                    result(ferror)
+                    return
+                }
 
-            result(registerClient(clientId, clientName))
+                result(self.registerClient(clientId, clientName))
+            }
             break
 
         case .unregisterClient:
-            guard let clientId = arguments["id"] as? String else {
-                let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.MALFORMED_ARGUMENTS, message: "Argument 'id' missing or incorrect type", details: nil)
-                result(ferror)
-                return
-            }
+            executeWhenSdkReady(result) {
+                guard let clientId = arguments["id"] as? String else {
+                    let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.MALFORMED_ARGUMENTS, message: "Argument 'id' missing or incorrect type", details: nil)
+                    result(ferror)
+                    return
+                }
 
-            result(unregisterClient(clientId))
+                result(self.unregisterClient(clientId))
+            }
             break
 
         case .defaultCaller:
-            guard let caller = arguments[Constants.kDefaultCaller] as? String else {
-                let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.MALFORMED_ARGUMENTS, message: "Argument 'defaultCaller' missing or incorrect type", details: nil)
-                result(ferror)
-                return
-            }
+            executeWhenSdkReady(result) {
+                guard let caller = arguments[Constants.kDefaultCaller] as? String else {
+                    let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.MALFORMED_ARGUMENTS, message: "Argument 'defaultCaller' missing or incorrect type", details: nil)
+                    result(ferror)
+                    return
+                }
 
-            result(setDefaultCaller(caller))
+                result(self.setDefaultCaller(caller))
+            }
             break
 
         case .hasMicPermission:
