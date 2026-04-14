@@ -13,6 +13,7 @@ public class TVWebView: WKWebView, WKUIDelegate, WKNavigationDelegate {
     init(messageHandler: String, loggingEnabled: Bool = false) {
         super.init(frame: CGRect.zero, configuration: WKWebViewConfiguration())
         self.loggingEnabled = loggingEnabled
+        navigationDelegate = self
         injectTwilioSdk()
 
         let bundle = Bundle(for: TwilioVoicePlugin.self)
