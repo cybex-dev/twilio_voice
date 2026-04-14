@@ -19,6 +19,7 @@ public class TVWebView: WKWebView, WKUIDelegate, WKNavigationDelegate {
         super.init(frame: CGRect.zero, configuration: WKWebViewConfiguration())
         self.loggingEnabled = loggingEnabled
         navigationDelegate = self
+        overrideLogging()
         injectTwilioSdk()
 
         let bundle = Bundle(for: TwilioVoicePlugin.self)
@@ -33,8 +34,6 @@ public class TVWebView: WKWebView, WKUIDelegate, WKNavigationDelegate {
 
                   """)
         }
-
-        overrideLogging()
     }
 
     required init?(coder: NSCoder) {
