@@ -17,7 +17,7 @@ import com.twilio.voice.CancelledCallInvite
 import com.twilio.voice.MessageListener
 import com.twilio.voice.Voice
 
-class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageListener {
+open class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageListener {
     // Logging counters
     private var log_fcmReceivedCounter: Int = 0
     private var log_onCallInviteCounter: Int = 0
@@ -43,7 +43,9 @@ class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageListene
     }
 
 
-    override fun onNewToken(token: String) {
+    override fun onNewToken(token: String) { // open via class-level `open`
+        // (intentionally not marked `open` per-method — Kotlin allows overrides
+        // when the class is open and the method is already an override.)
         val intent = Intent(ACTION_NEW_TOKEN).also {
             it.putExtra(EXTRA_FCM_TOKEN, token)
         }
@@ -55,7 +57,7 @@ class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageListene
      *
      * @param remoteMessage Object representing the message received from Firebase Cloud Messaging.
      */
-    override fun onMessageReceived(remoteMessage: RemoteMessage) {
+    override fun onMessageReceived(remoteMessage: RemoteMessage) { // open via class-level `open`
     log_fcmReceivedCounter++
     Log.d(TAG, "[LOG] onMessageReceived CALLED. log_fcmReceivedCounter=$log_fcmReceivedCounter")
         val msgTimestamp = System.currentTimeMillis()
