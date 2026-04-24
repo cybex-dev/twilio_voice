@@ -17,7 +17,7 @@ import com.twilio.voice.CancelledCallInvite
 import com.twilio.voice.MessageListener
 import com.twilio.voice.Voice
 
-class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageListener {
+open class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageListener {
     // Logging counters
     private var log_fcmReceivedCounter: Int = 0
     private var log_onCallInviteCounter: Int = 0
