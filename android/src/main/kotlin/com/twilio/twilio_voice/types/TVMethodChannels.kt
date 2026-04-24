@@ -61,7 +61,8 @@ enum class TVMethodChannels(val method: String) {
     HAS_SHOW_ON_LOCK_SCREEN_PERMISSION("hasShowOnLockScreenPermission"),
     SWAP_CALLS("swapCalls"),
     CONNECT("connect"),
-    SET_CONFERENCE_MODE("setConferenceMode");
+    SET_CONFERENCE_MODE("setConferenceMode"),
+    SET_CONFERENCE_METADATA("setConferenceMetadata");
 
     companion object {
         private val map = TVMethodChannels.values().associateBy(TVMethodChannels::method)

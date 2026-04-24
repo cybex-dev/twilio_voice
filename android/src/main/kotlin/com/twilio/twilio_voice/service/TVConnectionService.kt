@@ -131,6 +131,104 @@ class TVConnectionService : ConnectionService() {
         @Volatile
         var isConferenceMode: Boolean = false
         
+        /**
+         * Conference metadata for API calls when host leaves
+         */
+        @Volatile
+        var conferenceId: Int? = null
+        @Volatile
+        var conferenceGatewayId: Int? = null
+        @Volatile
+        var conferenceApiBaseUrl: String? = null
+        @Volatile
+        var conferenceAuthToken: String? = null
+        @Volatile
+        var conferenceRefreshToken: String? = null
+        @Volatile
+        var conferenceServerAuthSecret: String? = null
+
+        // SharedPreferences keys for conference metadata persistence across process restarts
+        private const val PREF_CONFERENCE_IS_MODE = "conference_is_mode"
+        private const val PREF_CONFERENCE_ID = "conference_id"
+        private const val PREF_CONFERENCE_GATEWAY_ID = "conference_gateway_id"
+        private const val PREF_CONFERENCE_BASE_URL = "conference_base_url"
+        private const val PREF_CONFERENCE_AUTH_TOKEN = "conference_auth_token"
+        private const val PREF_CONFERENCE_REFRESH_TOKEN = "conference_refresh_token"
+        private const val PREF_CONFERENCE_SERVER_AUTH_SECRET = "conference_server_auth_secret"
+
+        /**
+         * Persist conference metadata to SharedPreferences so it survives app-kill + service restart.
+         */
+        fun saveConferenceMetadataToPrefs(ctx: Context) {
+            val prefs = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            prefs.edit()
+                .putBoolean(PREF_CONFERENCE_IS_MODE, isConferenceMode)
+                .putInt(PREF_CONFERENCE_ID, conferenceId ?: -1)
+                .putInt(PREF_CONFERENCE_GATEWAY_ID, conferenceGatewayId ?: -1)
+                .putString(PREF_CONFERENCE_BASE_URL, conferenceApiBaseUrl)
+                .putString(PREF_CONFERENCE_AUTH_TOKEN, conferenceAuthToken)
+                .putString(PREF_CONFERENCE_REFRESH_TOKEN, conferenceRefreshToken)
+                .putString(PREF_CONFERENCE_SERVER_AUTH_SECRET, conferenceServerAuthSecret)
+                .apply()
+            Log.d(TAG, "saveConferenceMetadataToPrefs: saved (conferenceId=$conferenceId, isConferenceMode=$isConferenceMode)")
+        }
+
+        /**
+         * Load conference metadata from SharedPreferences into companion statics.
+         * Called before making the leave-conference API call so that data survives app-kill.
+         */
+        fun loadConferenceMetadataFromPrefs(ctx: Context) {
+            val prefs = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            if (!prefs.getBoolean(PREF_CONFERENCE_IS_MODE, false)) {
+                Log.d(TAG, "loadConferenceMetadataFromPrefs: no saved conference metadata in prefs")
+                return
+            }
+            if (isConferenceMode && conferenceId != null) {
+                // Already loaded from Dart — no need to overwrite
+                Log.d(TAG, "loadConferenceMetadataFromPrefs: companion vars already populated, skipping prefs restore")
+                return
+            }
+            val savedId = prefs.getInt(PREF_CONFERENCE_ID, -1)
+            val savedGatewayId = prefs.getInt(PREF_CONFERENCE_GATEWAY_ID, -1)
+            if (savedId == -1 || savedGatewayId == -1) {
+                Log.w(TAG, "loadConferenceMetadataFromPrefs: invalid saved data, skipping")
+                return
+            }
+            isConferenceMode = true
+            conferenceId = savedId
+            conferenceGatewayId = savedGatewayId
+            conferenceApiBaseUrl = prefs.getString(PREF_CONFERENCE_BASE_URL, null)
+            conferenceAuthToken = prefs.getString(PREF_CONFERENCE_AUTH_TOKEN, null)
+            conferenceRefreshToken = prefs.getString(PREF_CONFERENCE_REFRESH_TOKEN, null)
+            conferenceServerAuthSecret = prefs.getString(PREF_CONFERENCE_SERVER_AUTH_SECRET, null)
+            Log.d(TAG, "loadConferenceMetadataFromPrefs: restored (conferenceId=$conferenceId, gatewayId=$conferenceGatewayId)")
+        }
+
+        /**
+         * Clear conference metadata from SharedPreferences after a successful leave API call.
+         */
+        fun clearConferenceMetadataFromPrefs(ctx: Context) {
+            val prefs = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            prefs.edit()
+                .remove(PREF_CONFERENCE_IS_MODE)
+                .remove(PREF_CONFERENCE_ID)
+                .remove(PREF_CONFERENCE_GATEWAY_ID)
+                .remove(PREF_CONFERENCE_BASE_URL)
+                .remove(PREF_CONFERENCE_AUTH_TOKEN)
+                .remove(PREF_CONFERENCE_REFRESH_TOKEN)
+                .remove(PREF_CONFERENCE_SERVER_AUTH_SECRET)
+                .apply()
+            // Also reset in-memory statics
+            isConferenceMode = false
+            conferenceId = null
+            conferenceGatewayId = null
+            conferenceApiBaseUrl = null
+            conferenceAuthToken = null
+            conferenceRefreshToken = null
+            conferenceServerAuthSecret = null
+            Log.d(TAG, "clearConferenceMetadataFromPrefs: cleared")
+        }
+
         fun clearCallWaitingState() {
             hasActiveCallDuringIncoming = false
             activeCallCallerName = ""

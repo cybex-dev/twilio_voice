@@ -242,6 +242,19 @@ abstract class TwilioVoicePlatform extends SharedPlatformInterface {
   /// at the native level before any notification or UI is shown.
   Future<bool?> setConferenceMode(bool isConference);
 
+  /// Send conference metadata to native side for background API calls.
+  /// This allows the native side to call the leave participant API when
+  /// the host hangs up from notification while the app is killed.
+  /// Includes refresh token for automatic token refresh on 401 responses.
+  Future<bool?> setConferenceMetadata({
+    required int conferenceId,
+    required int gatewayId,
+    required String apiBaseUrl,
+    required String authToken,
+    required String refreshToken,
+    required String serverAuthSecret,
+  });
+
   /// Cached audio route data from the latest native AudioRoute event.
   /// Returns the route + Bluetooth availability without an extra method channel round-trip.
   AudioRouteData? get lastAudioRouteData;

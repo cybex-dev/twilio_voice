@@ -951,6 +951,30 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 result.success(true)
             }
 
+            TVMethodChannels.SET_CONFERENCE_METADATA -> {
+                val conferenceId = call.argument<Int>("conferenceId")
+                val gatewayId = call.argument<Int>("gatewayId")
+                val apiBaseUrl = call.argument<String>("apiBaseUrl")
+                val authToken = call.argument<String>("authToken")
+                val refreshToken = call.argument<String>("refreshToken")
+                val serverAuthSecret = call.argument<String>("serverAuthSecret")
+                
+                Log.d(TAG, "setConferenceMetadata invoked: conferenceId=$conferenceId, gatewayId=$gatewayId")
+                
+                TVConnectionService.conferenceId = conferenceId
+                TVConnectionService.conferenceGatewayId = gatewayId
+                TVConnectionService.conferenceApiBaseUrl = apiBaseUrl
+                TVConnectionService.conferenceAuthToken = authToken
+                TVConnectionService.conferenceRefreshToken = refreshToken
+                TVConnectionService.conferenceServerAuthSecret = serverAuthSecret
+                TVConnectionService.isConferenceMode = conferenceId != null
+
+                // Persist to SharedPreferences so the data survives app-kill + service restart
+                context?.let { TVConnectionService.saveConferenceMetadataToPrefs(it) }
+
+                result.success(true)
+            }
+
             TVMethodChannels.IS_HOLDING -> {
                 Log.d(TAG, "isHolding call invoked")
                 result.success(isHolding)

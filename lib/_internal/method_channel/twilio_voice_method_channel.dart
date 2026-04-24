@@ -654,6 +654,28 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
         'setConferenceMode', <String, dynamic>{"isConference": isConference});
   }
 
+  @override
+  Future<bool?> setConferenceMetadata({
+    required int conferenceId,
+    required int gatewayId,
+    required String apiBaseUrl,
+    required String authToken,
+    required String refreshToken,
+    required String serverAuthSecret,
+  }) {
+    return _channel.invokeMethod(
+      'setConferenceMetadata',
+      <String, dynamic>{
+        "conferenceId": conferenceId,
+        "gatewayId": gatewayId,
+        "apiBaseUrl": apiBaseUrl,
+        "authToken": authToken,
+        "refreshToken": refreshToken,
+        "serverAuthSecret": serverAuthSecret,
+      },
+    );
+  }
+
   /// Whether or not should the user receive a notification after a missed call, default to true.
   ///
   /// Setting is persisted across restarts until overridden

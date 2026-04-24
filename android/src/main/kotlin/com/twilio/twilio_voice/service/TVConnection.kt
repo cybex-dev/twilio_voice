@@ -1089,6 +1089,13 @@ open class TVCallConnection(
         isDisconnectingOrDisconnected = true
         val otherCallsActive = hasOtherActiveCalls?.invoke() ?: false
         Log.i(TAG, "[Decline] forceDisconnectWithLogging called. State: $state, Direction: $callDirection, twilioCall: ${twilioCall != null}, CallParams: ${getCallParameters()?.callSid}, otherCallsActive=$otherCallsActive")
+
+        // If in conference mode, call the leave participant API now — before any audio
+        // teardown — because the notification hangup path never reaches onDisconnect().
+        if (TVConnectionService.isConferenceMode) {
+            Log.d(TAG, "[Decline] Conference mode detected in forceDisconnectWithLogging, calling leave participant API")
+            callConferenceLeaveApi()
+        }
         
         // Stop ringback tone if playing
         stopRingback()
@@ -1481,6 +1488,14 @@ open class TVCallConnection(
             return
         }
         isDisconnectingOrDisconnected = true
+
+        // If in conference mode and we have metadata, call the leave participant API
+        if (TVConnectionService.isConferenceMode && 
+            TVConnectionService.conferenceId != null && 
+            TVConnectionService.conferenceGatewayId != null) {
+            Log.d(TAG, "onDisconnect: Conference mode detected, calling leave participant API")
+            callConferenceLeaveApi()
+        }
 
         // Stop ringback tone if playing
         stopRingback()
@@ -2235,6 +2250,251 @@ open class TVCallConnection(
             Log.e(TAG, "sendDigits: Unable to send digits, active call is null")
         }
     }
+
+    /**
+     * Call the conference leave participant API when host hangs up from notification
+     * while app is killed. This ensures the host is properly removed from the conference
+     * on the backend even when the Dart side isn't running.
+     * 
+     * Handles token refresh automatically if the access token is expired (401 response).
+     */
+    private fun callConferenceLeaveApi() {
+        // Restore conference metadata from SharedPreferences if the app was killed and the
+        // companion object statics were wiped (process restart for the service).
+        TVConnectionService.loadConferenceMetadataFromPrefs(context)
+
+        val conferenceId = TVConnectionService.conferenceId
+        val gatewayId = TVConnectionService.conferenceGatewayId
+        val baseUrl = TVConnectionService.conferenceApiBaseUrl
+        val authToken = TVConnectionService.conferenceAuthToken
+        val refreshToken = TVConnectionService.conferenceRefreshToken
+        
+        if (conferenceId == null || gatewayId == null || baseUrl == null || authToken == null) {
+            Log.w(TAG, "callConferenceLeaveApi: Missing required data (conferenceId=$conferenceId, gatewayId=$gatewayId, baseUrl=$baseUrl, authToken=${authToken != null})")
+            return
+        }
+        
+        Log.d(TAG, "callConferenceLeaveApi: Making API call to remove host from conference (conferenceId=$conferenceId, gatewayId=$gatewayId)")
+        
+        // Capture non-nullable local copies before crossing into the lambda —
+        // Kotlin's null-flow analysis does not carry across lambda boundaries.
+        val safeAuthToken: String = authToken
+        val safeBaseUrl: String = baseUrl
+        val safeConferenceId: Int = conferenceId
+        val safeGatewayId: Int = gatewayId
+        
+        // Execute in background thread
+        Thread {
+            try {
+                var currentToken: String = safeAuthToken
+                var attemptCount = 0
+                val maxAttempts = 2 // Initial attempt + 1 retry with refreshed token
+                
+                while (attemptCount < maxAttempts) {
+                    attemptCount++
+                    
+                    val result = makeRemoveParticipantRequest(
+                        baseUrl = safeBaseUrl,
+                        token = currentToken,
+                        conferenceId = safeConferenceId,
+                        gatewayId = safeGatewayId
+                    )
+                    
+                    when {
+                        result.success -> {
+                            Log.d(TAG, "callConferenceLeaveApi: SUCCESS - Host removed from conference")
+                            // Clear persisted conference metadata — no longer needed
+                            TVConnectionService.clearConferenceMetadataFromPrefs(context)
+                            return@Thread
+                        }
+                        result.responseCode == 401 && refreshToken != null && attemptCount < maxAttempts -> {
+                            Log.d(TAG, "callConferenceLeaveApi: Token expired (401), attempting refresh...")
+                            val newToken = refreshAuthToken(safeBaseUrl, refreshToken!!)
+                            if (newToken != null) {
+                                currentToken = newToken
+                                Log.d(TAG, "callConferenceLeaveApi: Token refreshed, retrying request...")
+                            } else {
+                                Log.e(TAG, "callConferenceLeaveApi: Token refresh failed, aborting")
+                                return@Thread
+                            }
+                        }
+                        else -> {
+                            Log.e(TAG, "callConferenceLeaveApi: FAILED - Response code: ${result.responseCode}, message: ${result.message}")
+                            return@Thread
+                        }
+                    }
+                }
+                
+                Log.e(TAG, "callConferenceLeaveApi: Max retry attempts reached")
+            } catch (e: Exception) {
+                Log.e(TAG, "callConferenceLeaveApi: Exception during API call", e)
+            }
+        }.start()
+    }
+    
+    /**
+     * Make the HTTP request to remove a participant from conference
+     */
+    private fun makeRemoveParticipantRequest(
+        baseUrl: String,
+        token: String,
+        conferenceId: Int,
+        gatewayId: Int
+    ): ApiResponse {
+        return try {
+            // NOTE: endpoint is /api/v3/conference-call/participant/remove
+            val url = java.net.URL("$baseUrl/api/v3/conference-call/participant/remove")
+            val connection = url.openConnection() as java.net.HttpURLConnection
+            connection.requestMethod = "POST"
+            connection.setRequestProperty("Content-Type", "application/json")
+            connection.setRequestProperty("Accept", "application/json")
+            connection.setRequestProperty("Authorization", "Bearer $token")
+            // Required headers that the Dart HTTP service always sends
+            val serverAuthSecret = TVConnectionService.conferenceServerAuthSecret
+            if (serverAuthSecret != null) {
+                connection.setRequestProperty("X-Server-Auth-Secret", serverAuthSecret)
+            }
+            connection.setRequestProperty("X-Platform", "android")
+            connection.setRequestProperty("X-Platform-Type", "App")
+            connection.doOutput = true
+            connection.connectTimeout = 15000
+            connection.readTimeout = 15000
+            
+            val jsonBody = """{"gatewayId":$gatewayId,"conferenceId":$conferenceId,"participantId":null}"""
+            Log.d(TAG, "makeRemoveParticipantRequest: POST $url → $jsonBody")
+            
+            connection.outputStream.use { os ->
+                os.write(jsonBody.toByteArray(Charsets.UTF_8))
+            }
+            
+            val responseCode = connection.responseCode
+            // Read body from either inputStream or errorStream for full logging
+            val responseBody = try {
+                (if (responseCode in 200..299) connection.inputStream else connection.errorStream)
+                    ?.bufferedReader()?.use { it.readText() } ?: ""
+            } catch (e: Exception) { "" }
+            
+            Log.d(TAG, "makeRemoveParticipantRequest: response=$responseCode body=$responseBody")
+            connection.disconnect()
+            
+            ApiResponse(
+                success = responseCode in 200..299,
+                responseCode = responseCode,
+                message = responseBody
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "makeRemoveParticipantRequest: Exception", e)
+            ApiResponse(success = false, responseCode = -1, message = e.message ?: "Unknown error")
+        }
+    }
+    
+    /**
+     * Refresh the auth token using the refresh token
+     * Returns the new access token or null if refresh failed
+     */
+    private fun refreshAuthToken(baseUrl: String, refreshToken: String): String? {
+        return try {
+            val serverAuthSecret = TVConnectionService.conferenceServerAuthSecret
+            
+            // NOTE: refresh endpoint is /api/v2/refresh-token
+            val url = java.net.URL("$baseUrl/api/v2/refresh-token")
+            val connection = url.openConnection() as java.net.HttpURLConnection
+            connection.requestMethod = "POST"
+            connection.setRequestProperty("Content-Type", "application/json")
+            connection.setRequestProperty("Accept", "application/json")
+            connection.setRequestProperty("X-Platform", "android")
+            connection.setRequestProperty("X-Platform-Type", "App")
+            if (serverAuthSecret != null) {
+                connection.setRequestProperty("X-Server-Auth-Secret", serverAuthSecret)
+            }
+            connection.doOutput = true
+            connection.connectTimeout = 15000
+            connection.readTimeout = 15000
+            
+            val jsonBody = """{"refresh_token":"$refreshToken"}"""
+            Log.d(TAG, "refreshAuthToken: POST $url")
+            
+            connection.outputStream.use { os ->
+                os.write(jsonBody.toByteArray(Charsets.UTF_8))
+            }
+            
+            val responseCode = connection.responseCode
+            val responseBody = try {
+                (if (responseCode in 200..299) connection.inputStream else connection.errorStream)
+                    ?.bufferedReader()?.use { it.readText() } ?: ""
+            } catch (e: Exception) { "" }
+            
+            Log.d(TAG, "refreshAuthToken: response=$responseCode body=$responseBody")
+            connection.disconnect()
+            
+            if (responseCode in 200..299) {
+                val accessToken = extractAccessTokenFromJson(responseBody)
+                val newRefreshToken = extractRefreshTokenFromJson(responseBody)
+                if (newRefreshToken != null) {
+                    TVConnectionService.conferenceRefreshToken = newRefreshToken
+                }
+                accessToken
+            } else {
+                Log.e(TAG, "refreshAuthToken: Failed with response code $responseCode")
+                null
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "refreshAuthToken: Exception", e)
+            null
+        }
+    }
+    
+    /**
+     * Extract access token from JSON refresh response.
+     * Refresh response structure: {"data": {"token": "...", "refresh_token": "..."}}
+     * Looks for "token" key but excludes "refresh_token" keys.
+     */
+    private fun extractAccessTokenFromJson(json: String): String? {
+        return try {
+            // Match "token": "value" but NOT "refresh_token": "value"
+            val accessTokenPattern = """"token"\s*:\s*"([^"]+)"""".toRegex()
+            val matches = accessTokenPattern.findAll(json).toList()
+            // Pick the match whose key is exactly "token" (not "refresh_token")
+            // by checking the character before the matched "token"
+            for (match in matches) {
+                val start = match.range.first
+                // Check the char before the quote opening "token" — if it's _t it's refresh_token
+                val prefix = if (start >= 2) json.substring(maxOf(0, start - 2), start) else ""
+                if (!prefix.endsWith("_")) {
+                    return match.groupValues[1]
+                }
+            }
+            null
+        } catch (e: Exception) {
+            Log.e(TAG, "extractAccessTokenFromJson: Failed to parse", e)
+            null
+        }
+    }
+    
+    /**
+     * Extract refresh token from JSON response.
+     * Matches "refresh_token": "value"
+     */
+    private fun extractRefreshTokenFromJson(json: String): String? {
+        return try {
+            val refreshTokenPattern = """"refresh_token"\s*:\s*"([^"]+)"""".toRegex()
+            refreshTokenPattern.find(json)?.groupValues?.get(1)
+        } catch (e: Exception) {
+            Log.e(TAG, "extractRefreshTokenFromJson: Failed to parse", e)
+            null
+        }
+    }
+    
+    /**
+     * Simple data class to hold API response info
+     */
+    private data class ApiResponse(
+        val success: Boolean,
+        val responseCode: Int,
+        val message: String
+    )
 }
+
+
 
 
