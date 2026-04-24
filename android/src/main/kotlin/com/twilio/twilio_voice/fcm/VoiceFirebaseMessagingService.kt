@@ -1,22 +1,16 @@
 package com.twilio.twilio_voice.fcm
 
 import android.annotation.SuppressLint
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.PowerManager
 import android.util.Log
-import androidx.core.app.NotificationCompat
-import androidx.core.app.RemoteInput
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
-import com.twilio.twilio_voice.receivers.ChatReplyReceiver
 import com.twilio.twilio_voice.receivers.TVBroadcastReceiver
 import com.twilio.twilio_voice.service.TVConnectionService
 import com.twilio.voice.CallException
@@ -121,10 +115,9 @@ open class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageLi
                         Log.d(TAG, "Chat message in foreground — forwarding to Flutter for filtering")
                         forwardToFlutterFirebaseMessaging(remoteMessage)
                     } else {
-                        // App in background/terminated — show native notification
-                        // with reply action (Dart won't reliably show here).
-                        Log.d(TAG, "Chat message in background — showing native notification with reply")
-                        showChatNotificationWithReply(remoteMessage)
+                        // App in background/terminated — delegate to app-side ChatNotificationBuilder
+                        Log.d(TAG, "Chat message in background — delegating to app-side ChatNotificationBuilder")
+                        showChatNotificationViaAppSide(remoteMessage)
                     }
                 } else {
                     // Forward other non-Twilio messages to Flutter firebase_messaging plugin
@@ -156,69 +149,23 @@ open class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageLi
     }
 
     /**
-     * Shows a chat notification with an inline reply action entirely from native.
-     * The reply is handled by [ChatReplyReceiver] which sends the HTTP request
-     * using persisted auth/config from SharedPreferences.
+     * Delegates chat notification display to the app-side [com.easify.app.messaging.ChatNotificationBuilder].
+     * This keeps Easify-specific notification logic out of the generic Twilio plugin.
+     * Uses reflection so the plugin has no compile-time dependency on the app.
      */
-    private fun showChatNotificationWithReply(remoteMessage: RemoteMessage) {
+    private fun showChatNotificationViaAppSide(remoteMessage: RemoteMessage) {
         try {
-            val data = remoteMessage.data
-            val channelId = "high_importance_channel"
-            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val channel = NotificationChannel(
-                    channelId,
-                    "High Importance Notifications",
-                    NotificationManager.IMPORTANCE_HIGH
-                )
-                notificationManager.createNotificationChannel(channel)
-            }
-
-            val notificationId = System.currentTimeMillis().toInt()
-            val payloadJson = org.json.JSONObject(data as Map<*, *>).toString()
-
-            // RemoteInput for inline reply
-            val remoteInput = RemoteInput.Builder(ChatReplyReceiver.KEY_REPLY_TEXT)
-                .setLabel("Type a message...")
-                .build()
-
-            // Intent targeting ChatReplyReceiver which sends reply via HTTP
-            val replyIntent = Intent(applicationContext, ChatReplyReceiver::class.java).apply {
-                action = "reply_action"
-                putExtra(ChatReplyReceiver.EXTRA_NOTIFICATION_ID, notificationId)
-                putExtra(ChatReplyReceiver.EXTRA_PAYLOAD, payloadJson)
-            }
-
-            val replyPendingIntent = PendingIntent.getBroadcast(
-                applicationContext,
-                notificationId,
-                replyIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
-            )
-
-            val replyAction = NotificationCompat.Action.Builder(
-                android.R.drawable.ic_menu_send,
-                "Reply",
-                replyPendingIntent
-            ).addRemoteInput(remoteInput).build()
-
-            val title = data["title"] ?: data["sender"] ?: remoteMessage.notification?.title ?: "New Message"
-            val body = data["body"] ?: data["message"] ?: remoteMessage.notification?.body ?: ""
-
-            val notification = NotificationCompat.Builder(applicationContext, channelId)
-                .setSmallIcon(applicationContext.applicationInfo.icon)
-                .setContentTitle(title)
-                .setContentText(body)
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .setAutoCancel(true)
-                .addAction(replyAction)
-                .build()
-
-            notificationManager.notify(notificationId, notification)
-            Log.d(TAG, "showChatNotificationWithReply: shown id=$notificationId title=$title body=$body")
+            val payload = org.json.JSONObject(remoteMessage.data as Map<*, *>)
+            val builderClass = Class.forName("com.easify.app.messaging.ChatNotificationBuilder")
+            val showMethod = builderClass.getMethod("show", Context::class.java, org.json.JSONObject::class.java)
+            // ChatNotificationBuilder.show is a companion/static method — invoke on null (or companion instance)
+            val companionField = builderClass.getDeclaredField("Companion")
+            companionField.isAccessible = true
+            val companion = companionField.get(null)
+            showMethod.invoke(companion, applicationContext, payload)
+            Log.d(TAG, "showChatNotificationViaAppSide: delegated to ChatNotificationBuilder")
         } catch (e: Exception) {
-            Log.e(TAG, "showChatNotificationWithReply failed: ${e.message}", e)
+            Log.e(TAG, "showChatNotificationViaAppSide: failed to delegate — ${e.message}", e)
         }
     }
 
