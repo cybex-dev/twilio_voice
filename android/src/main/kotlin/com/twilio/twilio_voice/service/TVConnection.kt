@@ -2252,13 +2252,37 @@ open class TVCallConnection(
     }
 
     /**
-     * Call the conference leave participant API when host hangs up from notification
-     * while app is killed. This ensures the host is properly removed from the conference
-     * on the backend even when the Dart side isn't running.
-     * 
-     * Handles token refresh automatically if the access token is expired (401 response).
+     * Notify the main app that the host has left a conference call.
+     *
+     * Sends an explicit broadcast to [com.easify.app.ConferenceLeaveReceiver] which
+     * lives in the main app. The receiver reads the conference metadata from
+     * SharedPreferences (persisted when [TVConnectionService.saveConferenceMetadataToPrefs]
+     * was called) and calls the Easify backend API to remove the host.
+     *
+     * Using a broadcast lets us keep Easify-specific API logic out of this
+     * general-purpose Twilio plugin, and ensures the receiver can be started by
+     * Android even when the Flutter app process is killed.
      */
     private fun callConferenceLeaveApi() {
+        // Ensure companion statics are populated — they may be null if the app was killed
+        // and the service process was restarted for the notification hangup.
+        TVConnectionService.loadConferenceMetadataFromPrefs(context)
+
+        if (!TVConnectionService.isConferenceMode || TVConnectionService.conferenceId == null) {
+            Log.w(TAG, "callConferenceLeaveApi: Not in conference mode or no conferenceId — skipping broadcast")
+            return
+        }
+
+        Log.d(TAG, "callConferenceLeaveApi: Sending ACTION_CONFERENCE_LEAVE broadcast to main app (conferenceId=${TVConnectionService.conferenceId})")
+
+        // Explicit broadcast — targets only our receiver, never leaves the device.
+        val intent = android.content.Intent("com.easify.app.ACTION_CONFERENCE_LEAVE").apply {
+            setClassName(context.packageName, "com.easify.app.ConferenceLeaveReceiver")
+        }
+        context.sendBroadcast(intent)
+    }
+}
+
         // Restore conference metadata from SharedPreferences if the app was killed and the
         // companion object statics were wiped (process restart for the service).
         TVConnectionService.loadConferenceMetadataFromPrefs(context)
