@@ -43,7 +43,9 @@ open class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageLi
     }
 
 
-    override fun onNewToken(token: String) {
+    override fun onNewToken(token: String) { // open via class-level `open`
+        // (intentionally not marked `open` per-method — Kotlin allows overrides
+        // when the class is open and the method is already an override.)
         val intent = Intent(ACTION_NEW_TOKEN).also {
             it.putExtra(EXTRA_FCM_TOKEN, token)
         }
@@ -55,7 +57,7 @@ open class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageLi
      *
      * @param remoteMessage Object representing the message received from Firebase Cloud Messaging.
      */
-    override fun onMessageReceived(remoteMessage: RemoteMessage) {
+    override fun onMessageReceived(remoteMessage: RemoteMessage) { // open via class-level `open`
     log_fcmReceivedCounter++
     Log.d(TAG, "[LOG] onMessageReceived CALLED. log_fcmReceivedCounter=$log_fcmReceivedCounter")
         val msgTimestamp = System.currentTimeMillis()
