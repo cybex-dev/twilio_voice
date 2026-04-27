@@ -1,13 +1,15 @@
 package com.twilio.twilio_voice.fcm
 
 import android.annotation.SuppressLint
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.PowerManager
 import android.util.Log
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.ProcessLifecycleOwner
+import androidx.core.app.NotificationCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
@@ -106,23 +108,9 @@ open class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageLi
                 // Not a Twilio message - release the FCM claim since no onCallInvite will follow
                 TVConnectionService.releaseFcmClaim()
 
-                val isChatMessage = remoteMessage.data.containsKey("conversation_id")
-                if (isChatMessage) {
-                    val isAppInForeground = ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
-                    if (isAppInForeground) {
-                        // App in foreground — forward to Flutter so Dart-side
-                        // conversation filter can decide whether to show.
-                        Log.d(TAG, "Chat message in foreground — forwarding to Flutter for filtering")
-                        forwardToFlutterFirebaseMessaging(remoteMessage)
-                    } else {
-                        // App in background/terminated — delegate to app-side ChatNotificationBuilder
-                        Log.d(TAG, "Chat message in background — delegating to app-side ChatNotificationBuilder")
-                        showChatNotificationViaAppSide(remoteMessage)
-                    }
-                } else {
-                    // Forward other non-Twilio messages to Flutter firebase_messaging plugin
-                    forwardToFlutterFirebaseMessaging(remoteMessage)
-                }
+                // Forward all non-Twilio messages to Flutter firebase_messaging plugin.
+                // Chat notifications/replies are handled by the host app.
+                forwardToFlutterFirebaseMessaging(remoteMessage)
             } else {
                 Log.d(TAG, "Twilio Voice message handled successfully - waiting for onCallInvite callback")
             }
@@ -145,27 +133,6 @@ open class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageLi
             method.invoke(null, applicationContext, remoteMessage)
         } catch (e: Exception) {
             Log.d(TAG, "Could not forward message to Flutter firebase_messaging: ${e.message}")
-        }
-    }
-
-    /**
-     * Delegates chat notification display to the app-side [com.easify.app.messaging.ChatNotificationBuilder].
-     * This keeps Easify-specific notification logic out of the generic Twilio plugin.
-     * Uses reflection so the plugin has no compile-time dependency on the app.
-     */
-    private fun showChatNotificationViaAppSide(remoteMessage: RemoteMessage) {
-        try {
-            val payload = org.json.JSONObject(remoteMessage.data as Map<*, *>)
-            val builderClass = Class.forName("com.easify.app.messaging.ChatNotificationBuilder")
-            val showMethod = builderClass.getMethod("show", Context::class.java, org.json.JSONObject::class.java)
-            // ChatNotificationBuilder.show is a companion/static method — invoke on null (or companion instance)
-            val companionField = builderClass.getDeclaredField("Companion")
-            companionField.isAccessible = true
-            val companion = companionField.get(null)
-            showMethod.invoke(companion, applicationContext, payload)
-            Log.d(TAG, "showChatNotificationViaAppSide: delegated to ChatNotificationBuilder")
-        } catch (e: Exception) {
-            Log.e(TAG, "showChatNotificationViaAppSide: failed to delegate — ${e.message}", e)
         }
     }
 
