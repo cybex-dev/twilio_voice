@@ -1,0 +1,6 @@
+ext {
+    javaVersion = JavaVersion.toVersion(17)
+    androidGradlePluginVersion = ''
+    twilioVoiceVersion = '6.10.0'
+    minSdkVersion = 26
+}

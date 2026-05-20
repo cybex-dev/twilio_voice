@@ -1,21 +1,8 @@
-buildscript {
-    ext {
-        kotlinVersion           = "1.9.10"
-        agpVersion              = "8.5.2"
-        compileSdkVersion       = 35
-        targetSdkVersion        = 35
-        minSdkVersion           = 26
-        googlesServicesVersion  = "4.4.2"
-    }
-    repositories {
-        google()
-        mavenCentral()
-    }
-
-    dependencies {
-        classpath "com.android.tools.build:gradle:${agpVersion}"
-        classpath "com.google.gms:google-services:${googlesServicesVersion}"
-    }
+// Shared SDK/version values used by `app/build.gradle` (see rootProject.ext.* lookups).
+ext {
+    compileSdkVersion = 36
+    targetSdkVersion = 36
+    minSdkVersion = 26
 }
 
 allprojects {

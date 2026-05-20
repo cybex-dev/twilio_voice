@@ -1,7 +1,8 @@
 plugins {
     id "com.android.application"
-    id "kotlin-android"
-    id "dev.flutter.flutter-gradle-plugin"
+    // START: FlutterFire Configuration
+    id 'com.google.gms.google-services'
+    // END: FlutterFire Configuration
 }
 
 def localProperties = new Properties()
@@ -30,6 +31,7 @@ android {
         applicationId "com.twilio.twilio_voice_example"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
+        compileSdkVersion rootProject.ext.compileSdkVersion
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
     }
@@ -54,6 +56,10 @@ android {
     }
     namespace 'com.twilio.twilio_voice_example'
 }
+
+// Apply the Flutter Gradle plugin imperatively so the Android extension exists
+// before FlutterPluginUtils tries to access it during plugin application.
+apply plugin: 'dev.flutter.flutter-gradle-plugin'
 
 flutter {
     source '../..'
