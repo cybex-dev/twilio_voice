@@ -49,10 +49,38 @@ abstract class TwilioCallPlatform extends SharedPlatformInterface {
   Future<bool?> answer();
 
   /// Puts active call on hold
+  ///
+  /// On web & macOS, the [HoldStrategy] configured via [holdStrategy] is used since the
+  /// Twilio Voice JS SDK does not provide a native hold mechanism.
+  /// On Android & iOS, the native Twilio Voice SDK hold is used.
   Future<bool?> holdCall({bool holdCall = true});
 
-  /// Query's mute status of call, true if call is muted
+  /// Query's holding status of call, true if call is on hold
   Future<bool?> isHolding();
+
+  /// Strategy used by [holdCall], defaults to [HoldStrategy.local].
+  ///
+  /// Only configurable on web & macOS, throws [UnimplementedError] on other platforms.
+  HoldStrategy get holdStrategy;
+
+  set holdStrategy(HoldStrategy strategy);
+
+  /// URL of the audio file played to the remote party while on hold with [HoldStrategy.local].
+  /// If null (default), the remote party hears silence while on hold.
+  ///
+  /// May be updated at any time, including mid-call; the new audio applies to the next hold.
+  /// Only configurable on web & macOS, throws [UnimplementedError] on other platforms.
+  String? get holdAudioUrl;
+
+  set holdAudioUrl(String? url);
+
+  /// Callback invoked by [holdCall] when using [HoldStrategy.remote], use this to perform a
+  /// server-side hold via your own API. Required for [HoldStrategy.remote] to function.
+  ///
+  /// Only configurable on web & macOS, throws [UnimplementedError] on other platforms.
+  HoldActionCallback? get onHoldAction;
+
+  set onHoldAction(HoldActionCallback? callback);
 
   /// Toggles mute state to provided value
   Future<bool?> toggleMute(bool isMuted);

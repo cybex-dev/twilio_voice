@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:twilio_voice/twilio_voice.dart';
 
 import '../platform_interface/twilio_call_platform_interface.dart';
+import '../utils.dart';
 
 // abstract class MethodChannelTwilioCall extends TwilioVoiceSharedPlatform {
 class MethodChannelTwilioCall extends TwilioCallPlatform {
@@ -56,12 +58,77 @@ class MethodChannelTwilioCall extends TwilioCallPlatform {
     return _channel.invokeMethod('answer', <String, dynamic>{});
   }
 
-  /// Holds active call
-  /// [holdCall] is respected in web only, in native it will always toggle the hold state.
-  /// In future, native mobile will also respect the [holdCall] value.
+  /// True if hold behaviour is configurable on the current platform, i.e. web & macOS
+  /// (platforms backed by the Twilio Voice JS SDK which has no native hold mechanism).
+  /// Android & iOS use the native Twilio Voice SDK hold.
+  static bool get _canConfigureHold => kIsWeb || defaultTargetPlatform == TargetPlatform.macOS;
+
+  HoldStrategy _holdStrategy = HoldStrategy.local;
+  String? _holdAudioUrl;
+  HoldActionCallback? _onHoldAction;
+
   @override
-  Future<bool?> holdCall({bool holdCall = true}) {
-    return _channel.invokeMethod('holdCall', <String, dynamic>{"shouldHold": holdCall});
+  HoldStrategy get holdStrategy => _holdStrategy;
+
+  @override
+  set holdStrategy(HoldStrategy strategy) {
+    if (!_canConfigureHold) {
+      throw UnimplementedError("holdStrategy is not implemented on this platform, the native Twilio Voice SDK hold is used instead");
+    }
+    _holdStrategy = strategy;
+  }
+
+  @override
+  String? get holdAudioUrl => _holdAudioUrl;
+
+  @override
+  set holdAudioUrl(String? url) {
+    if (!_canConfigureHold) {
+      throw UnimplementedError("holdAudioUrl is not implemented on this platform, the native Twilio Voice SDK hold is used instead");
+    }
+    _holdAudioUrl = url;
+  }
+
+  @override
+  HoldActionCallback? get onHoldAction => _onHoldAction;
+
+  @override
+  set onHoldAction(HoldActionCallback? callback) {
+    if (!_canConfigureHold) {
+      throw UnimplementedError("onHoldAction is not implemented on this platform, the native Twilio Voice SDK hold is used instead");
+    }
+    _onHoldAction = callback;
+  }
+
+  /// Holds active call
+  /// [holdCall] is respected in web & macOS only, in native mobile it will always toggle the hold state.
+  /// In future, native mobile will also respect the [holdCall] value.
+  ///
+  /// On macOS, the configured [holdStrategy] is applied:
+  /// - [HoldStrategy.local]: hold is performed in the underlying webview (hold audio/silence
+  ///   replaces the outbound stream, inbound audio is silenced locally).
+  /// - [HoldStrategy.remote]: [onHoldAction] is invoked to perform a server-side hold, native
+  ///   state is updated afterwards.
+  @override
+  Future<bool?> holdCall({bool holdCall = true}) async {
+    if (_canConfigureHold && _holdStrategy == HoldStrategy.remote) {
+      final callback = _onHoldAction;
+      if (callback == null) {
+        printDebug("holdCall: HoldStrategy.remote requires an onHoldAction callback, ignoring hold request");
+        return false;
+      }
+      final sid = await getSid();
+      final success = await callback(sid, holdCall);
+      if (!success) {
+        return false;
+      }
+      return _channel.invokeMethod('holdCall', <String, dynamic>{"shouldHold": holdCall, "strategy": "remote"});
+    }
+    return _channel.invokeMethod('holdCall', <String, dynamic>{
+      "shouldHold": holdCall,
+      "strategy": "local",
+      if (_holdAudioUrl != null) "holdAudioUrl": _holdAudioUrl,
+    });
   }
 
   /// Query's active call holding state

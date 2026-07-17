@@ -15,6 +15,14 @@
   * [iOS 6.13.6](https://www.twilio.com/docs/voice/sdks/ios/changelog#6136), and
   * [Web 2.18.0](https://www.twilio.com/docs/voice/sdks/javascript/changelog#2180-january-5-2026), and
   * [macOS 2.18.0](https://www.twilio.com/docs/voice/sdks/javascript/changelog#2180-january-5-2026),
+* Feat: [Web, macOS] Add call holding support. The Twilio Voice JS SDK provides no native hold mechanism ([twilio-voice.js#32](https://github.com/twilio/twilio-voice.js/issues/32)), so `holdCall` now uses a configurable `HoldStrategy` (via `call.holdStrategy`):
+  * `HoldStrategy.local` (default): outbound audio is replaced with hold audio (`call.holdAudioUrl`, silence if unset) using Twilio's [AudioProcessor API](https://twilio.github.io/twilio-voice.js/interfaces/AudioProcessor.html), and inbound audio is silenced locally. No server interaction required.
+  * `HoldStrategy.remote`: delegates holding to the application via the `call.onHoldAction` callback, e.g. to perform a server-side hold (conference/queue TwiML) with your own API.
+  * `call.holdAudioUrl` can be updated at any time (getter/setter), applying to the next hold.
+  * On Android & iOS the native Twilio Voice SDK hold remains in use; setting `holdStrategy`, `holdAudioUrl` or `onHoldAction` throws `UnimplementedError`.
+* Feat: [Web] Add JS interop for `Call.getLocalStream()`, `Call.getRemoteStream()` and `Device.audio` (`AudioHelper.addProcessor`/`removeProcessor`).
+* Fix: [Web] `holdCall` no longer inverts the CallKit hold attribute and now emits `Hold`/`Unhold` call events; `isHolding()` reports the actual hold state.
+* Fix: [macOS] Repair non-compiling Swift in `place`/`connect` (malformed dictionary literals and guards).
 * Feat: [Web] Add Twilio Device [DeviceState] accessor protecting un/registration.
 * Feat: [Web] Add Twilio Device `updateToken(String)` function to allow updating of active device tokens.
 * Fix: [Web] Twilio Device does not unregister on `unregister()` method call due to 'device.off' not visible in js object causing device event listeners to remain attached on unregistered device.

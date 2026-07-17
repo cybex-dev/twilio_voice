@@ -177,6 +177,34 @@ public class TVCall: JSObject, TVCallDelegate, JSMessageHandlerDelegate {
                 }
     }
 
+    /// En/disables inbound (remote party) audio playback locally, i.e. silences what we hear
+    /// while the call is on hold. The remote MediaStream stays active.
+    /// - Parameters:
+    ///   - enabled: false to silence inbound audio, true to restore it
+    ///   - completionHandler: completion handler
+    /// - SeeAlso Twilio [Call.getRemoteStream](https://twilio.github.io/twilio-voice.js/classes/Call.html#getRemoteStream)
+    func setRemoteAudioEnabled(_ enabled: Bool, completionHandler: OnCompletionErrorHandler? = nil) {
+        let JS = """
+                 if (!!\(jsObjectName) && typeof \(jsObjectName).getRemoteStream === 'function') {
+                    var _stream = \(jsObjectName).getRemoteStream();
+                    if (_stream) {
+                        _stream.getAudioTracks().forEach((track) => track.enabled = \(enabled));
+                    }
+                    true;
+                 } else {
+                    throw new Error('\(jsObjectName).getRemoteStream is not a function');
+                 }
+                 """
+        webView.evaluateJavaScript(javascript: JS, sourceURL: "\(jsObjectName)_setRemoteAudioEnabled") { (_, error) in
+            if let error = error {
+                print(error)
+                completionHandler?(error)
+            } else {
+                completionHandler?(nil)
+            }
+        }
+    }
+
     /// Send digits to active [TVCall].
     /// - Parameters:
     ///   - digits: <#digits description#>

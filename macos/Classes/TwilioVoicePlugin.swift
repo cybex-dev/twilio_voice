@@ -57,6 +57,12 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     }
     private var twilioDevice: TVDevice?
 
+    // Tracks hold state of the active call. The Twilio Voice JS SDK provides no native hold
+    // mechanism (https://github.com/twilio/twilio-voice.js/issues/32); local holding replaces
+    // the outbound stream via a [TVAudioProcessor] and silences the inbound stream locally.
+    private var isOnHold: Bool = false
+    private var holdProcessor: TVAudioProcessor? = nil
+
     private var test: Bool = false
 
     static var appName: String {
@@ -113,6 +119,8 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
         twilioDevice = nil
         twilioCall?.dispose()
         twilioCall = nil
+        holdProcessor?.dispose()
+        holdProcessor = nil
     }
 
 
@@ -210,18 +218,22 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     ///   - extraOptions: extra options
     ///   - completionHandler: completion handler -> (Bool?)
     private func place(from: String?, to: String?, extraOptions: [String: Any]?, completionHandler: @escaping OnCompletionValueHandler<Bool>) -> Void {
-        assert(from.isNotEmpty(), "\(Constants.PARAM_FROM) cannot be empty")
-        assert(to.isNotEmpty(), "\(Constants.PARAM_TO) cannot be empty")
+        // 'from'/'to' may be nil when connecting with raw parameters (see .connect), but if provided they cannot be empty
+        assert(from?.isNotEmpty() ?? true, "\(Constants.PARAM_FROM) cannot be empty")
+        assert(to?.isNotEmpty() ?? true, "\(Constants.PARAM_TO) cannot be empty")
 //        assert(extraOptions?.keys.contains(Constants.PARAM_FROM) ?? true, "\(Constants.PARAM_FROM) cannot be passed in extraOptions")
 //        assert(extraOptions?.keys.contains(Constants.PARAM_TO) ?? true, "\(Constants.PARAM_TO) cannot be passed in extraOptions")
 //        assert(twilioDevice != nil, "Twilio Device must be initialized before making calls")
 
         logEvent(description: "Making new call")
 
-        var params: [String: Any] = [
-            if(from != nil) Constants.PARAM_FROM: from,
-            if(to != nil) Constants.PARAM_TO: to,
-        ]
+        var params: [String: Any] = [:]
+        if let from = from {
+            params[Constants.PARAM_FROM] = from
+        }
+        if let to = to {
+            params[Constants.PARAM_TO] = to
+        }
         if let extraOptions = extraOptions {
             params.merge(extraOptions) { (_, new) in
                 new
@@ -357,22 +369,108 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
 
     /// Holds active call. Completion handler completes with true if successful.
     ///
-    /// Not currently implemented in macOS
+    /// With the "local" strategy, the outbound (mic) stream is replaced with [holdAudioUrl]
+    /// audio (or silence) via a [TVAudioProcessor] registered with [TVDevice.addAudioProcessor],
+    /// and inbound audio is silenced locally via [TVCall.setRemoteAudioEnabled].
+    /// With the "remote" strategy, the hold itself is performed by the application (Dart side)
+    /// via an API callback; only hold state and events are updated here.
     ///
     /// - Parameter shouldHold: true if should hold call, false unholds
+    /// - Parameter strategy: "local" (default) or "remote"
+    /// - Parameter holdAudioUrl: URL of hold audio played to the remote party ("local" strategy), silence if nil
     /// - Parameter completionHandler: completion handler -> (Bool?)
-    private func holdCall(_ shouldHold: Bool, completionHandler: OnCompletionValueHandler<Bool>) -> Void {
-        logEvent(description: shouldHold ? "Hold" : "Unhold")
-        completionHandler(false)
+    private func holdCall(_ shouldHold: Bool, strategy: String, holdAudioUrl: String?, completionHandler: @escaping OnCompletionValueHandler<Bool>) -> Void {
+        guard shouldHold != isOnHold else {
+            completionHandler(true)
+            return
+        }
+
+        if strategy == "remote" {
+            // hold performed by the application via API callback, track state & notify only
+            isOnHold = shouldHold
+            logEvent(prefix: "", description: shouldHold ? "Hold" : "Unhold")
+            completionHandler(true)
+            return
+        }
+
+        guard let device = twilioDevice, let call = twilioCall, let webView = webView else {
+            completionHandler(false)
+            return
+        }
+
+        if shouldHold {
+            // reuse a single processor instance; (re)create its JS object to bake in the audio URL
+            let processor = holdProcessor ?? TVAudioProcessor(webView: webView)
+            holdProcessor = processor
+            processor.create(holdAudioUrl: holdAudioUrl) { [weak self] error in
+                guard let self = self else {
+                    completionHandler(false)
+                    return
+                }
+                if let error = error {
+                    NSLog("[TVPlugin:holdCall] Error creating hold audio processor: \(error)")
+                    completionHandler(false)
+                    return
+                }
+                device.addAudioProcessor(processor) { error in
+                    if let error = error {
+                        NSLog("[TVPlugin:holdCall] Error adding hold audio processor: \(error)")
+                        completionHandler(false)
+                        return
+                    }
+                    call.setRemoteAudioEnabled(false)
+                    self.isOnHold = true
+                    self.logEvent(prefix: "", description: "Hold")
+                    completionHandler(true)
+                }
+            }
+        } else {
+            guard let processor = holdProcessor else {
+                // no processor registered (should not happen), just clear state
+                isOnHold = false
+                logEvent(prefix: "", description: "Unhold")
+                completionHandler(true)
+                return
+            }
+            device.removeAudioProcessor(processor) { [weak self] error in
+                guard let self = self else {
+                    completionHandler(false)
+                    return
+                }
+                if let error = error {
+                    NSLog("[TVPlugin:holdCall] Error removing hold audio processor: \(error)")
+                    completionHandler(false)
+                    return
+                }
+                call.setRemoteAudioEnabled(true)
+                self.isOnHold = false
+                self.logEvent(prefix: "", description: "Unhold")
+                completionHandler(true)
+            }
+        }
     }
 
     /// Queries twilioCall is on hold. Completion handler completes with true if on hold.
     ///
-    /// Not currently implemented in macOS
-    ///
     /// - Parameter completionHandler: completion handler -> (Bool?)
     private func isHolding(completionHandler: @escaping OnCompletionValueHandler<Bool>) -> Void {
-        completionHandler(false)
+        completionHandler(isOnHold)
+    }
+
+    /// Clears hold state when a call ends, removing the hold audio processor if still attached.
+    private func resetHoldState() -> Void {
+        guard isOnHold else {
+            return
+        }
+        isOnHold = false
+        guard let processor = holdProcessor, let device = twilioDevice else {
+            return
+        }
+        device.removeAudioProcessor(processor) { error in
+            if let error = error {
+                NSLog("[TVPlugin:resetHoldState] Error removing hold audio processor: \(error)")
+            }
+        }
     }
 
     /// Answer incoming call. Completion handler completes with true if successful.
@@ -599,8 +697,8 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
             }
             break
         case .connect:
-            guard let to = arguments[Constants.PARAM_TO] as? String?
-            guard let from = arguments[Constants.PARAM_FROM] as? String
+            let to = arguments[Constants.PARAM_TO] as? String
+            let from = arguments[Constants.PARAM_FROM] as? String
 
             var params: [String: Any] = [:]
             arguments.forEach { (key, value) in
@@ -744,7 +842,9 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
                 return
             }
 
-            holdCall(shouldHold) { success in
+            let strategy = arguments["strategy"] as? String ?? "local"
+            let holdAudioUrl = arguments["holdAudioUrl"] as? String
+            holdCall(shouldHold, strategy: strategy, holdAudioUrl: holdAudioUrl) { success in
                 result(success ?? false)
             }
             break
@@ -1309,6 +1409,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
             }
         }
 
+        resetHoldState()
         twilioCall?.dispose()
         twilioCall = nil
         logEvent(prefix: "", description: "Missed Call")
@@ -1327,6 +1428,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
             }
         }
 
+        resetHoldState()
         twilioCall?.dispose()
         twilioCall = nil
     }
@@ -1344,6 +1446,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     }
 
     public func onCallReject() {
+        resetHoldState()
         if twilioCall != nil {
             twilioCall = nil
         }

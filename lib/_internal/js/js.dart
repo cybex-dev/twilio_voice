@@ -1,3 +1,4 @@
+export './audio/audio_helper.dart';
 export './call/call.dart';
 export './device/device.dart';
 export './twilio.dart';

@@ -67,6 +67,43 @@ public class TVDevice: JSObject, TVDeviceDelegate, JSMessageHandlerDelegate {
         }
     }
 
+    /// Register an audio processor with the [TVDevice](x-source-tag://TVDevice)'s AudioHelper, routing input
+    /// (microphone) audio through [TVAudioProcessor.createProcessedStream] before sending it to Twilio.
+    /// - Parameters:
+    ///   - processor: audio processor to add, see [TVAudioProcessor]
+    ///   - completionHandler: completion handler
+    /// - SeeAlso: Twilio [AudioHelper.addProcessor](https://twilio.github.io/twilio-voice.js/classes/AudioHelper.html#addProcessor)
+    func addAudioProcessor(_ processor: TVAudioProcessor, completionHandler: @escaping OnCompletionErrorHandler) -> Void {
+        callAudioHelper(method: "addProcessor", processor: processor, completionHandler: completionHandler)
+    }
+
+    /// Remove a previously added audio processor, restoring the original input stream.
+    /// - Parameters:
+    ///   - processor: audio processor to remove, see [TVAudioProcessor]
+    ///   - completionHandler: completion handler
+    /// - SeeAlso: Twilio [AudioHelper.removeProcessor](https://twilio.github.io/twilio-voice.js/classes/AudioHelper.html#removeProcessor)
+    func removeAudioProcessor(_ processor: TVAudioProcessor, completionHandler: @escaping OnCompletionErrorHandler) -> Void {
+        callAudioHelper(method: "removeProcessor", processor: processor, completionHandler: completionHandler)
+    }
+
+    /// Call an AudioHelper method on the device's `audio` member, passing the [processor]'s JS object by reference.
+    /// The returned promise is resolved fire-and-forget: WKWebView cannot serialize a Promise result.
+    private func callAudioHelper(method: String, processor: TVAudioProcessor, completionHandler: @escaping OnCompletionErrorHandler) -> Void {
+        let JS = """
+                 if (!!\(jsObjectName) && !!\(jsObjectName).audio && typeof \(jsObjectName).audio.\(method) === 'function') {
+                    var _ = \(jsObjectName).audio.\(method)(\(processor.jsObjectName)).catch((error) => {
+                        console.error(error);
+                    });
+                    true;
+                 } else {
+                    throw new Error('\(jsObjectName).audio.\(method) is not a function');
+                 }
+                 """
+        webView.evaluateJavaScript(javascript: JS, sourceURL: "\(jsObjectName)_audio_\(method)") { (_, error) in
+            completionHandler(error)
+        }
+    }
+
     /// Connect this device to Twilio Application to engage in a call
     /// - Parameters
     ///   - options: connect options, includes params [Constants.PARAM_TO, Constants.PARAM_FROM, Constants.PARAM_CUSTOM_PARAMETERS]

@@ -2,6 +2,7 @@
 // TODO(cybex-dev) implement js_interop for js package
 // ignore: deprecated_member_use
 import 'package:js/js.dart';
+import 'package:twilio_voice/_internal/js/audio/audio_helper.dart';
 import 'package:twilio_voice/_internal/js/call/call.dart';
 import 'package:twilio_voice/_internal/js/core/core.dart';
 import 'package:twilio_voice/_internal/js/twilio.dart';
@@ -92,6 +93,11 @@ class Device extends Twilio {
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#deviceupdatetokentoken
   @JS("updateToken")
   external void updateToken(String token);
+
+  /// Get the Device's [AudioHelper] for audio device management and audio processors.
+  /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#deviceaudio
+  @JS("audio")
+  external AudioHelper get audio;
 }
 
 /// Device options

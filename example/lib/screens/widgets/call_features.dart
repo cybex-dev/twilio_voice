@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:twilio_voice/twilio_voice.dart';
 import 'package:twilio_voice_example/utils.dart';
@@ -59,6 +60,7 @@ class _CallControlsState extends State<CallControls> {
   @override
   void initState() {
     super.initState();
+    _configureHold();
     _subscription = _tv.callEventsListener.listen((event) {
       printDebug("CallFeatures TV event: $event");
       _events.add(event);
@@ -90,6 +92,26 @@ class _CallControlsState extends State<CallControls> {
           break;
       }
     });
+  }
+
+  /// Configure call holding (web & macOS only). Uses the local hold strategy, playing
+  /// [holdAudioUrl] to the remote party while on hold (silence if unset).
+  ///
+  /// For a server-side hold instead, use:
+  /// `_tv.call.holdStrategy = HoldStrategy.remote;`
+  /// `_tv.call.onHoldAction = (callSid, shouldHold) async => myApi.hold(callSid, shouldHold);`
+  void _configureHold() {
+    if (!kIsWeb && defaultTargetPlatform != TargetPlatform.macOS) {
+      // Android & iOS use the native Twilio Voice SDK hold, holdStrategy/holdAudioUrl throw
+      // UnimplementedError if set.
+      return;
+    }
+    _tv.call.holdStrategy = HoldStrategy.local;
+    if (kIsWeb) {
+      // Served from example/web/hold_music.mp3. On macOS, use an absolute (e.g. https) URL
+      // reachable from the plugin's webview instead.
+      _tv.call.holdAudioUrl = "hold_music.mp3";
+    }
   }
 
   void _updateState() {

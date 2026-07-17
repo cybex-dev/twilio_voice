@@ -100,6 +100,18 @@ class Call extends Twilio {
   @JS("accept")
   external void accept();
 
+  /// Get the local MediaStream (input/microphone audio, or processed audio if an AudioProcessor is set), if available.
+  /// Returns a raw JS MediaStream object, or null - interact with it via js_util.
+  /// Documentation: https://twilio.github.io/twilio-voice.js/classes/Call.html#getLocalStream
+  @JS("getLocalStream")
+  external dynamic getLocalStream();
+
+  /// Get the remote MediaStream (audio received from the remote party), if available.
+  /// Returns a raw JS MediaStream object, or null - interact with it via js_util.
+  /// Documentation: https://twilio.github.io/twilio-voice.js/classes/Call.html#getRemoteStream
+  @JS("getRemoteStream")
+  external dynamic getRemoteStream();
+
   /// Register a listener against Twilio Call object
   /// Documentation: https://nodejs.org/api/events.html#events_emitter_addlistener_eventname_listener
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#eventemitter-methods-and-properties

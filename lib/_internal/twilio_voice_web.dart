@@ -657,27 +657,153 @@ class Call extends MethodChannelTwilioCall {
     }
   }
 
-  /// Not currently implemented for web
-  /// https://github.com/twilio/twilio-voice.js/issues/32
-  /// Call holding should be done server-side as suggested by @ryan-rowland here(https://github.com/twilio/twilio-voice.js/issues/32#issuecomment-1016872545)
-  /// See this to get started: https://stackoverflow.com/questions/22643800/twilio-how-to-move-an-existing-call-to-a-conference
-  /// See this for more info on how to use cold holding, and its requirements: https://github.com/twilio/twilio-voice.js/issues/32#issuecomment-1331081241
-  /// TODO(cybex-dev) - implement call holding feature in [twilio-voice.js](https://github.com/twilio/twilio-voice.js) for use in twilio_voice_web
+  //#region hold
+  bool _isHolding = false;
+  twilio_js.AudioProcessor? _holdProcessor;
+  html.AudioElement? _holdAudioElement;
+
+  /// Raw JS AudioContext powering the hold audio pipeline, accessed via js_util.
+  dynamic _holdAudioContext;
+
+  /// Puts the active call on (or takes it off) hold using the configured [holdStrategy].
+  ///
+  /// The Twilio Voice JS SDK provides no native hold mechanism
+  /// (https://github.com/twilio/twilio-voice.js/issues/32), so holding is performed:
+  /// - [HoldStrategy.local]: outbound audio is replaced with [holdAudioUrl] audio (or silence)
+  ///   via the Twilio AudioProcessor API, and inbound audio is silenced locally. No server
+  ///   interaction required; the remote party hears the hold audio.
+  /// - [HoldStrategy.remote]: delegated to [onHoldAction] for a server-side hold, e.g. moving
+  ///   the remote party into a conference/queue with TwiML
+  ///   (https://github.com/twilio/twilio-voice.js/issues/32#issuecomment-1016872545).
   @override
   Future<bool?> holdCall({bool holdCall = true}) async {
-    // Logger.logLocalEvent(holdCall ? "Unhold" : "Hold", prefix: "");
-    // return Future.value(false);
-    Logger.logLocalEvent("Unhold");
+    if (_jsCall == null) {
+      return false;
+    }
+    if (_isHolding == holdCall) {
+      return true;
+    }
+
     final sid = _getSid();
-    await _toggleAttribute(false, sid!, CKCallAttributes.hold);
-    return Future.value(false);
+    switch (holdStrategy) {
+      case HoldStrategy.remote:
+        final callback = onHoldAction;
+        if (callback == null) {
+          printDebug("holdCall: HoldStrategy.remote requires an onHoldAction callback, ignoring hold request");
+          return false;
+        }
+        final success = await callback(sid, holdCall);
+        if (!success) {
+          return false;
+        }
+        break;
+      case HoldStrategy.local:
+        try {
+          if (holdCall) {
+            await _startLocalHold();
+          } else {
+            await _stopLocalHold();
+          }
+        } catch (e) {
+          printDebug("Failed to ${holdCall ? "hold" : "unhold"} call: $e");
+          return false;
+        }
+        break;
+    }
+
+    _isHolding = holdCall;
+    Logger.logLocalEvent(holdCall ? "Hold" : "Unhold", prefix: "");
+    if (sid != null) {
+      await _toggleAttribute(holdCall, sid, CKCallAttributes.hold);
+    }
+    return true;
   }
 
-  /// Not currently implemented for web
+  /// Is call on hold. Returns true if on hold, false otherwise.
   @override
-  Future<bool> isHolding() {
-    return Future.value(false);
+  Future<bool> isHolding() async {
+    return _isHolding;
   }
+
+  /// Performs a local hold: replaces the outbound (mic) stream with hold audio or silence via
+  /// [twilio_js.AudioHelper.addProcessor], and silences the inbound stream locally.
+  Future<void> _startLocalHold() async {
+    final device = _device;
+    if (device == null) {
+      throw StateError("Twilio device is null, cannot hold call");
+    }
+    final processor = twilio_js.AudioProcessor(
+      createProcessedStream: js.allowInterop(_createHoldStream),
+      destroyProcessedStream: js.allowInterop(_destroyHoldStream),
+    );
+    await js_util.promiseToFuture(device.audio.addProcessor(processor));
+    _holdProcessor = processor;
+    _setRemoteAudioEnabled(false);
+  }
+
+  /// Removes the hold [twilio_js.AudioProcessor] (restoring the mic stream) and re-enables
+  /// inbound audio.
+  Future<void> _stopLocalHold() async {
+    final processor = _holdProcessor;
+    _holdProcessor = null;
+    final device = _device;
+    if (processor != null && device != null) {
+      await js_util.promiseToFuture(device.audio.removeProcessor(processor));
+    }
+    _setRemoteAudioEnabled(true);
+  }
+
+  /// AudioProcessor callback: builds the MediaStream sent to Twilio while on hold.
+  /// If [holdAudioUrl] is set, hold audio is looped into the stream via the Web Audio API;
+  /// with no source attached, the destination node yields silence.
+  dynamic _createHoldStream(dynamic inputStream) {
+    final audioContextConstructor = js_util.getProperty(html.window, "AudioContext") ?? js_util.getProperty(html.window, "webkitAudioContext");
+    final ctx = js_util.callConstructor(audioContextConstructor, []);
+    _holdAudioContext = ctx;
+    final destination = js_util.callMethod(ctx, "createMediaStreamDestination", []);
+    final url = holdAudioUrl;
+    if (url != null && url.isNotEmpty) {
+      final audioElement = html.AudioElement(url)
+        ..loop = true
+        ..crossOrigin = "anonymous";
+      _holdAudioElement = audioElement;
+      final source = js_util.callMethod(ctx, "createMediaElementSource", [audioElement]);
+      js_util.callMethod(source, "connect", [destination]);
+      unawaited(audioElement.play().catchError((e) => printDebug("Failed to play hold audio: $e")));
+    }
+    return _resolvedPromise(js_util.getProperty(destination, "stream"));
+  }
+
+  /// AudioProcessor callback: tears down the hold audio pipeline once the processed stream is
+  /// no longer in use.
+  dynamic _destroyHoldStream(dynamic processedStream) {
+    _holdAudioElement?.pause();
+    _holdAudioElement = null;
+    final ctx = _holdAudioContext;
+    _holdAudioContext = null;
+    if (ctx != null) {
+      unawaited(js_util.promiseToFuture(js_util.callMethod(ctx, "close", [])).catchError((e) => printDebug("Failed to close hold AudioContext: $e")));
+    }
+    stopMediaStreamTracks(processedStream);
+    return _resolvedPromise(null);
+  }
+
+  /// En/disables inbound (remote party) audio playback locally, i.e. silences what we hear
+  /// while the call is on hold. The remote MediaStream stays active.
+  void _setRemoteAudioEnabled(bool enabled) {
+    setAudioTracksEnabled(_jsCall?.getRemoteStream(), enabled);
+  }
+
+  /// Clears hold state when a call ends, removing the hold processor if still attached.
+  void _resetHoldState() {
+    if (!_isHolding && _holdProcessor == null) {
+      return;
+    }
+    _isHolding = false;
+    unawaited(_stopLocalHold().catchError((e) => printDebug("Failed to reset hold state: $e")));
+  }
+
+  //#endregion
 
   /// Not currently implemented for web
   @override
@@ -915,6 +1041,7 @@ class Call extends MethodChannelTwilioCall {
   /// On disconnect active (outbound/inbound) call
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#disconnect-event
   void _onCallDisconnect(twilio_js.Call call) async {
+    _resetHoldState();
     final status = getCallStatus(call);
     _detachCallEventListeners(call);
     if (status == CallStatus.closed && _jsCall != null) {
@@ -936,6 +1063,7 @@ class Call extends MethodChannelTwilioCall {
   /// - calling [disconnect] on an active call before recipient has answered
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#cancel-event
   void _onCallCancel() {
+    _resetHoldState();
     // notify SW to cancel notification
     final callSid = _getSid();
     final callStatus = getCallStatus(_jsCall!);
@@ -958,6 +1086,7 @@ class Call extends MethodChannelTwilioCall {
   /// On reject (inbound) call
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#reject-event
   void _onCallReject() {
+    _resetHoldState();
     final callSid = _getSid();
     if (_jsCall != null) {
       _detachCallEventListeners(_jsCall!);
@@ -1026,6 +1155,13 @@ class Call extends MethodChannelTwilioCall {
     final attrs = call.attributes..remove(attribute);
     return webCallkit.updateCallAttributes(uuid, attributes: attrs);
   }
+}
+
+/// Wraps [value] in a resolved JS Promise via `Promise.resolve`, as required by Twilio
+/// AudioProcessor callbacks which must return a Promise.
+dynamic _resolvedPromise(dynamic value) {
+  final promise = js_util.getProperty(html.window, "Promise");
+  return js_util.callMethod(promise, "resolve", [value]);
 }
 
 /// Since Call.customParameters is of type Map (but specifically implements a LegacyJavaScriptObject), we cannot access the Map directly.

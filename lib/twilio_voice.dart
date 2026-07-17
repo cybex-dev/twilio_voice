@@ -7,6 +7,7 @@ import '_internal/method_channel/twilio_voice_method_channel.dart';
 export '_internal/platform_interface/twilio_voice_platform_interface.dart' show TwilioVoicePlatform;
 export './models/active_call.dart';
 export './models/call_event.dart';
+export './models/hold_strategy.dart';
 
 class TwilioVoice extends MethodChannelTwilioVoice {
   

@@ -16,6 +16,29 @@ Map<String, String> jsToStringMap(dynamic jsonObject) {
   return map;
 }
 
+/// En/disables all audio tracks of a raw JS MediaStream via `track.enabled`.
+/// Disabled tracks render silence; the stream itself stays active.
+void setAudioTracksEnabled(dynamic mediaStream, bool enabled) {
+  if (mediaStream == null) {
+    return;
+  }
+  final tracks = callMethod(mediaStream, "getAudioTracks", []) as List<dynamic>;
+  for (final track in tracks) {
+    setProperty(track, "enabled", enabled);
+  }
+}
+
+/// Stops all tracks of a raw JS MediaStream, releasing their sources.
+void stopMediaStreamTracks(dynamic mediaStream) {
+  if (mediaStream == null) {
+    return;
+  }
+  final tracks = callMethod(mediaStream, "getTracks", []) as List<dynamic>;
+  for (final track in tracks) {
+    callMethod(track, "stop", []);
+  }
+}
+
 @JS('JSON.stringify')
 external String stringify(Object obj);
 
