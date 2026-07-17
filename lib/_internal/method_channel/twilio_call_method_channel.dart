@@ -89,6 +89,20 @@ class MethodChannelTwilioCall extends TwilioCallPlatform {
     _holdAudioUrl = url;
   }
 
+  Duration _holdAudioDelay = const Duration(seconds: 4);
+
+  @override
+  Duration get holdAudioDelay => _holdAudioDelay;
+
+  @override
+  set holdAudioDelay(Duration delay) {
+    if (!_canConfigureHold) {
+      throw UnimplementedError("holdAudioDelay is not implemented on this platform, the native Twilio Voice SDK hold is used instead");
+    }
+    assert(!delay.isNegative, "holdAudioDelay cannot be negative");
+    _holdAudioDelay = delay;
+  }
+
   @override
   HoldActionCallback? get onHoldAction => _onHoldAction;
 
@@ -128,6 +142,7 @@ class MethodChannelTwilioCall extends TwilioCallPlatform {
       "shouldHold": holdCall,
       "strategy": "local",
       if (_holdAudioUrl != null) "holdAudioUrl": _holdAudioUrl,
+      if (_holdAudioDelay > Duration.zero) "holdAudioDelayMs": _holdAudioDelay.inMilliseconds,
     });
   }
 

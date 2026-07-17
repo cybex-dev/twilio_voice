@@ -107,6 +107,8 @@ class _CallControlsState extends State<CallControls> {
       return;
     }
     _tv.call.holdStrategy = HoldStrategy.local;
+    // Repeat the hold message with 5 seconds of silence in between, rather than back-to-back.
+    _tv.call.holdAudioDelay = const Duration(seconds: 5);
     if (kIsWeb) {
       // Served from example/web/hold_music.mp3. On macOS, use an absolute (e.g. https) URL
       // reachable from the plugin's webview instead.

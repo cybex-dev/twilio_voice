@@ -74,6 +74,17 @@ abstract class TwilioCallPlatform extends SharedPlatformInterface {
 
   set holdAudioUrl(String? url);
 
+  /// Silence inserted between repetitions of [holdAudioUrl] while on hold with
+  /// [HoldStrategy.local], e.g. "Your call is on hold, please wait" followed by a few seconds
+  /// of silence before the message repeats.
+  ///
+  /// Defaults to 4 seconds. Set to [Duration.zero] for a seamless back-to-back loop.
+  /// May be updated at any time; the new delay applies to the next hold.
+  /// Only configurable on web & macOS, throws [UnimplementedError] on other platforms.
+  Duration get holdAudioDelay;
+
+  set holdAudioDelay(Duration delay);
+
   /// Callback invoked by [holdCall] when using [HoldStrategy.remote], use this to perform a
   /// server-side hold via your own API. Required for [HoldStrategy.remote] to function.
   ///

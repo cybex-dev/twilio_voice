@@ -19,6 +19,7 @@
   * `HoldStrategy.local` (default): outbound audio is replaced with hold audio (`call.holdAudioUrl`, silence if unset) using Twilio's [AudioProcessor API](https://twilio.github.io/twilio-voice.js/interfaces/AudioProcessor.html), and inbound audio is silenced locally. No server interaction required.
   * `HoldStrategy.remote`: delegates holding to the application via the `call.onHoldAction` callback, e.g. to perform a server-side hold (conference/queue TwiML) with your own API.
   * `call.holdAudioUrl` can be updated at any time (getter/setter), applying to the next hold.
+  * `call.holdAudioDelay` inserts silence between hold audio repetitions (e.g. "Your call is on hold, please wait" followed by a pause); defaults to 4 seconds, set to `Duration.zero` for a seamless loop.
   * On Android & iOS the native Twilio Voice SDK hold remains in use; setting `holdStrategy`, `holdAudioUrl` or `onHoldAction` throws `UnimplementedError`.
 * Feat: [Web] Add JS interop for `Call.getLocalStream()`, `Call.getRemoteStream()` and `Device.audio` (`AudioHelper.addProcessor`/`removeProcessor`).
 * Fix: [Web] `holdCall` no longer inverts the CallKit hold attribute and now emits `Hold`/`Unhold` call events; `isHolding()` reports the actual hold state.

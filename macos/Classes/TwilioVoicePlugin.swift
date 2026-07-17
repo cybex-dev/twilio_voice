@@ -378,8 +378,9 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     /// - Parameter shouldHold: true if should hold call, false unholds
     /// - Parameter strategy: "local" (default) or "remote"
     /// - Parameter holdAudioUrl: URL of hold audio played to the remote party ("local" strategy), silence if nil
+    /// - Parameter holdAudioDelayMs: silence in milliseconds between hold audio repetitions, 0 loops seamlessly
     /// - Parameter completionHandler: completion handler -> (Bool?)
-    private func holdCall(_ shouldHold: Bool, strategy: String, holdAudioUrl: String?, completionHandler: @escaping OnCompletionValueHandler<Bool>) -> Void {
+    private func holdCall(_ shouldHold: Bool, strategy: String, holdAudioUrl: String?, holdAudioDelayMs: Int, completionHandler: @escaping OnCompletionValueHandler<Bool>) -> Void {
         guard shouldHold != isOnHold else {
             completionHandler(true)
             return
@@ -402,7 +403,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
             // reuse a single processor instance; (re)create its JS object to bake in the audio URL
             let processor = holdProcessor ?? TVAudioProcessor(webView: webView)
             holdProcessor = processor
-            processor.create(holdAudioUrl: holdAudioUrl) { [weak self] error in
+            processor.create(holdAudioUrl: holdAudioUrl, holdAudioDelayMs: holdAudioDelayMs) { [weak self] error in
                 guard let self = self else {
                     completionHandler(false)
                     return
@@ -844,7 +845,8 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
 
             let strategy = arguments["strategy"] as? String ?? "local"
             let holdAudioUrl = arguments["holdAudioUrl"] as? String
-            holdCall(shouldHold, strategy: strategy, holdAudioUrl: holdAudioUrl) { success in
+            let holdAudioDelayMs = arguments["holdAudioDelayMs"] as? Int ?? 0
+            holdCall(shouldHold, strategy: strategy, holdAudioUrl: holdAudioUrl, holdAudioDelayMs: holdAudioDelayMs) { success in
                 result(success ?? false)
             }
             break

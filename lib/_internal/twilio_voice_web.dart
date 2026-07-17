@@ -384,7 +384,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
         /// create new Twilio device
         device = twilio_js.Device(accessToken, options);
         _call.device = device;
-        _attachDeviceListeners(device!);
+        _attachDeviceListeners(device!); 
 
         // Register device to accept notifications
         final promise = device!.register();
@@ -665,6 +665,10 @@ class Call extends MethodChannelTwilioCall {
   /// Raw JS AudioContext powering the hold audio pipeline, accessed via js_util.
   dynamic _holdAudioContext;
 
+  /// Schedules the next hold audio repetition after [holdAudioDelay] of silence.
+  Timer? _holdReplayTimer;
+  StreamSubscription<html.Event>? _holdEndedSubscription;
+
   /// Puts the active call on (or takes it off) hold using the configured [holdStrategy].
   ///
   /// The Twilio Voice JS SDK provides no native hold mechanism
@@ -732,6 +736,10 @@ class Call extends MethodChannelTwilioCall {
     if (device == null) {
       throw StateError("Twilio device is null, cannot hold call");
     }
+    if (!js_util.hasProperty(device.audio, "addProcessor")) {
+      throw UnsupportedError(
+          "Local call holding requires the AudioProcessor API introduced in Twilio Voice JS SDK 2.6.0, please update the twilio.min.js loaded by your app (e.g. https://cdn.jsdelivr.net/npm/@twilio/voice-sdk@2.18.0/dist/twilio.min.js)");
+    }
     final processor = twilio_js.AudioProcessor(
       createProcessedStream: js.allowInterop(_createHoldStream),
       destroyProcessedStream: js.allowInterop(_destroyHoldStream),
@@ -754,8 +762,9 @@ class Call extends MethodChannelTwilioCall {
   }
 
   /// AudioProcessor callback: builds the MediaStream sent to Twilio while on hold.
-  /// If [holdAudioUrl] is set, hold audio is looped into the stream via the Web Audio API;
-  /// with no source attached, the destination node yields silence.
+  /// If [holdAudioUrl] is set, hold audio repeats into the stream via the Web Audio API - either
+  /// seamlessly ([holdAudioDelay] is zero) or with [holdAudioDelay] of silence between
+  /// repetitions; with no source attached, the destination node yields silence.
   dynamic _createHoldStream(dynamic inputStream) {
     final audioContextConstructor = js_util.getProperty(html.window, "AudioContext") ?? js_util.getProperty(html.window, "webkitAudioContext");
     final ctx = js_util.callConstructor(audioContextConstructor, []);
@@ -763,10 +772,22 @@ class Call extends MethodChannelTwilioCall {
     final destination = js_util.callMethod(ctx, "createMediaStreamDestination", []);
     final url = holdAudioUrl;
     if (url != null && url.isNotEmpty) {
-      final audioElement = html.AudioElement(url)
-        ..loop = true
-        ..crossOrigin = "anonymous";
+      final audioElement = html.AudioElement(url)..crossOrigin = "anonymous";
       _holdAudioElement = audioElement;
+      final delay = holdAudioDelay;
+      if (delay > Duration.zero) {
+        // play -> [delay] of silence -> replay, instead of a seamless loop
+        _holdEndedSubscription = audioElement.onEnded.listen((_) {
+          _holdReplayTimer?.cancel();
+          _holdReplayTimer = Timer(delay, () {
+            if (_holdAudioElement == audioElement) {
+              unawaited(audioElement.play().catchError((e) => printDebug("Failed to replay hold audio: $e")));
+            }
+          });
+        });
+      } else {
+        audioElement.loop = true;
+      }
       final source = js_util.callMethod(ctx, "createMediaElementSource", [audioElement]);
       js_util.callMethod(source, "connect", [destination]);
       unawaited(audioElement.play().catchError((e) => printDebug("Failed to play hold audio: $e")));
@@ -777,6 +798,10 @@ class Call extends MethodChannelTwilioCall {
   /// AudioProcessor callback: tears down the hold audio pipeline once the processed stream is
   /// no longer in use.
   dynamic _destroyHoldStream(dynamic processedStream) {
+    _holdReplayTimer?.cancel();
+    _holdReplayTimer = null;
+    unawaited(_holdEndedSubscription?.cancel());
+    _holdEndedSubscription = null;
     _holdAudioElement?.pause();
     _holdAudioElement = null;
     final ctx = _holdAudioContext;

@@ -15,31 +15,50 @@ public class TVAudioProcessor: JSObject {
         super.init(jsObjectName: overrideJSObjectName, webView: webView, initialize: true)
     }
 
-    /// (Re)creates the JS AudioProcessor object, baking in the hold audio URL for the next hold.
+    /// (Re)creates the JS AudioProcessor object, baking in the hold audio URL and repeat delay
+    /// for the next hold.
     ///
     /// - Parameter holdAudioUrl: URL of hold audio played to the remote party, silence if nil
+    /// - Parameter holdAudioDelayMs: silence in milliseconds between hold audio repetitions, 0 loops seamlessly
     /// - Parameter completionHandler: completion handler
-    func create(holdAudioUrl: String?, completionHandler: @escaping OnCompletionErrorHandler) {
+    func create(holdAudioUrl: String?, holdAudioDelayMs: Int = 0, completionHandler: @escaping OnCompletionErrorHandler) {
         let audioUrlJS = TVAudioProcessor.toJSStringLiteral(holdAudioUrl)
         let JS = """
                  \(jsObjectName) = {
                     audioEl: null,
                     audioCtx: null,
+                    replayTimer: null,
                     holdAudioUrl: \(audioUrlJS),
+                    holdAudioDelayMs: \(max(holdAudioDelayMs, 0)),
                     createProcessedStream: async function (stream) {
                         \(jsObjectName).audioCtx = new AudioContext();
                         const destination = \(jsObjectName).audioCtx.createMediaStreamDestination();
                         if (\(jsObjectName).holdAudioUrl) {
-                            \(jsObjectName).audioEl = new Audio(\(jsObjectName).holdAudioUrl);
-                            \(jsObjectName).audioEl.loop = true;
-                            \(jsObjectName).audioEl.crossOrigin = "anonymous";
-                            \(jsObjectName).audioCtx.createMediaElementSource(\(jsObjectName).audioEl).connect(destination);
-                            \(jsObjectName).audioEl.play().catch((e) => console.error("Failed to play hold audio: " + e));
+                            const audioEl = new Audio(\(jsObjectName).holdAudioUrl);
+                            \(jsObjectName).audioEl = audioEl;
+                            audioEl.crossOrigin = "anonymous";
+                            if (\(jsObjectName).holdAudioDelayMs > 0) {
+                                // play -> delay of silence -> replay, instead of a seamless loop
+                                audioEl.onended = () => {
+                                    clearTimeout(\(jsObjectName).replayTimer);
+                                    \(jsObjectName).replayTimer = setTimeout(() => {
+                                        if (\(jsObjectName).audioEl === audioEl) {
+                                            audioEl.play().catch((e) => console.error("Failed to replay hold audio: " + e));
+                                        }
+                                    }, \(jsObjectName).holdAudioDelayMs);
+                                };
+                            } else {
+                                audioEl.loop = true;
+                            }
+                            \(jsObjectName).audioCtx.createMediaElementSource(audioEl).connect(destination);
+                            audioEl.play().catch((e) => console.error("Failed to play hold audio: " + e));
                         }
                         // with no source attached, the destination yields a silent stream
                         return destination.stream;
                     },
                     destroyProcessedStream: async function (stream) {
+                        clearTimeout(\(jsObjectName).replayTimer);
+                        \(jsObjectName).replayTimer = null;
                         if (\(jsObjectName).audioEl) {
                             \(jsObjectName).audioEl.pause();
                             \(jsObjectName).audioEl = null;
