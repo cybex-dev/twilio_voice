@@ -237,12 +237,12 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     ): Boolean {
         Log.d(TAG, "onRequestPermissionsResult: $requestCode")
 
-        if (permissions.isNotEmpty()) {
-            permissionResultHandler[requestCode]?.let { handler ->
-                val granted = grantResults[0] == PackageManager.PERMISSION_GRANTED
-                handler(granted)
-                permissionResultHandler.remove(requestCode)
-            }
+        permissionResultHandler.remove(requestCode)?.let { handler ->
+            // Empty arrays mean the request was cancelled by the system (e.g. interaction
+            // interrupted) — treat as denied rather than leaking the handler, which would
+            // leave the awaiting Dart Future hanging.
+            val granted = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
+            handler(granted)
         }
 
         if (requestCode == REQUEST_CODE_MICROPHONE) {
@@ -1623,21 +1623,32 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         }
 
         logEvent("requestPermissionFor$permissionName")
+        permissionResultHandler[requestCode] = onPermissionResult
+
         val shouldShowRationale = ActivityCompat.shouldShowRequestPermissionRationale(activity!!, manifestPermission)
         if (shouldShowRationale) {
+            var proceedClicked = false
             val clickListener =
-                DialogInterface.OnClickListener { _: DialogInterface?, _: Int ->
+                DialogInterface.OnClickListener { dialog: DialogInterface?, _: Int ->
+                    proceedClicked = true
+                    dialog?.dismiss()
+                }
+            val dismissListener = DialogInterface.OnDismissListener { _: DialogInterface? ->
+                if (proceedClicked) {
+                    logEvent("Request" + permissionName + "Access")
                     ActivityCompat.requestPermissions(
                         activity!!, arrayOf(manifestPermission), requestCode
                     )
+                } else {
+                    // Cancelled or dismissed without proceeding: complete the pending result
+                    // as denied instead of leaving the Dart Future hanging.
+                    logEvent("Request" + permissionName + "AccessDismissed")
+                    permissionResultHandler.remove(requestCode)?.invoke(false)
                 }
-            val dismissListener = DialogInterface.OnDismissListener { _: DialogInterface? ->
-                logEvent("Request" + permissionName + "Access")
             }
             showPermissionRationaleDialog(activity!!, "$permissionName Permissions", description, clickListener, dismissListener)
         } else {
             ActivityCompat.requestPermissions(activity!!, arrayOf(manifestPermission), requestCode)
-            permissionResultHandler[requestCode] = onPermissionResult
         }
     }
 

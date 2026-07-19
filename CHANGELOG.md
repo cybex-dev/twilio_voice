@@ -24,6 +24,7 @@
 * Fix: [Web] Prevent duplicate `TwilioVoiceWeb` instances.
 * Feat: [iOS] Add support for call logging via `enableCallLogging(bool)` to record call in recents. No other platform currently supports this, see [NOTES.md](NOTES.md#limitations) for more details.
 * Fix: `showMissedCallNotifications` method call not working due to incorrect method channel name.
+* Fix: [Android] fix permission request callback not completing on permission re-request.
 * Feat: update example.
 * Docs: update CHANGELOG
 
