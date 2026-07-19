@@ -46,7 +46,12 @@ class TVConnectionService : ConnectionService() {
 
         val TWI_SCHEME: String = "twi"
 
-        val SERVICE_TYPE_MICROPHONE: Int = 100
+        /**
+         * Notification id used for the foreground-service (ongoing call) notification.
+         */
+        const val FOREGROUND_NOTIFICATION_ID: Int = 100
+
+        val SERVICE_TYPE_MICROPHONE: Int = FOREGROUND_NOTIFICATION_ID
 
         //region ACTIONS_* Constants
         /**
@@ -759,7 +764,7 @@ class TVConnectionService : ConnectionService() {
 
     private fun cancelNotification() {
         val notificationManager: NotificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.cancel(SERVICE_TYPE_MICROPHONE)
+        notificationManager.cancel(FOREGROUND_NOTIFICATION_ID)
     }
 
     /// Source: https://github.com/react-native-webrtc/react-native-callkeep/blob/master/android/src/main/java/io/wazo/callkeep/VoiceConnectionService.java#L295
@@ -767,11 +772,29 @@ class TVConnectionService : ConnectionService() {
         val notification = createNotification()
         Log.d(TAG, "[VoiceConnectionService] Starting foreground service")
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                // Optional for Android +11, required for Android +14
-                startForeground(SERVICE_TYPE_MICROPHONE, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                // phoneCall: the correct type for a ConnectionService-managed call. Its
+                // prerequisite (MANAGE_OWN_CALLS) is a manifest permission, so the service
+                // can always start with this type - including from the background on an
+                // incoming FCM push, where a microphone-typed start is restricted.
+                var serviceTypes = ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL
+                // microphone: keeps mic access alive while the app is backgrounded mid-call
+                // (Android 11+ while-in-use restrictions). Only added when:
+                //  - RECORD_AUDIO is already granted (starting a microphone-typed FGS without
+                //    it throws a SecurityException on Android 14+), and
+                //  - the FOREGROUND_SERVICE_MICROPHONE permission is present in the merged
+                //    manifest (API 34+). Apps that prefer a phoneCall-only foreground service
+                //    (e.g. to avoid the Play Console microphone FGS declaration) can remove it
+                //    with: <uses-permission android:name=
+                //    "android.permission.FOREGROUND_SERVICE_MICROPHONE" tools:node="remove"/>
+                val hasFgsMicPermission = Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
+                        checkPermission(android.Manifest.permission.FOREGROUND_SERVICE_MICROPHONE)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && hasMicrophoneAccess() && hasFgsMicPermission) {
+                    serviceTypes = serviceTypes or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                }
+                startForeground(FOREGROUND_NOTIFICATION_ID, notification, serviceTypes)
             } else {
-                startForeground(SERVICE_TYPE_MICROPHONE, notification)
+                startForeground(FOREGROUND_NOTIFICATION_ID, notification)
             }
         } catch (e: Exception) {
             Log.w(TAG, "[VoiceConnectionService] Can't start foreground service : $e")
@@ -782,7 +805,9 @@ class TVConnectionService : ConnectionService() {
     private fun stopForegroundService() {
         Log.d(TAG, "[VoiceConnectionService] stopForegroundService")
         try {
-            stopForeground(SERVICE_TYPE_MICROPHONE)
+            // STOP_FOREGROUND_REMOVE is a flags value; previously the notification id (100)
+            // was passed here, which is not a valid flag.
+            stopForeground(STOP_FOREGROUND_REMOVE)
             cancelNotification()
         } catch (e: java.lang.Exception) {
             Log.w(TAG, "[VoiceConnectionService] can't stop foreground service :$e")
