@@ -3,6 +3,7 @@ package com.twilio.twilio_voice
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.Application
 import android.content.Context
 import android.content.DialogInterface
 import android.content.Intent
@@ -252,6 +253,16 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                     Log.d(TAG, "onRequestPermissionsResult: Microphone foreground permission granted: $granted");
                 });
                 logEventPermission("Microphone", true)
+
+                // If a call's foreground service is already running (started before the mic
+                // permission was granted), refresh its foreground service types so the
+                // microphone type is added mid-call.
+                context?.let { ctx ->
+                    Intent(ctx, TVConnectionService::class.java).apply {
+                        action = TVConnectionService.ACTION_REFRESH_FOREGROUND_SERVICE_TYPES
+                        ctx.startService(this)
+                    }
+                }
             } else {
                 Log.d(TAG, "Microphone permission not granted")
                 logEventPermission("Microphone", false)
@@ -1318,17 +1329,45 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     }
 
     //region Flutter ActivityPluginBinding
+    /**
+     * Catches microphone grants made outside the plugin's own permission flow (e.g. the user
+     * enabling the mic in system Settings mid-call): when the app comes back to the
+     * foreground during an active call with the mic granted, refresh the call's foreground
+     * service types so the microphone type can join. The refresh is idempotent - if the
+     * types are already up to date, re-issuing startForeground is a no-op.
+     */
+    private val activityLifecycleListener = object : Application.ActivityLifecycleCallbacks {
+        override fun onActivityResumed(resumedActivity: Activity) {
+            if (resumedActivity != activity) return
+            if (TVConnectionService.hasActiveCalls() && resumedActivity.hasMicrophoneAccess()) {
+                Intent(resumedActivity, TVConnectionService::class.java).apply {
+                    action = TVConnectionService.ACTION_REFRESH_FOREGROUND_SERVICE_TYPES
+                    resumedActivity.startService(this)
+                }
+            }
+        }
+
+        override fun onActivityCreated(a: Activity, savedInstanceState: Bundle?) {}
+        override fun onActivityStarted(a: Activity) {}
+        override fun onActivityPaused(a: Activity) {}
+        override fun onActivityStopped(a: Activity) {}
+        override fun onActivitySaveInstanceState(a: Activity, outState: Bundle) {}
+        override fun onActivityDestroyed(a: Activity) {}
+    }
+
     override fun onAttachedToActivity(activityPluginBinding: ActivityPluginBinding) {
         Log.d(TAG, "onAttachedToActivity")
         activity = activityPluginBinding.activity
         activityPluginBinding.addOnNewIntentListener(this)
         activityPluginBinding.addRequestPermissionsResultListener(this)
+        activityPluginBinding.activity.application.registerActivityLifecycleCallbacks(activityLifecycleListener)
         registerReceiver()
     }
 
     override fun onDetachedFromActivityForConfigChanges() {
         Log.d(TAG, "onDetachedFromActivityForConfigChanges")
         unregisterReceiver()
+        activity?.application?.unregisterActivityLifecycleCallbacks(activityLifecycleListener)
         activity = null
     }
 
@@ -1337,12 +1376,14 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         activity = activityPluginBinding.activity
         activityPluginBinding.addRequestPermissionsResultListener(this)
         activityPluginBinding.addOnNewIntentListener(this)
+        activityPluginBinding.activity.application.registerActivityLifecycleCallbacks(activityLifecycleListener)
         registerReceiver()
     }
 
     override fun onDetachedFromActivity() {
         Log.d(TAG, "onDetachedFromActivity")
         unregisterReceiver()
+        activity?.application?.unregisterActivityLifecycleCallbacks(activityLifecycleListener)
         activity = null
     }
     //endregion

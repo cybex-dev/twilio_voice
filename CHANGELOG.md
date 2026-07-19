@@ -26,6 +26,7 @@
 * Fix: `showMissedCallNotifications` method call not working due to incorrect method channel name.
 * Fix: [Android] fix permission request callback not completing on permission re-request.
 * Fix: [Android] add missing Android Foreground Service `phoneCall`.
+* Fix: [Android] reactive to microphone permission changes while call is ongoing.
 * Feat: update example.
 * Docs: update CHANGELOG
 

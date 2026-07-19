@@ -26,8 +26,10 @@ import com.twilio.twilio_voice.types.BundleExtensions.getParcelableSafe
 import com.twilio.twilio_voice.types.CallDirection
 import com.twilio.twilio_voice.types.CompletionHandler
 import com.twilio.twilio_voice.types.ContextExtension.appName
+import com.twilio.twilio_voice.types.ContextExtension.checkPermission
 import com.twilio.twilio_voice.types.ContextExtension.hasCallPhonePermission
 import com.twilio.twilio_voice.types.ContextExtension.hasManageOwnCallsPermission
+import com.twilio.twilio_voice.types.ContextExtension.hasMicrophoneAccess
 import com.twilio.twilio_voice.types.IntentExtension.getParcelableExtraSafe
 import com.twilio.twilio_voice.types.TelecomManagerExtension.getPhoneAccountHandle
 import com.twilio.twilio_voice.types.TelecomManagerExtension.hasCallCapableAccount
@@ -115,6 +117,14 @@ class TVConnectionService : ConnectionService() {
          * Action used to poll the ConnectionService for the active call handle.
          */
         const val ACTION_ACTIVE_HANDLE: String = "ACTION_ACTIVE_HANDLE"
+
+        /**
+         * Action used to re-issue [startForeground] with recomputed foreground service types,
+         * e.g. after RECORD_AUDIO is granted mid-call so the microphone type can be added to
+         * the already-running service (a foreground service's types are fixed at the last
+         * [startForeground] call, not re-evaluated when permissions change).
+         */
+        const val ACTION_REFRESH_FOREGROUND_SERVICE_TYPES: String = "ACTION_REFRESH_FOREGROUND_SERVICE_TYPES"
         //endregion
 
         //region EXTRA_* Constants
@@ -472,6 +482,18 @@ class TVConnectionService : ConnectionService() {
                 ACTION_ACTIVE_HANDLE -> {
                     val activeCallHandle = getActiveCallHandle()
                     sendBroadcastCallHandle(applicationContext, activeCallHandle)
+                }
+
+                ACTION_REFRESH_FOREGROUND_SERVICE_TYPES -> {
+                    // Re-issue startForeground with recomputed types so e.g. the microphone
+                    // type joins a call whose foreground service was started before
+                    // RECORD_AUDIO was granted.
+                    if (hasActiveCalls()) {
+                        startForegroundService()
+                    } else {
+                        // Nothing to refresh; don't leave a needlessly started service behind.
+                        stopSelfSafe()
+                    }
                 }
 
                 else -> {
