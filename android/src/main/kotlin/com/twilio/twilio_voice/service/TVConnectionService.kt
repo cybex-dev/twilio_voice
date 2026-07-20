@@ -629,12 +629,8 @@ class TVConnectionService : ConnectionService() {
         // Set call disconnected listener, removes connection from active connections when call is disconnected
         val onCallInitializingDisconnectedListener: CompletionHandler<DisconnectCause> = CompletionHandler {
             connection.twilioCall?.let {
-                if (activeConnections.containsKey(it.sid)) {
-                    activeConnections.remove(it.sid)
-                }
                 sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, it.sid ?: "", connection.extras)
-                stopForegroundService()
-                stopSelfSafe()
+                onConnectionEnded(it.sid)
             }
         }
 
@@ -667,6 +663,25 @@ class TVConnectionService : ConnectionService() {
     }
 
     /**
+     * Tears down state for a single ended connection: removes it from [activeConnections]
+     * and only demotes the service (stopForeground + stopSelf) once no active calls remain.
+     * With concurrent calls, ending one call must not demote the service - the remaining
+     * call still depends on the foreground state for its process priority and (Android 11+)
+     * background microphone access.
+     * @param callSid The SID of the ended connection, or null if it never received one
+     * (e.g. a connection that failed during creation).
+     */
+    private fun onConnectionEnded(callSid: String?) {
+        callSid?.let { activeConnections.remove(it) }
+        if (!hasActiveCalls()) {
+            stopForegroundService()
+            stopSelf()
+        } else {
+            Log.d(TAG, "onConnectionEnded: ${activeConnections.size} call(s) still active, keeping foreground service")
+        }
+    }
+
+    /**
      * Attach call event listeners to the given connection. This includes responding to call events, call actions and when call has ended.
      * @param connection The connection to attach the listeners to.
      * @param callSid The call SID of the connection.
@@ -683,19 +698,11 @@ class TVConnectionService : ConnectionService() {
             sendBroadcastCallHandle(applicationContext, extra?.getString(TVBroadcastReceiver.EXTRA_CALL_HANDLE))
         }
         val onDisconnect: CompletionHandler<DisconnectCause> = CompletionHandler {
-            if (activeConnections.containsKey(callSid)) {
-                activeConnections.remove(callSid)
-            }
-            stopForegroundService()
-            stopSelfSafe()
+            onConnectionEnded(callSid)
         }
         val onCallState: CompletionHandler<Call.State> = CompletionHandler { state ->
             if (state == Call.State.DISCONNECTED) {
-                if (activeConnections.containsKey(callSid)) {
-                    activeConnections.remove(callSid)
-                }
-                stopForegroundService()
-                stopSelfSafe()
+                onConnectionEnded(callSid)
             }
         }
 
@@ -744,13 +751,17 @@ class TVConnectionService : ConnectionService() {
     override fun onCreateOutgoingConnectionFailed(connectionManagerPhoneAccount: PhoneAccountHandle?, request: ConnectionRequest?) {
         super.onCreateOutgoingConnectionFailed(connectionManagerPhoneAccount, request)
         Log.d(TAG, "onCreateOutgoingConnectionFailed")
-        stopForegroundService()
+        // The failed connection was never added to activeConnections; only demote the
+        // service if no other call is active.
+        onConnectionEnded(null)
     }
 
     override fun onCreateIncomingConnectionFailed(connectionManagerPhoneAccount: PhoneAccountHandle?, request: ConnectionRequest?) {
         super.onCreateIncomingConnectionFailed(connectionManagerPhoneAccount, request)
         Log.d(TAG, "onCreateIncomingConnectionFailed")
-        stopForegroundService()
+        // The failed connection was never added to activeConnections; only demote the
+        // service if no other call is active.
+        onConnectionEnded(null)
     }
 
     private fun getOrCreateChannel(): NotificationChannel {

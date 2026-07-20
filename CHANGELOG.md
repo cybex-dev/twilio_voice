@@ -27,6 +27,7 @@
 * Fix: [Android] fix permission request callback not completing on permission re-request.
 * Fix: [Android] add missing Android Foreground Service `phoneCall`.
 * Fix: [Android] reactive to microphone permission changes while call is ongoing.
+* Fix: [Android] failure while connecting to incoming/outgoing call with another call in-progress, `TVConnectionService` now checks for ongoing calls prior to stopping service. 
 * Feat: update example.
 * Docs: update CHANGELOG
 
