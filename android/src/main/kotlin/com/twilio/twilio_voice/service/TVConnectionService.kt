@@ -428,7 +428,9 @@ class TVConnectionService : ConnectionService() {
                         putBundle(TelecomManager.EXTRA_OUTGOING_CALL_EXTRAS, myBundle)
                     }
 
-                    val address: Uri = Uri.fromParts(PhoneAccount.SCHEME_TEL, to, null)
+                    // Raw connect() calls have no To; use an empty address rather than
+                    // passing null into the Uri.
+                    val address: Uri = Uri.fromParts(PhoneAccount.SCHEME_TEL, to ?: "", null)
                     telecomManager.placeCall(address, extras)
                 }
 
@@ -557,25 +559,26 @@ class TVConnectionService : ConnectionService() {
         super.onCreateOutgoingConnection(connectionManagerPhoneAccount, request)
         Log.d(TAG, "onCreateOutgoingConnection")
 
-        val extras = request?.extras
-        val myBundle: Bundle = extras?.getBundle(EXTRA_OUTGOING_PARAMS) ?: run {
-            Log.e(TAG, "onCreateOutgoingConnection: request is missing Bundle EXTRA_OUTGOING_PARAMS")
-            throw Exception("onCreateOutgoingConnection: request is missing Bundle EXTRA_OUTGOING_PARAMS");
+        // Never throw from a ConnectionService callback: it runs in a Telecom binder callback
+        // and an uncaught exception kills the process. Invalid requests return a failed
+        // Connection instead, which Telecom tears down gracefully.
+        fun failedConnection(reason: String): Connection {
+            Log.e(TAG, "onCreateOutgoingConnection: $reason")
+            sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, "")
+            return Connection.createFailedConnection(DisconnectCause(DisconnectCause.ERROR, reason))
         }
 
-        // check required EXTRA_TOKEN, EXTRA_TO, EXTRA_FROM
-        val token: String = myBundle.getString(EXTRA_TOKEN) ?: run {
-            Log.e(TAG, "onCreateOutgoingConnection: ACTION_PLACE_OUTGOING_CALL is missing String EXTRA_TOKEN")
-            throw Exception("onCreateOutgoingConnection: ACTION_PLACE_OUTGOING_CALL is missing String EXTRA_TOKEN");
-        }
-        val to = myBundle.getString(EXTRA_TO) ?: run {
-            Log.e(TAG, "onCreateOutgoingConnection: ACTION_PLACE_OUTGOING_CALL is missing String EXTRA_TO")
-            throw Exception("onCreateOutgoingConnection: ACTION_PLACE_OUTGOING_CALL is missing String EXTRA_TO");
-        }
-        val from = myBundle.getString(EXTRA_FROM) ?: run {
-            Log.e(TAG, "onCreateOutgoingConnection: ACTION_PLACE_OUTGOING_CALL is missing String EXTRA_FROM")
-            throw Exception("onCreateOutgoingConnection: ACTION_PLACE_OUTGOING_CALL is missing String EXTRA_FROM");
-        }
+        val myBundle: Bundle = request?.extras?.getBundle(EXTRA_OUTGOING_PARAMS)
+            ?: return failedConnection("request is missing Bundle EXTRA_OUTGOING_PARAMS")
+
+        val token: String = myBundle.getString(EXTRA_TOKEN)
+            ?: return failedConnection("ACTION_PLACE_OUTGOING_CALL is missing String EXTRA_TOKEN")
+
+        // To/From are deliberately absent for raw connect() calls (EXTRA_CONNECT_RAW): all
+        // routing parameters travel in EXTRA_OUTGOING_PARAMS and the TwiML application
+        // decides the destination, so both are optional here.
+        val to = myBundle.getString(EXTRA_TO)
+        val from = myBundle.getString(EXTRA_FROM)
 
         // Get all params from bundle
         val params = HashMap<String, String>()
@@ -589,8 +592,8 @@ class TVConnectionService : ConnectionService() {
                 }
             }
         }
-        params["From"] = from
-        params["To"] = to
+        from?.let { params["From"] = it }
+        to?.let { params["To"] = it }
 
         // create connect options
         val connectOptions = ConnectOptions.Builder(token)
@@ -612,8 +615,8 @@ class TVConnectionService : ConnectionService() {
                 val call = connection.twilioCall!!
                 val callSid = call.sid!!
 
-                // Resolve call parameters
-                val callParams = TVCallParametersImpl(mStorage, call, to, from, params)
+                // Resolve call parameters (raw connect() calls carry no explicit To/From)
+                val callParams = TVCallParametersImpl(mStorage, call, to ?: "", from ?: "", params)
                 connection.setCallParameters(callParams)
 
                 // If call is not attached, attach it
