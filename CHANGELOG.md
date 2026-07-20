@@ -29,6 +29,7 @@
 * Fix: [Android] reactive to microphone permission changes while call is ongoing.
 * Fix: [Android] failure while connecting to incoming/outgoing call with another call in-progress, `TVConnectionService` now checks for ongoing calls prior to stopping service. 
 * Feat: [Android] support null `From`/`To` parameters in raw `connect()` function.  
+* Feat: [Android] new FCM Token ignored on new token registration, now nowifies `twilio_voice` plugin of updated token.
 * Feat: update example.
 * Docs: update CHANGELOG
 

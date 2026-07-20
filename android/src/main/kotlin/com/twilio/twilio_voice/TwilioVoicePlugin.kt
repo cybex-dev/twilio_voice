@@ -22,6 +22,7 @@ import androidx.core.content.ContextCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.twilio.twilio_voice.constants.Constants
 import com.twilio.twilio_voice.constants.FlutterErrorCodes
+import com.twilio.twilio_voice.fcm.VoiceFirebaseMessagingService
 import com.twilio.twilio_voice.receivers.TVBroadcastReceiver
 import com.twilio.twilio_voice.service.TVConnectionService
 import com.twilio.twilio_voice.storage.Storage
@@ -1402,6 +1403,8 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 addAction(TVBroadcastReceiver.ACTION_CALL_STATE)
                 addAction(TVBroadcastReceiver.ACTION_INCOMING_CALL_IGNORED)
 
+                addAction(VoiceFirebaseMessagingService.ACTION_NEW_TOKEN)
+
                 addAction(TVNativeCallActions.ACTION_ANSWERED)
                 addAction(TVNativeCallActions.ACTION_REJECTED)
                 addAction(TVNativeCallActions.ACTION_DTMF)
@@ -1965,6 +1968,29 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             TVNativeCallEvents.EVENT_MISSED -> {
                 logEvent("", "Missed Call")
                 logEvent("", "Call Ended")
+            }
+
+            VoiceFirebaseMessagingService.ACTION_NEW_TOKEN -> {
+                val newToken = intent.getStringExtra(VoiceFirebaseMessagingService.EXTRA_FCM_TOKEN) ?: run {
+                    Log.e(TAG, "handleBroadcastIntent: ACTION_NEW_TOKEN is missing String EXTRA_FCM_TOKEN")
+                    return
+                }
+                if (newToken == fcmToken) {
+                    return
+                }
+                Log.d(TAG, "handleBroadcastIntent: FCM token rotated")
+                fcmToken = newToken
+
+                // Re-register the rotated token with Twilio using the cached access token.
+                // Without this, Twilio keeps the stale binding and incoming calls silently
+                // stop until the app's next `tokens` call. If no access token is cached yet
+                // (engine restarted), registration is healed by the next `tokens` call.
+                accessToken?.let { token ->
+                    registerForCallInvites(token, newToken)
+                }
+
+                // Notify Dart (OnDeviceTokenChanged) so the app can persist the new token.
+                logEvent(Constants.kDEVICETOKEN, newToken)
             }
 
             else -> {
