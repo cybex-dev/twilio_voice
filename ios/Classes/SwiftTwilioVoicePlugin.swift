@@ -516,6 +516,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         self.deviceToken = deviceToken
         UserDefaults.standard.set(Date(), forKey: kCachedBindingDate)
 
+        self.sendPhoneCallEvents(description: "DEVICETOKEN|\(hexString(deviceToken))", isError: false)
     }
     
     /**
