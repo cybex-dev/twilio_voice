@@ -35,6 +35,7 @@
 * Fix: [iOS] send hex-formatted device token to Dart.
 * Feat: [iOS] add missing event to notify of updated device push token
 * Fix: [iOS] remove invalid push token
+* Fix: [iOS] align parameters for `makeCall` as required or throw malformed with type checks
 * Feat: update example.
 * Docs: update CHANGELOG
 

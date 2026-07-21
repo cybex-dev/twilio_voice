@@ -155,10 +155,14 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             self.identity = callFrom
             makeCall(to: callTo)
         } else if flutterCall.method == "connect" {
+            // Raw connect: To/From are optional (routing decided by the TwiML app). The
+            // double-optional cast only fails when a value is present with a wrong type.
             guard let callTo = arguments["To"] as? String? else {
+                result(FlutterError(code: "MALFORMED_ARGUMENTS", message: "'To' argument has invalid type", details: nil))
                 return
             }
             guard let callFrom = arguments["From"] as? String? else {
+                result(FlutterError(code: "MALFORMED_ARGUMENTS", message: "'From' argument has invalid type", details: nil))
                 return
             }
             self.callArgs = arguments
