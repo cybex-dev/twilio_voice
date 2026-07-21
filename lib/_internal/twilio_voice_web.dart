@@ -6,7 +6,7 @@ import 'dart:developer';
 // ignore: deprecated_member_use
 import 'dart:html' as html;
 
-import 'package:flutter/foundation.dart';
+// import 'package:flutter/foundation.dart';
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 
 // Added as temporary measure till sky_engine includes js_util (allowInterop())

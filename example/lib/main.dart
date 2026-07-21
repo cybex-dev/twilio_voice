@@ -357,7 +357,7 @@ class _AppState extends State<App> {
     return Scaffold(
       appBar: AppBar(
         title: const Text("Plugin example app"),
-        actionsPadding: const EdgeInsets.symmetric(horizontal: 8),
+        // actionsPadding: const EdgeInsets.symmetric(horizontal: 8),
         actions: [
           if (twilioInit) ...[
             const _UpdateTokenAction(),
