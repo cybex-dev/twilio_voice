@@ -241,7 +241,15 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
                     completionHandler(true)
                     return
                 }
+                // Neither a call nor an error: complete rather than leaving the Dart
+                // Future hanging.
+                completionHandler(false)
             }
+        } else {
+            // Device not initialized (setTokens not called): complete with failure
+            // rather than leaving the Dart Future hanging with no log.
+            logEvent(description: "Cannot place call: Twilio Device not initialized, call `setTokens` first")
+            completionHandler(false)
         }
     }
 

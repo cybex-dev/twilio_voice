@@ -36,6 +36,7 @@
 * Feat: [iOS] add missing event to notify of updated device push token
 * Fix: [iOS] remove invalid push token
 * Fix: [iOS] align parameters for `makeCall` as required or throw malformed with type checks
+* Fix: [macOS] fix future hanging when placing call and an error occurs/not registered with Twilio.
 * Feat: update example.
 * Docs: update CHANGELOG
 
