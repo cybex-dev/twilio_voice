@@ -599,8 +599,11 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
             }
             break
         case .connect:
-            guard let to = arguments[Constants.PARAM_TO] as? String?
-            guard let from = arguments[Constants.PARAM_FROM] as? String
+            // Raw connect: To/From are optional (aligned with the iOS implementation) -
+            // routing parameters travel in the remaining arguments and the TwiML
+            // application decides the destination.
+            let to = arguments[Constants.PARAM_TO] as? String
+            let from = arguments[Constants.PARAM_FROM] as? String
 
             var params: [String: Any] = [:]
             arguments.forEach { (key, value) in
