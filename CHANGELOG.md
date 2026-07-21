@@ -31,7 +31,8 @@
 * Feat: [Android] support null `From`/`To` parameters in raw `connect()` function.  
 * Feat: [Android] new FCM Token ignored on new token registration, now nowifies `twilio_voice` plugin of updated token.
 * Fix: [Web] code cleanup & refactor 
-* Fix: [iOS] remove unnecessary device token log when failed to register with Twilio
+* Fix: [iOS] remove unnecessary device token log when failed to register with Twilio.
+* Fix: [iOS] send hex-formatted device token to Dart.
 * Feat: update example.
 * Docs: update CHANGELOG
 

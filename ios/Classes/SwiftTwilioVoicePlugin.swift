@@ -542,6 +542,13 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
          return true;
      }
     
+    /// Formats an APNs push token as a hex string for the DEVICETOKEN| event. The raw token
+    /// is opaque binary: decoding it as UTF-8 yields replacement characters, and a 0x7C byte
+    /// would collide with the '|' event separator.
+    private func hexString(_ data: Data) -> String {
+        return data.map { String(format: "%02x", $0) }.joined()
+    }
+
     public func pushRegistry(_ registry: PKPushRegistry, didInvalidatePushTokenFor type: PKPushType) {
         self.sendPhoneCallEvents(description: "LOG|pushRegistry:didInvalidatePushTokenForType:", isError: false)
         
@@ -760,7 +767,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         self.sendPhoneCallEvents(description: "Call Ended", isError: false)
         if(error.localizedDescription.contains("Access Token expired")){
             if let deviceToken = deviceToken {
-                self.sendPhoneCallEvents(description: "DEVICETOKEN|\(String(decoding: deviceToken, as: UTF8.self))", isError: false)
+                self.sendPhoneCallEvents(description: "DEVICETOKEN|\(hexString(deviceToken))", isError: false)
             }
         }
         if let completion = self.callKitCompletionCallback {
