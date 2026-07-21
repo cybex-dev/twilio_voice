@@ -552,12 +552,19 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
 
     public func pushRegistry(_ registry: PKPushRegistry, didInvalidatePushTokenFor type: PKPushType) {
         self.sendPhoneCallEvents(description: "LOG|pushRegistry:didInvalidatePushTokenForType:", isError: false)
-        
+
         if (type != .voIP) {
             return
         }
-        
+
         self.unregister()
+
+        // The push token is no longer valid: drop the cached token and binding date so a
+        // later `tokens` call cannot re-register the dead token with Twilio. (unregister()
+        // above reads the cached token synchronously before this runs.) A fresh token
+        // arrives via pushRegistry(didUpdate:) when PushKit issues new credentials.
+        UserDefaults.standard.removeObject(forKey: kCachedDeviceToken)
+        UserDefaults.standard.removeObject(forKey: kCachedBindingDate)
     }
     
     func unregister() {
