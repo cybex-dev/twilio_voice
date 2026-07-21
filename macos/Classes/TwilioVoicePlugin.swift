@@ -209,19 +209,25 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     ///   - to: recipient
     ///   - extraOptions: extra options
     ///   - completionHandler: completion handler -> (Bool?)
-    private func place(from: String?, to: String?, extraOptions: [String: Any]?, completionHandler: @escaping OnCompletionValueHandler<Bool>) -> Void {
-        assert(from.isNotEmpty(), "\(Constants.PARAM_FROM) cannot be empty")
-        assert(to.isNotEmpty(), "\(Constants.PARAM_TO) cannot be empty")
+    private func place(from: String?, to: String?, extraOptions: [String: Any]?, connect: Bool = false, completionHandler: @escaping OnCompletionValueHandler<Bool>) -> Void {
+        // Raw connect() calls may omit To/From entirely (the TwiML app decides routing);
+        // only regular makeCall requires them. Mirrors the Android placeCall(connect:)
+        // contract: assert(connect || !isNullOrEmpty).
+        assert(connect || (from?.isNotEmpty() ?? false), "\(Constants.PARAM_FROM) cannot be empty")
+        assert(connect || (to?.isNotEmpty() ?? false), "\(Constants.PARAM_TO) cannot be empty")
 //        assert(extraOptions?.keys.contains(Constants.PARAM_FROM) ?? true, "\(Constants.PARAM_FROM) cannot be passed in extraOptions")
 //        assert(extraOptions?.keys.contains(Constants.PARAM_TO) ?? true, "\(Constants.PARAM_TO) cannot be passed in extraOptions")
 //        assert(twilioDevice != nil, "Twilio Device must be initialized before making calls")
 
         logEvent(description: "Making new call")
 
-        var params: [String: Any] = [
-            if(from != nil) Constants.PARAM_FROM: from,
-            if(to != nil) Constants.PARAM_TO: to,
-        ]
+        var params: [String: Any] = [:]
+        if let from = from {
+            params[Constants.PARAM_FROM] = from
+        }
+        if let to = to {
+            params[Constants.PARAM_TO] = to
+        }
         if let extraOptions = extraOptions {
             params.merge(extraOptions) { (_, new) in
                 new
@@ -620,7 +626,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
                 }
             }
 
-            place(from: from, to: to, extraOptions: params) { success in
+            place(from: from, to: to, extraOptions: params, connect: true) { success in
                 result(success ?? false)
             }
             break
