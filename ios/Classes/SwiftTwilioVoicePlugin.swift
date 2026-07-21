@@ -136,8 +136,16 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                 }
             }
         } else if flutterCall.method == "makeCall" {
-            guard let callTo = arguments["To"] as? String else {return}
-            guard let callFrom = arguments["From"] as? String else {return}
+            // makeCall requires To/From; fail the call rather than silently returning,
+            // which would leave the awaiting Dart Future hanging forever.
+            guard let callTo = arguments["To"] as? String else {
+                result(FlutterError(code: "MALFORMED_ARGUMENTS", message: "No 'To' argument provided or invalid type", details: nil))
+                return
+            }
+            guard let callFrom = arguments["From"] as? String else {
+                result(FlutterError(code: "MALFORMED_ARGUMENTS", message: "No 'From' argument provided or invalid type", details: nil))
+                return
+            }
             self.callArgs = arguments
             self.callOutgoing = true
             if let accessToken = arguments["accessToken"] as? String{
