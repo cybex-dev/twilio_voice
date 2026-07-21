@@ -1109,8 +1109,11 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         connect: Boolean = false
     ): Boolean {
         assert(accessToken.isNotEmpty()) { "Twilio Access Token cannot be empty" }
-        assert(!connect && (to == null || to.isNotEmpty())) { "To cannot be empty" }
-        assert(!connect && (from == null || from.isNotEmpty())) { "From cannot be empty" }
+        // Raw connect() calls may omit To/From entirely (the TwiML app decides routing);
+        // only regular makeCall requires them. The previous expressions were inverted and
+        // would have failed for every raw connect had assertions been enabled.
+        assert(connect || !to.isNullOrEmpty()) { "To cannot be empty" }
+        assert(connect || !from.isNullOrEmpty()) { "From cannot be empty" }
 
         telecomManager?.let { tm ->
             if (!tm.hasCallCapableAccount(ctx, TVConnectionService::class.java.name)) {
