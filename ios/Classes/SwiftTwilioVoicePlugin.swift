@@ -311,13 +311,13 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             
         }else if flutterCall.method == "hangUp"{
             // Hang up on-going/active call
-            if (self.call != nil) {
+            if let uuid = self.call?.uuid {
                 self.sendPhoneCallEvents(description: "LOG|hangUp method invoked", isError: false)
                 self.userInitiatedDisconnect = true
-                performEndCallAction(uuid: self.call!.uuid!)
+                performEndCallAction(uuid: uuid)
                 //self.toggleUIState(isEnabled: false, showCallControl: false)
-            } else if(self.callInvite != nil) {
-                performEndCallAction(uuid: self.callInvite!.uuid)
+            } else if let invite = self.callInvite {
+                performEndCallAction(uuid: invite.uuid)
             }
         }else if flutterCall.method == "registerClient"{
             guard let clientId = arguments["id"] as? String, let clientName =  arguments["name"] as? String else {return}
@@ -545,7 +545,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
       * will return true, else false.
       */
      func registrationRequired() -> Bool {
-         guard let lastBindingCreated = UserDefaults.standard.object(forKey: kCachedBindingDate) else {
+         guard let lastBindingCreated = UserDefaults.standard.object(forKey: kCachedBindingDate) as? Date else {
              self.sendPhoneCallEvents(description: "LOG|Registration required: true, last binding date not found", isError: false)
              return true
          }
@@ -553,7 +553,9 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
          let date = Date()
          var components = DateComponents()
          components.setValue(kRegistrationTTLInDays/2, for: .day)
-         let expirationDate = Calendar.current.date(byAdding: components, to: lastBindingCreated as! Date)!
+         guard let expirationDate = Calendar.current.date(byAdding: components, to: lastBindingCreated) else {
+             return true
+         }
 
          if expirationDate.compare(date) == ComparisonResult.orderedDescending {
              self.sendPhoneCallEvents(description: "LOG|Registration required: false, half of TTL not passed", isError: false)
@@ -796,7 +798,9 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         }
 
 
-        callKitProvider.reportCall(with: call.uuid!, endedAt: Date(), reason: CXCallEndedReason.failed)
+        if let uuid = call.uuid {
+            callKitProvider.reportCall(with: uuid, endedAt: Date(), reason: CXCallEndedReason.failed)
+        }
         callDisconnected()
     }
 
@@ -813,7 +817,9 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                 reason = .failed
             }
 
-            self.callKitProvider.reportCall(with: call.uuid!, endedAt: Date(), reason: reason)
+            if let uuid = call.uuid {
+                self.callKitProvider.reportCall(with: uuid, endedAt: Date(), reason: reason)
+            }
         }
 
         callDisconnected()
