@@ -43,6 +43,7 @@
 * fix: [iOS] incorrect parsing of systemVersion in `pushRegistry` delegate for handling push notifications.
 * fix: [iOS] notify callkit of failure to start/answer call or failure to answer completion handler.
 * fix: [iOS] keep `CallKit` call mute/hold state in-sync when actions are performed on CallKit UI.
+* fix: [iOS] query `isHolding` only with no event emitted
 * Feat: update example.
 * Docs: update CHANGELOG
 
