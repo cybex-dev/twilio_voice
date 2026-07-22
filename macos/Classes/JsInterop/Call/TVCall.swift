@@ -300,14 +300,6 @@ public class TVCall: JSObject, TVCallDelegate, JSMessageHandlerDelegate {
             case .reject:
                 onCallReject()
                 break
-            case .status:
-                if (message.args.count > 0) {
-                    let status = message.args[0] as? String
-                    if let statusString = status, let status = TVCallStatus(rawValue: statusString) {
-                        onCallStatus(status)
-                    }
-                }
-                break
             default:
                 print("Unhandled event: \(event)")
             }

@@ -3,7 +3,6 @@ import Foundation
 public enum TVCallEvent: String {
     case accept = "accept"
     case cancel = "cancel"
-//    case connected = "connected"
     case disconnect = "disconnect"
     case error = "error"
 //    case messageReceived = "messageReceived"
