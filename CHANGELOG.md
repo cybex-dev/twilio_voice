@@ -37,6 +37,8 @@
 * Fix: [iOS] remove invalid push token
 * Fix: [iOS] align parameters for `makeCall` as required or throw malformed with type checks
 * Fix: [macOS] fix future hanging when placing call and an error occurs/not registered with Twilio.
+* Fix: [iOS] set and use `DefaultAudioDevice` for audio routing and controlling with Twilio SDK
+* Fix: [iOS] remove duplicate plugin registration [#222](https://github.com/cybex-dev/twilio_voice/issues/222)
 * Feat: update example.
 * Docs: update CHANGELOG
 
