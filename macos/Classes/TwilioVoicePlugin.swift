@@ -81,7 +81,9 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
         super.init()
         webView = TVWebView(messageHandler: "twilio_voice")
         webView?.uiDelegate = self
+        #if DEBUG
         webView?.configuration.preferences.setValue(true, forKey: "developerExtrasEnabled")
+        #endif
         Thread.sleep(forTimeInterval: 1)
         clients = UserDefaults.standard.object(forKey: kClientList) as? [String: String] ?? [:]
 

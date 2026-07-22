@@ -52,6 +52,7 @@
 * fix: [web] improved robustness of functions with active/no calls
 * fix: [web] custom parameters are correctly resolved when call is answered
 * fix: [web] change hold toggle to not implemented defaulting to false always. Experimental holding feature in development for web platform (see [PR #322](https://github.com/cybex-dev/twilio_voice/pull/322))
+* fix: [macos] set `developerExtrasEnabled: true` only in debug mode with `DEBUG` directive
 * Feat: update example.
 * Docs: update CHANGELOG
 
