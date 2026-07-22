@@ -161,10 +161,14 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
                 completionHandler(value ?? false)
             }
         } else {
-            if let webView = webView {
+            guard let webView = webView else {
+                completionHandler(false)
+                return
+            }
                 twilioDevice = TVDevice(token, options: options, webView: webView) { (device, error) in
                     if let error = error {
                         print("Error TVDevice:init : \(String(describing: error))")
+                    self.twilioDevice = nil
                         completionHandler(false)
                         return
                     }
@@ -179,7 +183,6 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
                                 completionHandler(false)
                             } else {
                                 completionHandler(true)
-                            }
                         }
                     }
                 }

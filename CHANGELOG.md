@@ -62,6 +62,7 @@
 * feat: [macos] improve robustness of `WKWebView` JS handlers for serialization & deserialization of JS Objects & JSON data.
 * fix: [macos] fix request mic permission access returning early false 
 * fix: [macos] improve performance on startup by refactoring and removing unnecessary initialization code. 
+* fix: [macos] fail gracefully when calling `setTokens` and plugin is not yet ready. 
 * Feat: update example.
 * Docs: update CHANGELOG
 
