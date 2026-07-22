@@ -40,6 +40,7 @@
 * Fix: [iOS] set and use `DefaultAudioDevice` for audio routing and controlling with Twilio SDK
 * Fix: [iOS] remove duplicate plugin registration [#222](https://github.com/cybex-dev/twilio_voice/issues/222)
 * Feat: [iOS] log incoming push notifications not handled by Twilio SDK
+* fix: [iOS] incorrect parsing of systemVersion in `pushRegistry` delegate for handling push notifications.
 * Feat: update example.
 * Docs: update CHANGELOG
 
