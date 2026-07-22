@@ -219,10 +219,8 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
       if (perm.state == "granted") {
         return true;
       } else if (perm.state == "prompt") {
-        logLocalEvent("RequestMicrophoneAccess");
         return false;
       } else {
-        logLocalEvent("Microphone permission denied", prefix: "");
         return false;
       }
     } catch (e) {
