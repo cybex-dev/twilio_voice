@@ -49,6 +49,7 @@
 * fix: [iOS] use registered notification delegate instead of setting `UNUserNotificationCenter.current().delegate = self` to avoid overwriting other notification delegates.
 * fix: [iOS] add missing "Incoming" call event to unify platform behavior contract for incoming calls.
 * fix: [web] function caching ensuring proper cleanup on calls/devices 
+* fix: [web] improved robustness of functions with active/no calls
 * Feat: update example.
 * Docs: update CHANGELOG
 
