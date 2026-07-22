@@ -170,7 +170,6 @@ public class TVCall: JSObject, TVCallDelegate, JSMessageHandlerDelegate {
     func detachEventListeners() {
         print("Detaching event listeners from [TVCall]")
         detachMessageHandler()
-        return;
         let events: [TVCallEvent] = [.accept, .cancel, .disconnect, .error, .reconnecting, .reconnected, .reject, .ringing]
         events.map {
                     $0.rawValue
