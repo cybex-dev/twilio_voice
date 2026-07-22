@@ -352,16 +352,20 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
     }
   }
 
+  final _deviceListenerWrappers = <Function, Function>{};
+
+  Function _wrapDeviceListener(Function handler) => _deviceListenerWrappers[handler] ??= js.allowInterop(handler);
+
   /// Attach event listeners to [twilio_js.Device]
   /// See [twilio_js.Device.addListener](https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#deviceaddlistenereventname-listener)
   void _attachDeviceListeners(twilio_js.Device device) {
     // ignore: unnecessary_null_comparison
     assert(device != null, "Device cannot be null");
-    device.addListener("registered", js.allowInterop(_onDeviceRegistered));
-    device.addListener("unregistered", js.allowInterop(_onDeviceUnregistered));
-    device.addListener("error", js.allowInterop(_onDeviceError));
-    device.addListener("incoming", js.allowInterop(_onDeviceIncoming));
-    device.addListener("tokenWillExpire", js.allowInterop(_onTokenWillExpire));
+    device.addListener("registered", _wrapDeviceListener(_onDeviceRegistered));
+    device.addListener("unregistered", _wrapDeviceListener(_onDeviceUnregistered));
+    device.addListener("error", _wrapDeviceListener(_onDeviceError));
+    device.addListener("incoming", _wrapDeviceListener(_onDeviceIncoming));
+    device.addListener("tokenWillExpire", _wrapDeviceListener(_onTokenWillExpire));
   }
 
   /// Detach event listeners to [twilio_js.Device]
@@ -369,11 +373,11 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   void _detachDeviceListeners(twilio_js.Device device) {
     // ignore: unnecessary_null_comparison
     assert(device != null, "Device cannot be null");
-    device.removeListener("registered", js.allowInterop(_onDeviceRegistered));
-    device.removeListener("unregistered", js.allowInterop(_onDeviceUnregistered));
-    device.removeListener("error", js.allowInterop(_onDeviceError));
-    device.removeListener("incoming", js.allowInterop(_onDeviceIncoming));
-    device.removeListener("tokenWillExpire", js.allowInterop(_onTokenWillExpire));
+    device.removeListener("registered", _wrapDeviceListener(_onDeviceRegistered));
+    device.removeListener("unregistered", _wrapDeviceListener(_onDeviceUnregistered));
+    device.removeListener("error", _wrapDeviceListener(_onDeviceError));
+    device.removeListener("incoming", _wrapDeviceListener(_onDeviceIncoming));
+    device.removeListener("tokenWillExpire", _wrapDeviceListener(_onTokenWillExpire));
   }
 
   /// On device registered and ready to make/receive calls via [twilio_js.Device.addListener] and [twilio_js.TwilioDeviceEvents.registered]
@@ -791,20 +795,24 @@ class Call extends MethodChannelTwilioCall {
     return true;
   }
 
+  final _callListenerWrappers = <Function, Function>{};
+
+  Function _wrapCallListener(Function handler) => _callListenerWrappers[handler] ??= js.allowInterop(handler);
+
   /// Attach event listeners to the active call
   /// See [twilio_js.Call.addListener]
   void _attachCallEventListeners(twilio_js.Call call) {
     // ignore: unnecessary_null_comparison
     assert(call != null, "Call cannot be null");
-    call.addListener("ringing", js.allowInterop(_onCallRinging));
-    call.addListener("accept", js.allowInterop(_onCallAccept));
-    call.addListener("disconnect", js.allowInterop(_onCallDisconnect));
-    call.addListener("cancel", js.allowInterop(_onCallCancel));
-    call.addListener("reject", js.allowInterop(_onCallReject));
-    call.addListener("error", js.allowInterop(_onCallError));
-    call.addListener("reconnecting", js.allowInterop(_onCallReconnecting));
-    call.addListener("reconnected", js.allowInterop(_onCallReconnected));
-    call.addListener("log", js.allowInterop(_onLogEvent));
+    call.addListener("ringing", _wrapCallListener(_onCallRinging));
+    call.addListener("accept", _wrapCallListener(_onCallAccept));
+    call.addListener("disconnect", _wrapCallListener(_onCallDisconnect));
+    call.addListener("cancel", _wrapCallListener(_onCallCancel));
+    call.addListener("reject", _wrapCallListener(_onCallReject));
+    call.addListener("error", _wrapCallListener(_onCallError));
+    call.addListener("reconnecting", _wrapCallListener(_onCallReconnecting));
+    call.addListener("reconnected", _wrapCallListener(_onCallReconnected));
+    call.addListener("log", _wrapCallListener(_onLogEvent));
   }
 
   /// Detach event listeners to the active call
@@ -813,15 +821,15 @@ class Call extends MethodChannelTwilioCall {
   void _detachCallEventListeners(twilio_js.Call call) {
     // ignore: unnecessary_null_comparison
     assert(call != null, "Call cannot be null");
-    call.removeListener("ringing", js.allowInterop(_onCallRinging));
-    call.removeListener("accept", js.allowInterop(_onCallAccept));
-    call.removeListener("disconnect", js.allowInterop(_onCallDisconnect));
-    call.removeListener("cancel", js.allowInterop(_onCallCancel));
-    call.removeListener("reject", js.allowInterop(_onCallReject));
-    call.removeListener("error", js.allowInterop(_onCallError));
-    call.removeListener("reconnecting", js.allowInterop(_onCallReconnecting));
-    call.removeListener("reconnected", js.allowInterop(_onCallReconnected));
-    call.removeListener("log", js.allowInterop(_onLogEvent));
+    call.removeListener("ringing", _wrapCallListener(_onCallRinging));
+    call.removeListener("accept", _wrapCallListener(_onCallAccept));
+    call.removeListener("disconnect", _wrapCallListener(_onCallDisconnect));
+    call.removeListener("cancel", _wrapCallListener(_onCallCancel));
+    call.removeListener("reject", _wrapCallListener(_onCallReject));
+    call.removeListener("error", _wrapCallListener(_onCallError));
+    call.removeListener("reconnecting", _wrapCallListener(_onCallReconnecting));
+    call.removeListener("reconnected", _wrapCallListener(_onCallReconnected));
+    call.removeListener("log", _wrapCallListener(_onLogEvent));
   }
 
   void _onLogEvent(String status) {
