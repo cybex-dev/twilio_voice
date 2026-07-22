@@ -590,7 +590,6 @@ class Call extends MethodChannelTwilioCall {
   /// Not currently implemented for web
   @override
   Future<bool?> toggleSpeaker(bool speakerIsOn) async {
-    logLocalEvent(speakerIsOn ? "Speaker On" : "Speaker Off", prefix: "");
     return Future.value(false);
   }
 
