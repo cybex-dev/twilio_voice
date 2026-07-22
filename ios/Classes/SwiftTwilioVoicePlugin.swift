@@ -108,7 +108,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     public func handle(_ flutterCall: FlutterMethodCall, result: @escaping FlutterResult) {
         _result = result
         
-        let arguments:Dictionary<String, AnyObject> = flutterCall.arguments as! Dictionary<String, AnyObject>;
+        let arguments: Dictionary<String, AnyObject> = flutterCall.arguments as? Dictionary<String, AnyObject> ?? [:]
         
         if flutterCall.method == "tokens" {
             guard let token = arguments["accessToken"] as? String else {
