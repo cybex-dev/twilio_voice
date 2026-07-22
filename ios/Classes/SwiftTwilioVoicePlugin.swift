@@ -172,17 +172,27 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         }
         else if flutterCall.method == "toggleMute"
         {
-            guard let muted = arguments["muted"] as? Bool else {return}
-            if (self.call != nil) {
-
-                self.call!.isMuted = muted
-                guard let eventSink = eventSink else {
-                    return
+            guard let muted = arguments["muted"] as? Bool else {
+                result(FlutterError(code: "MALFORMED_ARGUMENTS", message: "No 'muted' argument provided or invalid type", details: nil))
+                return
+            }
+            guard let call = self.call, let uuid = call.uuid else {
+                result(FlutterError(code: "MUTE_ERROR", message: "No call to be muted", details: nil))
+                return
+            }
+            // Route through CallKit so the system call UI stays in sync. The
+            // CXSetMutedCallAction handler applies the state to the Twilio call and
+            // emits the Mute/Unmute event.
+            let muteAction = CXSetMutedCallAction(call: uuid, muted: muted)
+            callKitCallController.request(CXTransaction(action: muteAction)) { error in
+                DispatchQueue.main.async {
+                    if let error = error {
+                        self.sendPhoneCallEvents(description: "LOG|Failed to set mute state: \(error.localizedDescription)", isError: false)
+                        result(FlutterError(code: "MUTE_ERROR", message: error.localizedDescription, details: nil))
+                    } else {
+                        result(true)
+                    }
                 }
-                eventSink(muted ? "Mute" : "Unmute")
-            } else {
-                let ferror: FlutterError = FlutterError(code: "MUTE_ERROR", message: "No call to be muted", details: nil)
-                _result!(ferror)
             }
         }
         else if flutterCall.method == "isMuted"
@@ -245,22 +255,30 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
          self.identity = clientIdentity;
          } */
         else if flutterCall.method == "holdCall" {
-            guard let shouldHold = arguments["shouldHold"] as? Bool else {return}
-            
-            if (self.call != nil) {
-                let hold = self.call!.isOnHold
-                if(shouldHold && !hold) {
-                    self.call!.isOnHold = true
-                    guard let eventSink = eventSink else {
-                        return
+            guard let shouldHold = arguments["shouldHold"] as? Bool else {
+                result(FlutterError(code: "MALFORMED_ARGUMENTS", message: "No 'shouldHold' argument provided or invalid type", details: nil))
+                return
+            }
+            guard let call = self.call, let uuid = call.uuid else {
+                result(false)
+                return
+            }
+            if (call.isOnHold == shouldHold) {
+                result(true)
+                return
+            }
+            // Route through CallKit so the system call UI stays in sync. The
+            // CXSetHeldCallAction handler applies the state to the Twilio call and
+            // emits the Hold/Unhold event.
+            let holdAction = CXSetHeldCallAction(call: uuid, onHold: shouldHold)
+            callKitCallController.request(CXTransaction(action: holdAction)) { error in
+                DispatchQueue.main.async {
+                    if let error = error {
+                        self.sendPhoneCallEvents(description: "LOG|Failed to set hold state: \(error.localizedDescription)", isError: false)
+                        result(false)
+                    } else {
+                        result(true)
                     }
-                    eventSink("Hold")
-                } else if(!shouldHold && hold) {
-                    self.call!.isOnHold = false
-                    guard let eventSink = eventSink else {
-                        return
-                    }
-                    eventSink("Unhold")
                 }
             }
         }

@@ -44,6 +44,7 @@
 * fix: [iOS] notify callkit of failure to start/answer call or failure to answer completion handler.
 * fix: [iOS] keep `CallKit` call mute/hold state in-sync when actions are performed on CallKit UI.
 * fix: [iOS] query `isHolding` only with no event emitted
+* feat: [iOS] CallKit controller used for mute / hold call actions 
 * Feat: update example.
 * Docs: update CHANGELOG
 
