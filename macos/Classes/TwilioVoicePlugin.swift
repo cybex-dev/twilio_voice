@@ -84,28 +84,27 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
         #if DEBUG
         webView?.configuration.preferences.setValue(true, forKey: "developerExtrasEnabled")
         #endif
-        Thread.sleep(forTimeInterval: 1)
         clients = UserDefaults.standard.object(forKey: kClientList) as? [String: String] ?? [:]
 
         // Register notification categories
         registerNotificationCategories()
         UNUserNotificationCenter.current().delegate = self
 
-        let app = NSApplication.shared
-        guard let window = app.windows.first else {
-            fatalError("no mainWindow to grab")
+        // Attach the hidden webview (it runs the Twilio JS SDK) to the Flutter view.
+        // Best-effort: on non-standard hosts (add-to-app, custom window setup, or a window
+        // not yet ready) log and skip instead of crashing the app at launch - the previous
+        // fatalError guards took down any app without a plain FlutterViewController root.
+        // Note: the method/event channels are wired in register(with:); the init-time event
+        // channel here was a duplicate and has been removed. The previous 1s Thread.sleep
+        // (blocking the main thread during launch) has also been removed - nothing in init
+        // depends on the webview finishing its async load.
+        if let webView = webView,
+           let viewController = NSApplication.shared.windows.first?.contentViewController as? FlutterViewController {
+            webView.alphaValue = 0.0
+            viewController.view.addSubview(webView)
+        } else {
+            NSLog("[TwilioVoice] WARNING: could not attach the plugin webview to a FlutterViewController window; VoIP functionality will be unavailable. Ensure a standard Flutter macOS window setup.")
         }
-        guard let viewController = window.contentViewController else {
-            fatalError("rootViewController hasn't been set")
-        }
-        guard let viewController = viewController as? FlutterViewController else {
-            fatalError("rootViewController is not type FlutterViewController")
-        }
-        webView?.alphaValue = 0.0
-        viewController.view.addSubview(webView!)
-        let registrar = viewController.registrar(forPlugin: "twilio_voice")
-        let eventChannel = FlutterEventChannel(name: "twilio_voice/events", binaryMessenger: registrar.messenger)
-        eventChannel.setStreamHandler(self)
     }
 
 
@@ -962,9 +961,9 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
         center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
             self.onMain {
             if let error = error {
-                completionHandler(false, error.localizedDescription)
-            } else {
-                completionHandler(granted, nil)
+                    completionHandler(false, error.localizedDescription)
+                } else {
+                    completionHandler(granted, nil)
                 }
             }
         }
@@ -975,9 +974,9 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
         center.getNotificationSettings { settings in
             self.onMain {
             if settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional {
-                completionHandler(true, nil)
-            } else {
-                completionHandler(false, nil)
+                    completionHandler(true, nil)
+                } else {
+                    completionHandler(false, nil)
                 }
             }
         }

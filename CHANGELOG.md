@@ -61,6 +61,7 @@
 * feat: [macos] fix logging call events, `speakerOn`, `speakerOff`, `holdOn`, `holdOff`, `bluetoothOn`, `bluetoothOff`, `reconnecting` and `reconnected` events now log correctly.
 * feat: [macos] improve robustness of `WKWebView` JS handlers for serialization & deserialization of JS Objects & JSON data.
 * fix: [macos] fix request mic permission access returning early false 
+* fix: [macos] improve performance on startup by refactoring and removing unnecessary initialization code. 
 * Feat: update example.
 * Docs: update CHANGELOG
 
