@@ -7,4 +7,8 @@ class AppDelegate: FlutterAppDelegate {
         print("App Delegate")
         return true
     }
+
+    override func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
+        return true
+    }
 }
