@@ -58,6 +58,7 @@
 * feat: [macos] add missing `ringing` event for outgoing calls to unify platform behavior contract.
 * feat: [macos] reconnecting now uses correct `onCallReconnecting` delegate handler instead of `onCallError`
 * feat: [macos] accepting incoming call now sets correct status
+* feat: [macos] fix logging call events, `speakerOn`, `speakerOff`, `holdOn`, `holdOff`, `bluetoothOn`, `bluetoothOff`, `reconnecting` and `reconnected` events now log correctly.
 * Feat: update example.
 * Docs: update CHANGELOG
 

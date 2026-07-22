@@ -308,7 +308,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     /// - Parameter speakerIsOn: should toggle to speaker mode, if true
     /// - Parameter completionHandler: completion handler -> (Bool?)
     private func toggleSpeaker(_ speakerIsOn: Bool, completionHandler: @escaping OnCompletionValueHandler<Bool>) -> Void {
-        logEvent(description: speakerIsOn ? "Speaker On" : "Speaker Off")
+        logEvent(prefix: "", description: speakerIsOn ? "Speaker On" : "Speaker Off")
         completionHandler(false)
     }
 
@@ -378,7 +378,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     /// - Parameter shouldHold: true if should hold call, false unholds
     /// - Parameter completionHandler: completion handler -> (Bool?)
     private func holdCall(_ shouldHold: Bool, completionHandler: OnCompletionValueHandler<Bool>) -> Void {
-        logEvent(description: shouldHold ? "Hold" : "Unhold")
+        logEvent(prefix: "", description: shouldHold ? "Hold" : "Unhold")
         completionHandler(false)
     }
 
@@ -703,7 +703,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
             guard eventSink != nil else {
                 return
             }
-            logEvent(description: bluetoothOn ? "Bluetooth On" : "Bluetooth Off")
+            logEvent(prefix: "", description: bluetoothOn ? "Bluetooth On" : "Bluetooth Off")
             break;
 
         case .isBluetoothOn:
@@ -1355,11 +1355,11 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     }
 
     public func onCallReconnecting(_ error: TVError) {
-        logEvent(description: "Reconnecting: \(error.code) \(error.message)")
+        logEvent(prefix: "", description: "Reconnecting: \(error.code) \(error.message)")
     }
 
     public func onCallReconnected() {
-        logEvent(description: "Reconnected")
+        logEvent(prefix: "", description: "Reconnected")
     }
 
     public func onCallReject() {
