@@ -669,7 +669,7 @@ class Call extends MethodChannelTwilioCall {
       final from = params["From"] ?? "";
       final to = params["To"] ?? "";
       logLocalEventEntries(
-        ["Answer", from, to, jsonEncode(params)],
+        ["Answer", from, to, "Incoming", jsonEncode(params)],
         prefix: "",
       );
 
@@ -879,6 +879,7 @@ class Call extends MethodChannelTwilioCall {
         "Answer",
         from,
         to,
+        "Incoming",
         jsonEncode(params),
       ], prefix: "");
 

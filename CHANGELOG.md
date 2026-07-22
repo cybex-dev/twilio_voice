@@ -50,6 +50,7 @@
 * fix: [iOS] add missing "Incoming" call event to unify platform behavior contract for incoming calls.
 * fix: [web] function caching ensuring proper cleanup on calls/devices 
 * fix: [web] improved robustness of functions with active/no calls
+* fix: [web] custom parameters are correctly resolved when call is answered
 * Feat: update example.
 * Docs: update CHANGELOG
 
