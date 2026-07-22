@@ -84,8 +84,6 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         
         voipRegistry.delegate = self
         voipRegistry.desiredPushTypes = Set([PKPushType.voIP])
-        
-        UNUserNotificationCenter.current().delegate = self
     }
     
     
@@ -591,7 +589,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     func unregister() {
         
         guard let deviceToken = deviceToken, let token = accessToken else {
-            self.sendPhoneCallEvents(description: "LOG|Missing required parameters to unregister", isError: true)
+            self.sendPhoneCallEvents(description: "LOG|Missing required parameters to unregister", isError: false)
             return
         }
         
@@ -807,7 +805,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     public func callDidDisconnect(call: Call, error: Error?) {
         self.sendPhoneCallEvents(description: "Call Ended", isError: false)
         if let error = error {
-            self.sendPhoneCallEvents(description: "Call Failed: \(error.localizedDescription)", isError: true)
+            self.sendPhoneCallEvents(description: "LOG|Call Failed: \(error.localizedDescription)", isError: false)
         }
 
         if !self.userInitiatedDisconnect {
@@ -1059,7 +1057,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         
         callKitCallController.request(transaction) { error in
             if let error = error {
-                self.sendPhoneCallEvents(description: "End Call Failed: \(error.localizedDescription).", isError: true)
+                self.sendPhoneCallEvents(description: "LOG|End Call Failed: \(error.localizedDescription).", isError: false)
             } else {
                 self.sendPhoneCallEvents(description: "Call Ended", isError: false)
             }
@@ -1151,7 +1149,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
 
     public func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
         let userInfo = response.notification.request.content.userInfo
-        
+
         if let type = userInfo["type"] as? String, type == "twilio-missed-call", let user = userInfo["From"] as? String{
             self.callTo = user
             if let to = userInfo["To"] as? String{
