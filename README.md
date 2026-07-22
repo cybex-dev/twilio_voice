@@ -967,5 +967,18 @@ when deploying (as part of the deploy text)
 
 ## Updating Twilio Voice JS SDK
 
-`twilio.js` is no longer hosted via CDNs (see [reference](https://github.com/twilio/twilio-voice.js/blob/master/README.md#cdn)), instead it is hosted via npm / github. See instructions found [here](https://github.com/twilio/twilio-voice.js/blob/master/README.md#github)
-This is automatically added to your `web/index.html` file, as a `<script/>` tag during runtime. See [here](./lib/_internal/twilio_loader.dart) for more info.);
+The Twilio Voice JS SDK is loaded via a `<script>` tag that **you** add to your app's
+`web/index.html` — the plugin does not inject it at runtime. This keeps the SDK version
+pinned in a declarative manifest, the same way the version is pinned per platform (iOS
+podspec, Android `build.gradle`, macOS `Resources/index.html`).
+
+Add the SDK to your `web/index.html`, before the Flutter bootstrap script:
+
+```html
+<script src="https://cdn.jsdelivr.net/npm/@twilio/voice-sdk@2.18.0/dist/twilio.min.js"></script>
+```
+
+To change the SDK version, update the version in that URL. See the
+[example app's index.html](./example/web/index.html) for a working reference, and the
+[Twilio Voice JS SDK releases](https://github.com/twilio/twilio-voice.js/releases) for
+available versions.

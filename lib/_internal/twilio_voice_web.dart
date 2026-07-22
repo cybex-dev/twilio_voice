@@ -45,8 +45,6 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   late CKConfiguration _ckConfiguration;
 
   TwilioVoiceWeb() {
-    // TODO(cybex-dev) - load twilio.min.js via [TwilioLoader] in future
-    // loadTwilio();
     webCallkit = WebCallkitWeb.instance;
     _ckConfiguration = const CKConfiguration(
       capabilities: {

@@ -53,6 +53,7 @@
 * fix: [web] custom parameters are correctly resolved when call is answered
 * fix: [web] change hold toggle to not implemented defaulting to false always. Experimental holding feature in development for web platform (see [PR #322](https://github.com/cybex-dev/twilio_voice/pull/322))
 * fix: [macos] set `developerExtrasEnabled: true` only in debug mode with `DEBUG` directive
+* feat: [web,macos] Twilio Voice JS SDK is now loaded via `<script>` tag defined in `index.html` instead of bundling, copying or importing making CI/CD easier and more robust. See [README.md#updating-twilio-voice-js-sdk](README.md#updating-twilio-voice-js-sdk) for more details.
 * Feat: update example.
 * Docs: update CHANGELOG
 
