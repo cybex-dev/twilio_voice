@@ -286,15 +286,13 @@ public class TVCall: JSObject, TVCallDelegate, JSMessageHandlerDelegate {
                 onCallDisconnect(self)
                 break
             case .error:
-                if let error = message.args[0] as? [String: Any] {
-                    let error = TVError(dict: error)
-                    onCallError(error)
+                if message.args.count > 0, let error = message.args[0] as? [String: Any] {
+                    onCallError(TVError(dict: error))
                 }
                 break
             case .reconnecting:
-                if let error = message.args[0] as? [String: Any] {
-                    let error = TVError(dict: error)
-                    onCallError(error)
+                if message.args.count > 0, let error = message.args[0] as? [String: Any] {
+                    onCallError(TVError(dict: error))
                 }
                 break
             case .reconnected:
