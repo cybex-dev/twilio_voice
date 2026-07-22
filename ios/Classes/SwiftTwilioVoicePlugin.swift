@@ -52,7 +52,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     var callKitCallController: CXCallController
     var userInitiatedDisconnect: Bool = false
     var callOutgoing: Bool = false
-    
+
     static var appName: String {
         get {
             return (Bundle.main.infoDictionary!["CFBundleName"] as? String) ?? "Define CFBundleName"
@@ -77,6 +77,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         //super.init(coder: aDecoder)
         super.init()
 
+        TwilioVoiceSDK.audioDevice = audioDevice
         
         callKitProvider.setDelegate(self, queue: nil)
         _ = updateCallKitIcon(icon: defaultIcon)
@@ -892,6 +893,9 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     public func provider(_ provider: CXProvider, perform action: CXStartCallAction) {
         self.sendPhoneCallEvents(description: "LOG|provider:performStartCallAction:", isError: false)
 
+        // in the event of device disabled from previous call ending while new call is connecting, we check
+        // CXCallObserver for any new/active calls besides our current call to set audio device enabled state
+        audioDevice.isEnabled = hasOtherCalls(besides: action.callUUID)
 
         provider.reportOutgoingCall(with: action.callUUID, startedConnectingAt: Date())
 
@@ -909,6 +913,8 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     public func provider(_ provider: CXProvider, perform action: CXAnswerCallAction) {
         self.sendPhoneCallEvents(description: "LOG|provider:performAnswerCallAction:", isError: false)
 
+        // AudioDevice may be active, but has not yet started for this call i.e. we keep previous state.
+        audioDevice.isEnabled = hasOtherCalls(besides: action.callUUID)
 
         self.performAnswerVoiceCall(uuid: action.callUUID) { (success) in
             if success {
