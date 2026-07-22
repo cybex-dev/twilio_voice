@@ -59,6 +59,7 @@
 * feat: [macos] reconnecting now uses correct `onCallReconnecting` delegate handler instead of `onCallError`
 * feat: [macos] accepting incoming call now sets correct status
 * feat: [macos] fix logging call events, `speakerOn`, `speakerOff`, `holdOn`, `holdOff`, `bluetoothOn`, `bluetoothOff`, `reconnecting` and `reconnected` events now log correctly.
+* feat: [macos] improve robustness of `WKWebView` JS handlers for serialization & deserialization of JS Objects & JSON data.
 * Feat: update example.
 * Docs: update CHANGELOG
 

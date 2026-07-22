@@ -1,5 +1,28 @@
 import Foundation
 
+extension String {
+    /// This string as a complete JavaScript string literal (surrounding double quotes
+    /// included, fully escaped), safe to embed directly in code passed to
+    /// `evaluateJavaScript`. JSON string encoding is a subset of JS string literals, so
+    /// quotes, backslashes, newlines and control characters cannot break out of the
+    /// literal or inject JavaScript.
+    var javascriptStringLiteral: String {
+        // String is Codable, so this yields a JSON string literal ("...") directly.
+        // Fail closed to an empty literal rather than an un-/partially-escaped string:
+        // returning something injectable would be worse than dropping the value. Encoding
+        // a String never fails in practice.
+        guard let data = try? JSONEncoder().encode(self),
+              let escaped = String(data: data, encoding: .utf8) else {
+            return "\"\""
+        }
+        // U+2028/U+2029 are line terminators in pre-ES2019 JS and are not escaped by
+        // JSONEncoder; escape them so the literal is safe on any engine.
+        return escaped
+            .replacingOccurrences(of: "\u{2028}", with: "\\u2028")
+            .replacingOccurrences(of: "\u{2029}", with: "\\u2029")
+    }
+}
+
 public class JSONArgumentSerializer {
 
     open func toDictionary() -> [String: Any] {
@@ -40,24 +63,27 @@ public class JSONArgumentSerializer {
     /// - Returns: Commas separated argument string e.g. `"hello", 1, true, ["test1"], {key: "value"}`
     private func toArgParameters(params: [String: Any]) -> String {
         let p = params.map { (key, value) in
+            // Quote the key too: custom parameter names can originate from TwiML and an
+            // unescaped key would break the object literal / inject JS just like a value.
+            let k = key.javascriptStringLiteral
             if let arg = value as? String {
-                return "\(key): '\(arg)'"
+                return "\(k): \(arg.javascriptStringLiteral)"
             } else if let arg = value as? Int {
-                return "\(key): \(arg)"
+                return "\(k): \(arg)"
             } else if let arg = value as? Bool {
-                return "\(key): \(arg)"
+                return "\(k): \(arg)"
             } else if let arg = value as? Double {
-                return "\(key): \(arg)"
+                return "\(k): \(arg)"
             } else if let arg = value as? JSONArgumentSerializer {
-                return arg.toObjectArgs()
+                return "\(k): \(arg.toObjectArgs())"
             } else if let arg = value as? [String: Any] {
                 let s = toArgParameters(params: arg)
-                return "\(key): {\(s)}"
+                return "\(k): {\(s)}"
             } else if let arg = value as? [String] {
-                let s = arg.map { "'\($0)'" } .joined(separator: ",")
-                return "\(key): [\(s)]"
+                let s = arg.map { $0.javascriptStringLiteral } .joined(separator: ",")
+                return "\(k): [\(s)]"
             } else {
-                return "undefined"
+                return "\(k): undefined"
             }
         }
         return p.joined(separator: ",")
@@ -70,7 +96,7 @@ public class JSONArgumentSerializer {
     private func toArgList(params: [Any]) -> String {
         let p = params.map { (value) in
             if let arg = value as? String {
-                return "'\(arg)'"
+                return arg.javascriptStringLiteral
             } else if let arg = value as? Int {
                 return "\(arg)"
             } else if let arg = value as? Bool {
@@ -83,7 +109,7 @@ public class JSONArgumentSerializer {
                 let s = toArgParameters(params: arg)
                 return "{\(s)}"
             } else if let arg = value as? [String] {
-                let s = arg.map { "'\($0)'" } .joined(separator: ",")
+                let s = arg.map { $0.javascriptStringLiteral } .joined(separator: ",")
                 return "[\(s)]"
             } else {
                 return "undefined"
