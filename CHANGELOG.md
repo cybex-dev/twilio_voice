@@ -47,6 +47,7 @@
 * feat: [iOS] CallKit controller used for mute / hold call actions
 * fix: [iOS] unable to disable call logging on iOS due to incorrect parameter from method channel args. 
 * fix: [iOS] use registered notification delegate instead of setting `UNUserNotificationCenter.current().delegate = self` to avoid overwriting other notification delegates.
+* fix: [iOS] add missing "Incoming" call event to unify platform behavior contract for incoming calls.
 * Feat: update example.
 * Docs: update CHANGELOG
 
