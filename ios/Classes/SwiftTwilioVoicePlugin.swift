@@ -607,7 +607,9 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         self.sendPhoneCallEvents(description: "LOG|pushRegistry:didReceiveIncomingPushWithPayload:forType:", isError: false)
         
         if (type == PKPushType.voIP) {
-            TwilioVoiceSDK.handleNotification(payload.dictionaryPayload, delegate: self, delegateQueue: nil)
+            if !TwilioVoiceSDK.handleNotification(payload.dictionaryPayload, delegate: self, delegateQueue: nil) {
+                self.sendPhoneCallEvents(description: "LOG|Unhandled VoIP push: not a valid Twilio Voice notification", isError: false)
+            }
         }
     }
     
@@ -621,7 +623,9 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
 //        self.incomingPushCompletionCallback = completion
         
         if (type == PKPushType.voIP) {
-            TwilioVoiceSDK.handleNotification(payload.dictionaryPayload, delegate: self, delegateQueue: nil)
+            if !TwilioVoiceSDK.handleNotification(payload.dictionaryPayload, delegate: self, delegateQueue: nil) {
+                self.sendPhoneCallEvents(description: "LOG|Unhandled VoIP push: not a valid Twilio Voice notification", isError: false)
+            }
         }
         
         if let version = Float(UIDevice.current.systemVersion), version < 13.0 {
