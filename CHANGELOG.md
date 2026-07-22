@@ -41,6 +41,7 @@
 * Fix: [iOS] remove duplicate plugin registration [#222](https://github.com/cybex-dev/twilio_voice/issues/222)
 * Feat: [iOS] log incoming push notifications not handled by Twilio SDK
 * fix: [iOS] incorrect parsing of systemVersion in `pushRegistry` delegate for handling push notifications.
+* fix: [iOS] notify callkit of failure to start/answer call or failure to answer completion handler.
 * Feat: update example.
 * Docs: update CHANGELOG
 

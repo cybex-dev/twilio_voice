@@ -900,6 +900,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                 provider.reportOutgoingCall(with: action.callUUID, connectedAt: Date())
             } else {
                 self.sendPhoneCallEvents(description: "LOG|provider:performVoiceCall() failed", isError: false)
+                provider.reportCall(with: action.callUUID, endedAt: Date(), reason: .failed)
             }
         }
         action.fulfill()
@@ -916,6 +917,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                 self.sendPhoneCallEvents(description: "LOG|provider:performAnswerVoiceCall() successful", isError: false)
             } else {
                 self.sendPhoneCallEvents(description: "LOG|provider:performAnswerVoiceCall() failed:", isError: false)
+                provider.reportCall(with: action.callUUID, endedAt: Date(), reason: .failed)
             }
         }
 
@@ -1082,6 +1084,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             }
         } else {
             self.sendPhoneCallEvents(description: "LOG|No CallInvite matches the UUID", isError: false)
+            completionHandler(false)
         }
     }
     
