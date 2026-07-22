@@ -377,7 +377,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             result(updateCallKitIcon(icon: newIcon))
             return
         } else if flutterCall.method == "enableCallLogging" {
-            let value = arguments["enabled"] as? Bool ?? true
+            let value = arguments["enable"] as? Bool ?? true
             
             result(updateEnableCallLogging(value))
             return
