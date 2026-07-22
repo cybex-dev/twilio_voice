@@ -943,6 +943,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         self.sendPhoneCallEvents(description: "LOG|provider:performSetHeldAction:", isError: false)
         if let call = self.call {
             call.isOnHold = action.isOnHold
+            self.sendPhoneCallEvents(description: action.isOnHold ? "Hold" : "Unhold", isError: false)
             action.fulfill()
         } else {
             action.fail()
@@ -954,6 +955,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
 
         if let call = self.call {
             call.isMuted = action.isMuted
+            self.sendPhoneCallEvents(description: action.isMuted ? "Mute" : "Unmute", isError: false)
             action.fulfill()
         } else {
             action.fail()

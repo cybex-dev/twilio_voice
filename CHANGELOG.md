@@ -42,6 +42,7 @@
 * Feat: [iOS] log incoming push notifications not handled by Twilio SDK
 * fix: [iOS] incorrect parsing of systemVersion in `pushRegistry` delegate for handling push notifications.
 * fix: [iOS] notify callkit of failure to start/answer call or failure to answer completion handler.
+* fix: [iOS] keep `CallKit` call mute/hold state in-sync when actions are performed on CallKit UI.
 * Feat: update example.
 * Docs: update CHANGELOG
 
