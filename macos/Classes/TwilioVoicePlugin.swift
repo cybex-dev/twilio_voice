@@ -516,8 +516,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
         logEvent(description: "requesting mic permission")
         requestMicAccess { granted, error in
             if let error = error {
-                self.logEvent(prefix: "", description: "Microphone permission denied")
-                print("[TVPlugin:hasMicPermission] Error requesting microphone permissions: \(error)")
+                print("[TVPlugin:requestMicPermission] Error requesting microphone permissions: \(error)")
             }
             completionHandler(granted ?? false)
         }
@@ -545,8 +544,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
 
         requestBackgroundPermissions { granted, error in
             if let error = error {
-                self.logEvent(prefix: "", description: "Background notification permissions denied")
-                print("[TVPlugin:requestMicPermission] Error requesting background permissions: \(error)")
+                print("[TVPlugin:requestBackgroundPermission] Error requesting background permissions: \(error)")
             }
             completionHandler(granted ?? false)
         }
