@@ -960,11 +960,12 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     private func requestBackgroundPermissions(completionHandler: @escaping OnCompletionHandler<Bool>) -> Void {
         let center = UNUserNotificationCenter.current()
         center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
-
+            self.onMain {
             if let error = error {
                 completionHandler(false, error.localizedDescription)
             } else {
                 completionHandler(granted, nil)
+                }
             }
         }
     }
@@ -972,10 +973,12 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     private func requiresBackgroundPermissions(completionHandler: @escaping OnCompletionHandler<Bool>) -> Void {
         let center = UNUserNotificationCenter.current()
         center.getNotificationSettings { settings in
+            self.onMain {
             if settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional {
                 completionHandler(true, nil)
             } else {
                 completionHandler(false, nil)
+                }
             }
         }
     }
@@ -1073,6 +1076,14 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     ///   - separator: message separator e.g. "|"
     ///   - description: Description or event to send
     ///   - isError: true if error
+    private func onMain(_ block: @escaping () -> Void) {
+        if Thread.isMainThread {
+            block()
+        } else {
+            DispatchQueue.main.async(execute: block)
+        }
+    }
+
     private func logEvent(prefix: String = "LOG", separator: String = "|", description: String, isError: Bool = false) {
         NSLog(description)
         guard let eventSink = eventSink else {
@@ -1081,7 +1092,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
 
         if isError {
             let flutterError = FlutterError(code: FlutterErrorCodes.UNAVAILABLE_ERROR, message: description, details: nil)
-            eventSink(flutterError)
+            onMain { eventSink(flutterError) }
         } else {
             var message = "";
             if (prefix.isEmpty) {
@@ -1090,7 +1101,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
                 message = prefix + separator + description;
             }
 
-            eventSink(message)
+            onMain { eventSink(message) }
         }
     }
 
