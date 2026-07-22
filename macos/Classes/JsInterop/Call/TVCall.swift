@@ -93,10 +93,13 @@ public class TVCall: JSObject, TVCallDelegate, JSMessageHandlerDelegate {
             if let error = error {
                 print(error)
                 completionHandler(nil, error)
+                return
             }
-            if let result = result {
-                completionHandler(TVCallStatus(rawValue: result as! String), nil)
+            guard let statusString = result as? String else {
+                completionHandler(nil, "Unexpected status result: \(String(describing: result))")
+                return
             }
+            completionHandler(TVCallStatus(rawValue: statusString), nil)
         }
     }
 

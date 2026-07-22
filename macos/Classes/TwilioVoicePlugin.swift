@@ -1151,8 +1151,9 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
 
                 var params: [String: Any] = [:]
                 userInfo.forEach({ (key, value) in
-                    let key = key as! String
-                    params[key] = value
+                    if let key = key as? String {
+                        params[key] = value
+                    }
                 })
 
                 let from = params[Constants.PARAM_FROM] as? String
