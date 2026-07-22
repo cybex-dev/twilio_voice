@@ -146,7 +146,7 @@ public class TVCall: JSObject, TVCallDelegate, JSMessageHandlerDelegate {
     /// - SeeAlso Twilio [Call.Events](https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#events)
     func attachEventListeners() {
         print("Attaching event listeners to [TVCall]")
-        let events: [TVCallEvent] = [.accept, .cancel, .disconnect, .error, .reconnecting, .reconnected, .reject]
+        let events: [TVCallEvent] = [.accept, .cancel, .disconnect, .error, .reconnecting, .reconnected, .reject, .ringing]
         events.map {
                     $0.rawValue
                 }
@@ -168,7 +168,7 @@ public class TVCall: JSObject, TVCallDelegate, JSMessageHandlerDelegate {
         print("Detaching event listeners from [TVCall]")
         detachMessageHandler()
         return;
-        let events: [TVCallEvent] = [.accept, .cancel, .disconnect, .error, .reconnecting, .reconnected, .reject]
+        let events: [TVCallEvent] = [.accept, .cancel, .disconnect, .error, .reconnecting, .reconnected, .reject, .ringing]
         events.map {
                     $0.rawValue
                 }
@@ -278,6 +278,9 @@ public class TVCall: JSObject, TVCallDelegate, JSMessageHandlerDelegate {
                 break
             case .accept:
                 onCallAccept(self)
+                break
+            case .ringing:
+                onCallStatus(.ringing)
                 break
             case .disconnect:
                 onCallDisconnect(self)

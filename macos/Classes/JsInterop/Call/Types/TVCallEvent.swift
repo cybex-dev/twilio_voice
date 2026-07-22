@@ -11,6 +11,7 @@ public enum TVCallEvent: String {
     case reconnected = "reconnected"
     case reconnecting = "reconnecting"
     case reject = "reject"
+    case ringing = "ringing"
 //    case sample = "sample"
 //    case warning = "warning"
 //    case warningCleared = "warningCleared"
