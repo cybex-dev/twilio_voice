@@ -278,6 +278,7 @@ public class TVCall: JSObject, TVCallDelegate, JSMessageHandlerDelegate {
                 break
             case .accept:
                 onCallAccept(self)
+                onCallStatus(.connected)
                 break
             case .ringing:
                 onCallStatus(.ringing)
