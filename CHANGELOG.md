@@ -56,6 +56,7 @@
 * feat: [web,macos] Twilio Voice JS SDK is now loaded via `<script>` tag defined in `index.html` instead of bundling, copying or importing making CI/CD easier and more robust. See [README.md#updating-twilio-voice-js-sdk](README.md#updating-twilio-voice-js-sdk) for more details.
 * fix: [web] prevent race condition caused by calling `setTokens` on non-existent `Device` creating an orphaned/leaked device.
 * feat: [macos] add missing `ringing` event for outgoing calls to unify platform behavior contract.
+* feat: [macos] reconnecting now uses correct `onCallReconnecting` delegate handler instead of `onCallError`
 * Feat: update example.
 * Docs: update CHANGELOG
 

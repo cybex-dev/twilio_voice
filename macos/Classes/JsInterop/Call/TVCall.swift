@@ -292,7 +292,7 @@ public class TVCall: JSObject, TVCallDelegate, JSMessageHandlerDelegate {
                 break
             case .reconnecting:
                 if message.args.count > 0, let error = message.args[0] as? [String: Any] {
-                    onCallError(TVError(dict: error))
+                    onCallReconnecting(TVError(dict: error))
                 }
                 break
             case .reconnected:
