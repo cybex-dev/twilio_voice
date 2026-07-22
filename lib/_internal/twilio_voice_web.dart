@@ -597,10 +597,12 @@ class Call extends MethodChannelTwilioCall {
   /// Toggle mute on/off. Returns true if successful, false otherwise.
   @override
   Future<bool?> toggleMute(bool isMuted) async {
-    logLocalEvent(isMuted ? "Mute" : "Unmute", prefix: "");
-    if (_jsCall != null) {
-      _jsCall!.mute(isMuted);
+    final jsCall = _jsCall;
+    if (jsCall == null) {
+      return false;
     }
+    jsCall.mute(isMuted);
+    logLocalEvent(isMuted ? "Mute" : "Unmute", prefix: "");
 
     final sid = _getSid();
     if(sid != null) {
@@ -909,13 +911,14 @@ class Call extends MethodChannelTwilioCall {
   /// - calling [disconnect] on an active call before recipient has answered
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#cancel-event
   void _onCallCancel() {
+    final jsCall = _jsCall;
+    if (jsCall == null) {
+      return;
+    }
     // notify SW to cancel notification
     final callStatus = getCallStatus(jsCall);
-    final callStatus = getCallStatus(_jsCall!);
-    if (_jsCall != null) {
-      _detachCallEventListeners(_jsCall!);
-      nativeCall = null;
-    }
+    _detachCallEventListeners(jsCall);
+    nativeCall = null;
     logLocalEvent("Call Ended", prefix: "");
 
     // reject incoming call that is both outbound ringing or inbound pending
@@ -998,16 +1001,23 @@ class Call extends MethodChannelTwilioCall {
     }
   }
 
-  Future<void> _addAttribute(String uuid, CKCallAttributes attribute) {
-    final call = webCallkit.getCall(uuid)!;
+  Future<void> _addAttribute(String uuid, CKCallAttributes attribute) async {
+    // web_callkit may not be tracking this call (e.g. notification was never shown).
+    final call = webCallkit.getCall(uuid);
+    if (call == null) {
+      return;
+    }
     final attrs = call.attributes..add(attribute);
-    return webCallkit.updateCallAttributes(uuid, attributes: attrs);
+    await webCallkit.updateCallAttributes(uuid, attributes: attrs);
   }
 
-  Future<void> _removeAttribute(String uuid, CKCallAttributes attribute) {
-    final call = webCallkit.getCall(uuid)!;
+  Future<void> _removeAttribute(String uuid, CKCallAttributes attribute) async {
+    final call = webCallkit.getCall(uuid);
+    if (call == null) {
+      return;
+    }
     final attrs = call.attributes..remove(attribute);
-    return webCallkit.updateCallAttributes(uuid, attributes: attrs);
+    await webCallkit.updateCallAttributes(uuid, attributes: attrs);
   }
 }
 
