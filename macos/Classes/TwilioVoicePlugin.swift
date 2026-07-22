@@ -514,8 +514,6 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     /// - Parameter completionHandler: completion handler -> (Bool?)
     private func requestMicPermission(completionHandler: @escaping OnCompletionValueHandler<Bool>) -> Void {
         logEvent(description: "requesting mic permission")
-        completionHandler(false)
-
         requestMicAccess { granted, error in
             if let error = error {
                 self.logEvent(prefix: "", description: "Microphone permission denied")
