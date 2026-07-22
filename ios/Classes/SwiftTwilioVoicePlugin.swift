@@ -6,7 +6,7 @@ import TwilioVoice
 import CallKit
 import UserNotifications
 
-public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHandler, PKPushRegistryDelegate, NotificationDelegate, CallDelegate, AVAudioPlayerDelegate, CXProviderDelegate, CXCallObserverDelegate {
+public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHandler, PKPushRegistryDelegate, NotificationDelegate, CallDelegate, AVAudioPlayerDelegate, CXProviderDelegate {
     let callObserver = CXCallObserver()
     
     final let defaultCallKitIcon = "callkit_icon"
@@ -41,12 +41,17 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     var callKitCompletionCallback: ((Bool)->Swift.Void?)? = nil
     var audioDevice: DefaultAudioDevice = DefaultAudioDevice()
     
+    private func hasOtherCalls(besides uuid: UUID) -> Bool {
+        let ownUUIDs: [UUID] = [self.call?.uuid, self.callInvite?.uuid].compactMap { $0 }
+        return callObserver.calls.contains { c in
+            c.uuid != uuid && ownUUIDs.contains(c.uuid)
+        }
+    }
+    
     var callKitProvider: CXProvider
     var callKitCallController: CXCallController
     var userInitiatedDisconnect: Bool = false
     var callOutgoing: Bool = false
-    
-    private var activeCalls: [UUID: CXCall] = [:]
     
     static var appName: String {
         get {
@@ -71,7 +76,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         
         //super.init(coder: aDecoder)
         super.init()
-        callObserver.setDelegate(self, queue: DispatchQueue.main)
+
         
         callKitProvider.setDelegate(self, queue: nil)
         _ = updateCallKitIcon(icon: defaultIcon)
@@ -640,20 +645,9 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         }
     }
 
-    // MARK: CXCallObserverDelegate
-    public func callObserver(_ callObserver: CXCallObserver, callChanged call: CXCall) {
-        let uuid = call.uuid
-
-        if call.hasEnded {
-            activeCalls.removeValue(forKey: uuid) // Remove ended calls
-        } else {
-            activeCalls[uuid] = call // Add or update call
-        }
-    }
-    
-    // Check if a call with a given UUID exists
+    // MARK: CallKit call queries
     func isCallActive(uuid: UUID) -> Bool {
-        return activeCalls[uuid] != nil
+        return callObserver.calls.contains { $0.uuid == uuid && !$0.hasEnded }
     }
     
     func incomingPushHandled() {
