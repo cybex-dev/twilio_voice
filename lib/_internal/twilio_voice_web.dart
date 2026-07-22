@@ -323,6 +323,16 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
         }
         device!.updateToken(accessToken);
       } else {
+        final existing = device;
+        if (existing != null) {
+          try {
+            _detachDeviceListeners(existing);
+            existing.destroy();
+          } catch (e) {
+            printDebug("Failed to tear down previous Twilio Device: $e");
+          }
+        }
+
         /// opus set as primary code
         /// https://www.twilio.com/blog/client-javascript-sdk-1-7-ga
         List<String> codecs = ["opus", "pcmu"];

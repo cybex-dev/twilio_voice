@@ -66,6 +66,12 @@ class Device extends Twilio {
   @JS("unregister")
   external Promise<void> unregister();
 
+  /// Destroy the device, unregistering it, disconnecting any active calls and releasing
+  /// its references so it can be garbage collected.
+  /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#devicedestroy
+  @JS("destroy")
+  external void destroy();
+
   /// Attach event listener for Twilio Device object. See [TwilioDeviceEvents]
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#events
   /// possibly use js interop here
