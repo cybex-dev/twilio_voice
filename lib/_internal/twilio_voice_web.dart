@@ -628,14 +628,6 @@ class Call extends MethodChannelTwilioCall {
   /// TODO(cybex-dev) - implement call holding feature in [twilio-voice.js](https://github.com/twilio/twilio-voice.js) for use in twilio_voice_web
   @override
   Future<bool?> holdCall({bool holdCall = true}) async {
-    // logLocalEvent(holdCall ? "Unhold" : "Hold", prefix: "");
-    // return Future.value(false);
-    final sid = _getSid();
-    if (sid == null) {
-      return false;
-    }
-    logLocalEvent("Unhold");
-    await _toggleAttribute(false, sid, CKCallAttributes.hold);
     return Future.value(false);
   }
 
