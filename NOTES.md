@@ -72,9 +72,9 @@ alternatively, this could be found in Phone App settings -> Other/Advanced Call 
 ### iOS & macOS
 
 **iOS Pod Information:**
-> s.platform = :ios, '12.0'
+> s.platform = :ios, '13.0'
 > 
-> s.ios.deployment_target = '12.0'
+> s.ios.deployment_target = '13.0'
 
 If you encounter this error
 > warning: The macOS deployment target 'MACOSX_DEPLOYMENT_TARGET' is set to 10.XX, but the range of supported deployment target versions is 10.XY to 13.1.99. (in target 'ABCD' from project 'Pods')

@@ -1,7 +1,7 @@
 ## Next Release
 
 * **BREAKING CHANGES:**
-  * Minimum iOS deployment version updated to iOS 12.0 (from iOS 11.0) to support latest Twilio iOS SDK. 
+  * Minimum iOS deployment version updated to iOS 13.0 (from iOS 11.0) to support the latest Twilio iOS SDK, Flutter's minimum iOS, and the Firebase iOS pods. 
   * Feat: Completed migration to Federated Plugin structure. This requires one change:
   ```dart
   /// old
