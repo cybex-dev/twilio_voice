@@ -449,7 +449,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
     final from = params["From"] ?? "";
     if (from.startsWith("client:")) {
       final clientName = from.substring(7);
-      return _localStorage.getRegisteredClient(clientName) ?? _localStorage.getRegisteredClient("defaultCaller") ?? clientName;
+      return _localStorage.getRegisteredClient(clientName) ?? _localStorage.getDefaultCallerName(clientName);
     } else {
       return from;
     }
