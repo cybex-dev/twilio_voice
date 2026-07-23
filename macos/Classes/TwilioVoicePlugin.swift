@@ -887,6 +887,12 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
 
             result(showNotifications(show))
             break
+
+        case .updateCallKitIcon:
+            // macOS has no CallKit, so there is no call icon to update. Handle as a graceful
+            // no-op (success) rather than falling through to FlutterMethodNotImplemented.
+            result(true)
+            break
         }
     }
 

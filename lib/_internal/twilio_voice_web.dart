@@ -141,6 +141,11 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   Future<bool?> showBackgroundCallUI() {
     return Future.value(false);
   }
+  
+  @override
+  Future<bool?> updateCallKitIcon({String? icon}) async {
+    return true;
+  }
 
   /// Set default caller name for incoming calls if no caller name is provided / registered.
   /// See [LocalStorageWeb.saveDefaultCallerName]

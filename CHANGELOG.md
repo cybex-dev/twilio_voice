@@ -73,6 +73,7 @@
 * fix: [macos] `toggleBluetooth` now returns `Future` with correct value (though bluetooth not yet implemented).
 * fix: [ios] fix invalid Twilio VoIP payload crashing app
 * fix: [ios] fix plugin in limbo when new incoming call fails to register
+* fix: [macOS,web] add missing `updateCallKitIcon` native implementation to unify platform behaviour contract.
 * Feat: update example.
 * Docs: update CHANGELOG
 
