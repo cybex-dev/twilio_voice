@@ -3,8 +3,8 @@ version '1.0'
 
 buildscript {
     ext {
-        kotlinVersion           = "1.9.10"
-        agpVersion              = "8.5.2"
+        kotlinVersion           = "2.1.0"
+        agpVersion              = "8.9.1"
         twilioVoiceVersion      = "6.10.0"
     }
     repositories {

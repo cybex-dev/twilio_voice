@@ -20,7 +20,11 @@ The javascript files required by `twilio_voice` is `twilio.min.js`, which is fou
 > compileSdkVersion: 34
 
 **Gradle:**
-> gradle-wrapper: 8.2.1-all
+> gradle-wrapper: 8.11.1-all
+> 
+> Android Gradle Plugin (AGP): 8.9.1
+> 
+> Kotlin: 2.1.0
 
 **Permissions:**
 * `android.permission.FOREGROUND_SERVICE`
