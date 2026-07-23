@@ -17,7 +17,7 @@ The javascript files required by `twilio_voice` is `twilio.min.js`, which is fou
 **Package Information:**
 > minSdkVersion: 26
 > 
-> compileSdkVersion: 34
+> compileSdkVersion: 36
 
 **Gradle:**
 > gradle-wrapper: 8.11.1-all

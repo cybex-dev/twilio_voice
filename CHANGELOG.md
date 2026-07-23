@@ -15,7 +15,7 @@
   * [iOS 6.13.6](https://www.twilio.com/docs/voice/sdks/ios/changelog#6136), and
   * [Web 2.18.0](https://www.twilio.com/docs/voice/sdks/javascript/changelog#2180-january-5-2026), and
   * [macOS 2.18.0](https://www.twilio.com/docs/voice/sdks/javascript/changelog#2180-january-5-2026),
-* chore: [Android] Update build tooling to Android Gradle Plugin 8.9.1 and Kotlin 2.1.0 (Gradle wrapper 8.11.1)
+* chore: [Android] Update build tooling to Android Gradle Plugin 8.9.1 and Kotlin 2.1.0 (Gradle wrapper 8.11.1), compileSdk 36.
 * Feat: [Web] Add Twilio Device [DeviceState] accessor protecting un/registration.
 * Feat: [Web] Add Twilio Device `updateToken(String)` function to allow updating of active device tokens.
 * Fix: [Web] Twilio Device does not unregister on `unregister()` method call due to 'device.off' not visible in js object causing device event listeners to remain attached on unregistered device.

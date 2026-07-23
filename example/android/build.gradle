@@ -2,7 +2,7 @@ buildscript {
     ext {
         kotlinVersion           = "2.1.0"
         agpVersion              = "8.9.1"
-        compileSdkVersion       = 35
+        compileSdkVersion       = 36
         targetSdkVersion        = 35
         minSdkVersion           = 26
         googlesServicesVersion  = "4.4.2"
