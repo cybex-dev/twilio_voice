@@ -149,6 +149,13 @@ class TVConnectionService : ConnectionService() {
         const val EXTRA_CANCEL_CALL_INVITE: String = "EXTRA_CANCEL_CALL_INVITE"
 
         /**
+         * Extra used with [ACTION_CANCEL_CALL_INVITE] describing the [CancelledCallInvite]'s
+         * [com.twilio.voice.CallException] error code. This is used to determine whether a call
+         * may be considered a missed call.
+         */
+        const val EXTRA_CANCEL_CALL_INVITE_ERROR_CODE: String = "EXTRA_CANCEL_CALL_INVITE_ERROR_CODE"
+
+        /**
          * Extra used with [ACTION_PLACE_OUTGOING_CALL] to place an outgoing call connection. Denotes the Twilio Voice access token.
          */
         const val EXTRA_TOKEN: String = "EXTRA_TOKEN"
