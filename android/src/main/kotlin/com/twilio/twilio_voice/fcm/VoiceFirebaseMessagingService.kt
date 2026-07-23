@@ -129,7 +129,7 @@ class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageListene
             if(!shouldRejectOnNoPermissions) {
                 return
             }
-            
+
             Log.e(TAG, "onCallInvite: Rejecting incoming call\nSID: ${callInvite.callSid}")
 
             // send broadcast to TVBroadcastReceiver, we notify Flutter about incoming call
@@ -181,7 +181,9 @@ class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageListene
         Intent(applicationContext, TVConnectionService::class.java).apply {
             action = TVConnectionService.ACTION_CANCEL_CALL_INVITE
             putExtra(TVConnectionService.EXTRA_CANCEL_CALL_INVITE, cancelledCallInvite)
-            putExtra(TVConnectionService.EXTRA_CANCEL_CALL_INVITE_ERROR_CODE, callException?.errorCode ?: TVConnectionService.NO_ERROR_CODE)
+            callException?.errorCode?.let { t ->
+                putExtra(TVConnectionService.EXTRA_CANCEL_CALL_INVITE_ERROR_CODE, t)
+            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 applicationContext.startForegroundService(this) // Ensure it's started as a foreground service
             } else {
