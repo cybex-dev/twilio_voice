@@ -98,6 +98,10 @@ end
 
 ## Limitations
 
+### General
+
+Twilio does not reliably provide a way to determine whether a call was answered elsewhere (e.g. on another device), which unfortunately means any call that is made to a receiving device and is either cancelled early or answered elsewhere will be logged as a missed call. This is a limitation of the Twilio API and not the plugin itself. See [here](https://github.com/twilio/twilio-voice.js/issues/435) for more information.
+
 ### Android
 
 Android `ConnectionService` provides the fundamentals to managing calls, including but not limited to call logging. Using a Managed `ConnectionService` means that call logging is handled by the system's "Phone App", and so there is not access or control over call logging at this time.
