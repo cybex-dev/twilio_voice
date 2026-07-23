@@ -696,12 +696,10 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
                 return
             }
 
-            // TODO: toggle bluetooth
+            // TODO: implement bluetooth audio-route toggling if/when supported on macOS.
             // toggleAudioRoute(toSpeaker: speakerIsOn)
-            guard eventSink != nil else {
-                return
-            }
             logEvent(prefix: "", description: bluetoothOn ? "Bluetooth On" : "Bluetooth Off")
+            result(bluetoothOn)
             break;
 
         case .isBluetoothOn:
