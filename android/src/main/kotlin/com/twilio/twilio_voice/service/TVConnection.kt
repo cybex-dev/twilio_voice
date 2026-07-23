@@ -14,6 +14,7 @@ import android.util.Log
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.twilio.twilio_voice.call.TVParameters
 import com.twilio.twilio_voice.receivers.TVBroadcastReceiver
+import com.twilio.twilio_voice.storage.StorageImpl
 import com.twilio.twilio_voice.types.CallAudioStateExtension.copyWith
 import com.twilio.twilio_voice.types.CallDirection
 import com.twilio.twilio_voice.types.CallExceptionExtension.toBundle
@@ -91,9 +92,15 @@ class TVCallInviteConnection(
     fun reportMissedCall() {
         Log.i(TAG, "reportMissedCall: incoming invite cancelled by remote party before answer")
         twilioCall?.disconnect()
-        setDisconnected(DisconnectCause(DisconnectCause.MISSED))
+        // Always emit EVENT_MISSED -> CallEvent.missedCall (parity with iOS, which always sends
+        // "Missed Call" and gates only the OS notification). The showNotifications setting controls
+        // solely the DisconnectCause: MISSED makes the platform post a missed-call notification,
+        // CANCELED suppresses it.
+        val showNotifications: Boolean = StorageImpl(context).showNotifications
+        val disconnectCause = DisconnectCause(if (showNotifications) DisconnectCause.MISSED else DisconnectCause.CANCELED)
+        setDisconnected(disconnectCause)
         onEvent?.onChange(TVNativeCallEvents.EVENT_MISSED, null)
-        onDisconnected?.withValue(DisconnectCause(DisconnectCause.MISSED))
+        onDisconnected?.withValue(disconnectCause)
         destroy()
     }
 
