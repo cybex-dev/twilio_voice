@@ -65,6 +65,7 @@
 * fix: [macos] fail gracefully when calling `setTokens` and plugin is not yet ready.
 * fix: [android] fix crash on `CancelledCallInvite` received via FCM push notification when app is in background.
 * fix: [android] fix potential crash when on `CallInvite` received when app is backgrounded / dozing on API 26+. 
+* fix: [android] use app name as phone account label if not specified. 
 * Feat: update example.
 * Docs: update CHANGELOG
 

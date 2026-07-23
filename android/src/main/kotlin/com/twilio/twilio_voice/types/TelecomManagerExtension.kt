@@ -40,15 +40,11 @@ object TelecomManagerExtension {
 //            return
         }
 
-        val label = ctx.getString(R.string.phone_account_name).apply {
-            this.ifEmpty {
-                ctx.appName
-            }
+        val label = ctx.getString(R.string.phone_account_name).ifEmpty {
+            ctx.appName
         }
-        val description = ctx.getString(R.string.phone_account_desc).apply {
-            this.ifEmpty {
-                "Provides calling services for $label"
-            }
+        val description = ctx.getString(R.string.phone_account_desc).ifEmpty {
+            "Provides calling services for $label"
         }
 
         // register phone account
