@@ -491,7 +491,7 @@ class TVConnectionService : ConnectionService() {
                     // type joins a call whose foreground service was started before
                     // RECORD_AUDIO was granted.
                     if (hasActiveCalls()) {
-                        startForegroundService()
+                        tryStartForegroundService()
                     } else {
                         // Nothing to refresh; don't leave a needlessly started service behind.
                         stopSelfSafe()
@@ -548,7 +548,7 @@ class TVConnectionService : ConnectionService() {
         applyParameters(connection, callParams)
         connection.setRinging()
 
-        startForegroundService()
+        tryStartForegroundService()
         return connection
     }
 
@@ -660,7 +660,7 @@ class TVConnectionService : ConnectionService() {
         // Apply extras
         connection.extras = request.extras
 
-        startForegroundService()
+        tryStartForegroundService()
 
         return connection
     }
@@ -804,7 +804,7 @@ class TVConnectionService : ConnectionService() {
     }
 
     /// Source: https://github.com/react-native-webrtc/react-native-callkeep/blob/master/android/src/main/java/io/wazo/callkeep/VoiceConnectionService.java#L295
-    private fun startForegroundService() {
+    private fun tryStartForegroundService() {
         val notification = createNotification()
         Log.d(TAG, "[VoiceConnectionService] Starting foreground service")
         try {
