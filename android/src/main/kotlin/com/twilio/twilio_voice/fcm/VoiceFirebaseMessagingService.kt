@@ -168,7 +168,16 @@ class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageListene
     }
 
     override fun onCancelledCallInvite(cancelledCallInvite: CancelledCallInvite, callException: CallException?) {
-        Log.d(TAG, "onCancelledCallInvite: ${callException?.localizedMessage} (code = ${callException?.errorCode})", callException)
+        Log.d(
+            TAG,
+            "onCancelledCallInvite: {\n\t" +
+                    "Message: ${callException?.message ?: "no message"}, \n\t" +
+                    "LocalizedMessage: ${callException?.localizedMessage ?: "no localized message"}, \n\t" +
+                    "ErrorCode: ${callException?.errorCode ?: "no code"}, \n\t" +
+                    "}",
+            callException
+        )
+
         Intent(applicationContext, TVConnectionService::class.java).apply {
             action = TVConnectionService.ACTION_CANCEL_CALL_INVITE
             putExtra(TVConnectionService.EXTRA_CANCEL_CALL_INVITE, cancelledCallInvite)
