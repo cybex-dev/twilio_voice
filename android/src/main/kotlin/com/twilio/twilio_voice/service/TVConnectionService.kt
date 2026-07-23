@@ -287,13 +287,11 @@ class TVConnectionService : ConnectionService() {
                         val errorCode = it.getIntExtra(EXTRA_CANCEL_CALL_INVITE_ERROR_CODE, NO_ERROR_CODE)
 
                         when (errorCode) {
-                            NO_ERROR_CODE -> {}
+//                            NO_ERROR_CODE -> Unit
 //                            CallException.EXCEPTION_REQUEST_TERMINATED_ERROR -> connection.reportAnsweredElsewhere()
                             else -> connection.reportMissedCall()
                         }
                     }
-                    // Stop the foreground service if the cancel left no active calls (also
-                    // covers the no-connection case). Idempotent with onAbort's own teardown.
                     // Stop the foreground service if the cancel left no active calls (also
                     // covers the no-connection case). Idempotent with reportMissedCall's teardown.
                     onConnectionEnded(null)
