@@ -1,7 +1,5 @@
 package com.twilio.twilio_voice.types
 
-import com.twilio.twilio_voice.types.StringExtension.capitalize
-
 enum class CallDirection(val value: String, val id: Int, val label: String) {
     INCOMING("INCOMING", 0, "Incoming"),
     OUTGOING("OUTGOING", 1, "Outgoing");
@@ -14,6 +12,6 @@ enum class CallDirection(val value: String, val id: Int, val label: String) {
     }
 
     override fun toString(): String {
-        return capitalize()
+        return label
     }
 }

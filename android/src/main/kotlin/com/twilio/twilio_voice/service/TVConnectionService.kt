@@ -38,6 +38,7 @@ import com.twilio.twilio_voice.types.TelecomManagerExtension.registerPhoneAccoun
 import com.twilio.twilio_voice.types.ValueBundleChanged
 import com.twilio.voice.*
 import com.twilio.voice.Call
+//import com.twilio.voice.CallException
 
 class TVConnectionService : ConnectionService() {
 
@@ -147,6 +148,19 @@ class TVConnectionService : ConnectionService() {
          * Extra used with [ACTION_CANCEL_CALL_INVITE] to cancel a call connection
          */
         const val EXTRA_CANCEL_CALL_INVITE: String = "EXTRA_CANCEL_CALL_INVITE"
+
+        /**
+         * Extra used with [ACTION_CANCEL_CALL_INVITE] describing the [CancelledCallInvite]'s
+         * [com.twilio.voice.CallException] error code. This is used to determine whether a call
+         * may be considered a missed call.
+         */
+        const val EXTRA_CANCEL_CALL_INVITE_ERROR_CODE: String = "EXTRA_CANCEL_CALL_INVITE_ERROR_CODE"
+
+        /**
+         * Extra used with [EXTRA_CANCEL_CALL_INVITE_ERROR_CODE] when no error is provided or as
+         * a default value.
+         */
+        const val NO_ERROR_CODE: Int = 0
 
         /**
          * Extra used with [ACTION_PLACE_OUTGOING_CALL] to place an outgoing call connection. Denotes the Twilio Voice access token.
@@ -260,17 +274,26 @@ class TVConnectionService : ConnectionService() {
                     it.setExtrasClassLoader(CallInvite::class.java.classLoader)
                     val cancelledCallInvite = it.getParcelableExtraSafe<CancelledCallInvite>(EXTRA_CANCEL_CALL_INVITE) ?: run {
                         Log.e(TAG, "onStartCommand: ACTION_CANCEL_CALL_INVITE is missing parcelable EXTRA_CANCEL_CALL_INVITE")
-                        // Tear down the foreground service we just started if nothing else is running.
-                        onConnectionEnded(null)
-                        return@let
-                    }
+                                // Tear down the foreground service we just started if nothing else is running.
+                                onConnectionEnded(null)
+                                return@let
+                            }
 
                     val callHandle = cancelledCallInvite.callSid
-                    getConnection(callHandle)?.onAbort() ?: run {
-                        Log.e(TAG, "onStartCommand: [ACTION_CANCEL_CALL_INVITE] could not find connection for callHandle: $callHandle")
+                    val connection = getConnection(callHandle) as? TVCallInviteConnection
+                    if (connection == null) {
+                        Log.e(TAG, "onStartCommand: [ACTION_CANCEL_CALL_INVITE] could not find incoming connection for callHandle: $callHandle")
+                    } else {
+                        val errorCode = it.getIntExtra(EXTRA_CANCEL_CALL_INVITE_ERROR_CODE, NO_ERROR_CODE)
+
+                        when (errorCode) {
+//                            NO_ERROR_CODE -> Unit
+//                            CallException.EXCEPTION_REQUEST_TERMINATED_ERROR -> connection.reportAnsweredElsewhere()
+                            else -> connection.reportMissedCall()
+                        }
                     }
                     // Stop the foreground service if the cancel left no active calls (also
-                    // covers the no-connection case). Idempotent with onAbort's own teardown.
+                    // covers the no-connection case). Idempotent with reportMissedCall's teardown.
                     onConnectionEnded(null)
                 }
 
