@@ -253,11 +253,15 @@ class TVConnectionService : ConnectionService() {
                 }
 
                 ACTION_CANCEL_CALL_INVITE -> {
+                    tryStartForegroundService()
+
                     // Load CancelledCallInvite class loader
                     // See: https://github.com/twilio/voice-quickstart-android/issues/561#issuecomment-1678613170
                     it.setExtrasClassLoader(CallInvite::class.java.classLoader)
                     val cancelledCallInvite = it.getParcelableExtraSafe<CancelledCallInvite>(EXTRA_CANCEL_CALL_INVITE) ?: run {
                         Log.e(TAG, "onStartCommand: ACTION_CANCEL_CALL_INVITE is missing parcelable EXTRA_CANCEL_CALL_INVITE")
+                        // Tear down the foreground service we just started if nothing else is running.
+                        onConnectionEnded(null)
                         return@let
                     }
 
@@ -265,6 +269,9 @@ class TVConnectionService : ConnectionService() {
                     getConnection(callHandle)?.onAbort() ?: run {
                         Log.e(TAG, "onStartCommand: [ACTION_CANCEL_CALL_INVITE] could not find connection for callHandle: $callHandle")
                     }
+                    // Stop the foreground service if the cancel left no active calls (also
+                    // covers the no-connection case). Idempotent with onAbort's own teardown.
+                    onConnectionEnded(null)
                 }
 
                 ACTION_INCOMING_CALL -> {
