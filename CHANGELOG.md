@@ -67,7 +67,7 @@
 * fix: [android] fix potential crash when on `CallInvite` received when app is backgrounded / dozing on API 26+. 
 * fix: [android] use app name as phone account label if not specified. 
 * fix: [android] buffer native log events until dart initialization completed and ready to receive events.
-* feat: [android] show missed call / call answered elsewhere on incoming call request stopped.
+* feat: [android] correctly show missed call honouring `showMissedCallNotifications` setting when app is backgrounded or terminated.
 * Feat: update example.
 * Docs: update CHANGELOG
 
