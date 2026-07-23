@@ -66,7 +66,8 @@
 * fix: [android] fix crash on `CancelledCallInvite` received via FCM push notification when app is in background.
 * fix: [android] fix potential crash when on `CallInvite` received when app is backgrounded / dozing on API 26+. 
 * fix: [android] use app name as phone account label if not specified. 
-* fix: [android] buffer native log events until dart initialization completed and ready to receive events. 
+* fix: [android] buffer native log events until dart initialization completed and ready to receive events.
+* feat: [android] show missed call / call answered elsewhere on incoming call request stopped.
 * Feat: update example.
 * Docs: update CHANGELOG
 
