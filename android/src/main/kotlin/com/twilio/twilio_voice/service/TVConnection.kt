@@ -79,6 +79,38 @@ class TVCallInviteConnection(
         setDisconnected(DisconnectCause(DisconnectCause.REJECTED))
         destroy()
     }
+
+    /**
+     * Report that this ringing incoming invite was cancelled by the remote party before it
+     * could be answered - a missed call. Per the Telecom contract, [onAbort] is an
+     * outgoing-call callback that Telecom never invokes on an incoming connection; the caller
+     * hanging up arrives from the signalling stack (Twilio FCM [com.twilio.voice.CancelledCallInvite]),
+     * so the app itself tears the connection down here. Reports [DisconnectCause.MISSED] so the
+     * platform also logs a missed call, and emits [TVNativeCallEvents.EVENT_MISSED] for Flutter.
+     */
+    fun reportMissedCall() {
+        Log.i(TAG, "reportMissedCall: incoming invite cancelled by remote party before answer")
+        twilioCall?.disconnect()
+        setDisconnected(DisconnectCause(DisconnectCause.MISSED))
+        onEvent?.onChange(TVNativeCallEvents.EVENT_MISSED, null)
+        onDisconnected?.withValue(DisconnectCause(DisconnectCause.MISSED))
+        destroy()
+    }
+
+    /**
+     * Report that this ringing incoming invite was cancelled because the call was answered on
+     * another device registered to the same identity - this is *not* a missed call. Reports
+     * [DisconnectCause.ANSWERED_ELSEWHERE] so the platform does not log it as missed, and emits a
+     * remote disconnect ("Call Ended") to Flutter rather than [TVNativeCallEvents.EVENT_MISSED].
+     */
+    fun reportCallAnsweredElsewhere() {
+        Log.i(TAG, "reportCallAnsweredElsewhere: incoming invite answered on another device")
+        twilioCall?.disconnect()
+        setDisconnected(DisconnectCause(DisconnectCause.ANSWERED_ELSEWHERE))
+        onEvent?.onChange(TVNativeCallEvents.EVENT_DISCONNECTED_REMOTE, null)
+        onDisconnected?.withValue(DisconnectCause(DisconnectCause.ANSWERED_ELSEWHERE))
+        destroy()
+    }
 }
 
 open class TVCallConnection(

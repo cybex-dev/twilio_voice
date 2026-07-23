@@ -38,6 +38,7 @@ import com.twilio.twilio_voice.types.TelecomManagerExtension.registerPhoneAccoun
 import com.twilio.twilio_voice.types.ValueBundleChanged
 import com.twilio.voice.*
 import com.twilio.voice.Call
+import com.twilio.voice.CallException
 
 class TVConnectionService : ConnectionService() {
 
@@ -273,11 +274,19 @@ class TVConnectionService : ConnectionService() {
                     }
 
                     val callHandle = cancelledCallInvite.callSid
-                    getConnection(callHandle)?.onAbort() ?: run {
-                        Log.e(TAG, "onStartCommand: [ACTION_CANCEL_CALL_INVITE] could not find connection for callHandle: $callHandle")
+                    val errorCode = it.getIntExtra(EXTRA_CANCEL_CALL_INVITE_ERROR_CODE, NO_ERROR_CODE)
+                    val connection = getConnection(callHandle) as? TVCallInviteConnection
+                    if (connection == null) {
+                        Log.e(TAG, "onStartCommand: [ACTION_CANCEL_CALL_INVITE] could not find incoming connection for callHandle: $callHandle")
+                    } else if (errorCode == CallException.EXCEPTION_REQUEST_TERMINATED_ERROR) {
+                        connection.reportCallAnsweredElsewhere()
+                    } else {
+                        connection.reportMissedCall()
                     }
                     // Stop the foreground service if the cancel left no active calls (also
                     // covers the no-connection case). Idempotent with onAbort's own teardown.
+                    // Stop the foreground service if the cancel left no active calls (also
+                    // covers the no-connection case). Idempotent with reportMissedCall's teardown.
                     onConnectionEnded(null)
                 }
 
