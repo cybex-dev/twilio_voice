@@ -97,20 +97,20 @@ class TVCallInviteConnection(
         destroy()
     }
 
-    /**
-     * Report that this ringing incoming invite was cancelled because the call was answered on
-     * another device registered to the same identity - this is *not* a missed call. Reports
-     * [DisconnectCause.ANSWERED_ELSEWHERE] so the platform does not log it as missed, and emits a
-     * remote disconnect ("Call Ended") to Flutter rather than [TVNativeCallEvents.EVENT_MISSED].
-     */
-    fun reportCallAnsweredElsewhere() {
-        Log.i(TAG, "reportCallAnsweredElsewhere: incoming invite answered on another device")
-        twilioCall?.disconnect()
-        setDisconnected(DisconnectCause(DisconnectCause.ANSWERED_ELSEWHERE))
-        onEvent?.onChange(TVNativeCallEvents.EVENT_DISCONNECTED_REMOTE, null)
-        onDisconnected?.withValue(DisconnectCause(DisconnectCause.ANSWERED_ELSEWHERE))
-        destroy()
-    }
+//    /**
+//     * Report that this ringing incoming invite was cancelled because the call was answered on
+//     * another device registered to the same identity - this is *not* a missed call. Reports
+//     * [DisconnectCause.ANSWERED_ELSEWHERE] so the platform does not log it as missed, and emits a
+//     * remote disconnect ("Call Ended") to Flutter rather than [TVNativeCallEvents.EVENT_MISSED].
+//     */
+//    fun reportAnsweredElsewhere() {
+//        Log.i(TAG, "reportCallAnsweredElsewhere: incoming invite answered on another device")
+//        twilioCall?.disconnect()
+//        setDisconnected(DisconnectCause(DisconnectCause.ANSWERED_ELSEWHERE))
+//        onEvent?.onChange(TVNativeCallEvents.EVENT_DISCONNECTED_REMOTE, null)
+//        onDisconnected?.withValue(DisconnectCause(DisconnectCause.ANSWERED_ELSEWHERE))
+//        destroy()
+//    }
 }
 
 open class TVCallConnection(
