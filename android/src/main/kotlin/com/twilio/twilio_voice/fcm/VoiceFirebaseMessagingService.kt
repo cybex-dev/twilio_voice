@@ -151,7 +151,11 @@ class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageListene
         Intent(applicationContext, TVConnectionService::class.java).apply {
             action = TVConnectionService.ACTION_INCOMING_CALL
             putExtra(TVConnectionService.EXTRA_INCOMING_CALL_INVITE, callInvite)
-            applicationContext.startService(this)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                applicationContext.startForegroundService(this)
+            } else {
+                applicationContext.startService(this)
+            }
         }
 
         // send broadcast to TVBroadcastReceiver, we notify Flutter about incoming call

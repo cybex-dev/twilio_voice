@@ -275,9 +275,12 @@ class TVConnectionService : ConnectionService() {
                 }
 
                 ACTION_INCOMING_CALL -> {
+                    tryStartForegroundService()
+
                     // Load CallInvite class loader & get callInvite
                     val callInvite = it.getParcelableExtraSafe<CallInvite>(EXTRA_INCOMING_CALL_INVITE) ?: run {
                         Log.e(TAG, "onStartCommand: 'ACTION_INCOMING_CALL' is missing parcelable 'EXTRA_INCOMING_CALL_INVITE'")
+                        onConnectionEnded(null)
                         return@let
                     }
 
@@ -285,6 +288,7 @@ class TVConnectionService : ConnectionService() {
                     if (!telecomManager.canReadPhoneState(applicationContext)) {
                         Log.e(TAG, "onCallInvite: Permission to read phone state not granted or requested.")
                         callInvite.reject(applicationContext)
+                        onConnectionEnded(null)
                         return@let
                     }
 
@@ -292,10 +296,12 @@ class TVConnectionService : ConnectionService() {
                     val phoneAccount = telecomManager.getPhoneAccount(phoneAccountHandle)
                     if(phoneAccount == null) {
                         Log.e(TAG, "onStartCommand: PhoneAccount is null, make sure to register one with `registerPhoneAccount()`")
+                        onConnectionEnded(null)
                         return@let
                     }
                     if(!phoneAccount.isEnabled) {
                         Log.e(TAG, "onStartCommand: PhoneAccount is not enabled, prompt the user to enable the phone account by opening settings with `openPhoneAccountSettings()`")
+                        onConnectionEnded(null)
                         return@let
                     }
 
@@ -309,6 +315,7 @@ class TVConnectionService : ConnectionService() {
                                     "- Have you activated the Calling Account?"
                         )
                         callInvite.reject(applicationContext)
+                        onConnectionEnded(null)
                         return@let
                     }
 
