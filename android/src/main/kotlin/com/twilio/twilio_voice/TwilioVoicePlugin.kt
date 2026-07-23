@@ -90,6 +90,14 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     private var eventChannel: EventChannel? = null
     private var eventSink: EventSink? = null
 
+    /// Events emitted before the Dart side subscribes to the event channel (e.g. an
+    /// incoming call arriving during a cold start, before the listener attaches) are
+    /// buffered here and flushed in [onListen], instead of being silently dropped.
+    /// Bounded so a listener that never attaches cannot grow this without limit; oldest
+    /// events are discarded first. Accessed only on the main thread.
+    private val pendingEvents = ArrayDeque<String>()
+    private val maxPendingEvents = 50
+
     // member instance functions
     private var callListener = callListener()
 
@@ -332,6 +340,14 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     override fun onListen(arguments: Any?, events: EventSink?) {
         Log.i(TAG, "Setting event sink")
         this.eventSink = events
+        // Flush events buffered before the listener attached (e.g. an incoming call that
+        // arrived during a cold start, before Dart subscribed).
+        if (events != null && pendingEvents.isNotEmpty()) {
+            Log.i(TAG, "Flushing ${pendingEvents.size} buffered event(s)")
+            val buffered = pendingEvents.toList()
+            pendingEvents.clear()
+            buffered.forEach { events.success(it) }
+        }
     }
 
     override fun onCancel(arguments: Any?) {
@@ -1451,16 +1467,10 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
 
     //region Logging
     private fun logEvents(descriptions: Array<String>) {
-        if (eventSink == null) {
-            return
-        }
         logEvents("LOG", "|", "|", descriptions, false)
     }
 
     private fun logEvents(prefix: String, descriptions: Array<String>) {
-        if (eventSink == null) {
-            return
-        }
         logEvents(prefix, "|", "|", descriptions, false)
     }
 
@@ -1471,9 +1481,6 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         descriptions: Array<String>,
         isError: Boolean = false
     ) {
-        if (eventSink == null) {
-            return
-        }
         val description = descriptions.joinToString(descriptionSeparator)
         logEvent(prefix, separator, description, isError)
     }
@@ -1504,16 +1511,25 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         description: String,
         isError: Boolean = false
     ) {
-        if (eventSink == null) {
+        if (isError) {
+            // Errors are transient diagnostics; don't buffer them - drop if no listener.
+            eventSink?.error(FlutterErrorCodes.UNAVAILABLE_ERROR, description, null)
+                ?: Log.w(TAG, "logEvent(error) dropped, no event sink: $description")
             return
         }
-        if (isError) {
-            eventSink!!.error(FlutterErrorCodes.UNAVAILABLE_ERROR, description, null)
-        } else {
-            val message = if (prefix.isEmpty()) description else "$prefix$separator$description"
-            Log.d(TAG, "logEvent: $message")
-            eventSink!!.success(message)
+        val message = if (prefix.isEmpty()) description else "$prefix$separator$description"
+        val sink = eventSink
+        if (sink == null) {
+            // Buffer until the Dart listener attaches (see pendingEvents / onListen).
+            if (pendingEvents.size >= maxPendingEvents) {
+                pendingEvents.removeFirst()
+            }
+            pendingEvents.addLast(message)
+            Log.d(TAG, "logEvent: buffered (no event sink yet): $message")
+            return
         }
+        Log.d(TAG, "logEvent: $message")
+        sink.success(message)
     }
     //endregion
 
