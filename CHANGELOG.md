@@ -71,6 +71,7 @@
 * feat: [android] correctly show missed call honouring `showMissedCallNotifications` setting when app is backgrounded or terminated.
 * fix: [ios] changing `enableCallLogging` setting now correctly updates call logging behaviour for subsequent calls.
 * fix: [macos] `toggleBluetooth` now returns `Future` with correct value (though bluetooth not yet implemented).
+* fix: [ios] fix invalid Twilio VoIP payload crashing app
 * Feat: update example.
 * Docs: update CHANGELOG
 

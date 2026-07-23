@@ -633,14 +633,23 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         self.sendPhoneCallEvents(description: "LOG|pushRegistry:didReceiveIncomingPushWithPayload:forType:completion:", isError: false)
         // Save for later when the notification is properly handled.
 //        self.incomingPushCompletionCallback = completion
-        
+
+        let osVersion = ProcessInfo.processInfo.operatingSystemVersion
+
         if (type == PKPushType.voIP) {
             if !TwilioVoiceSDK.handleNotification(payload.dictionaryPayload, delegate: self, delegateQueue: nil) {
                 self.sendPhoneCallEvents(description: "LOG|Unhandled VoIP push: not a valid Twilio Voice notification", isError: false)
+                // iOS 13+ PushKit contract: every VoIP push MUST report an incoming call to
+                // CallKit before completion() runs, or the system terminates the app (and can
+                // stop delivering VoIP pushes). This push is not a valid Twilio invite - so a
+                // real call is never reported - so report a placeholder call and immediately end
+                // it to satisfy the contract.
+                if osVersion.majorVersion >= 13 {
+                    self.reportFailedIncomingCall()
+                }
             }
         }
 
-        let osVersion = ProcessInfo.processInfo.operatingSystemVersion
         if osVersion.majorVersion < 13 {
             // Save for later when the notification is properly handled.
             self.incomingPushCompletionCallback = completion
@@ -1040,6 +1049,24 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             } else {
                 self.sendPhoneCallEvents(description: "LOG|Incoming call successfully reported.", isError: false)
             }
+        }
+    }
+
+    /// PushKit (iOS 13+) requires every VoIP push to report an incoming call to CallKit before the
+    /// push completion handler runs, otherwise the system terminates the app and may stop delivering
+    /// VoIP pushes. When a push is not a valid Twilio invite (so no real call is ever reported),
+    /// report a placeholder call and immediately end it to satisfy the contract.
+    func reportFailedIncomingCall() {
+        let uuid = UUID()
+        let callUpdate = CXCallUpdate()
+        callUpdate.remoteHandle = CXHandle(type: .generic, value: defaultCaller)
+        callUpdate.hasVideo = false
+        callKitProvider.reportNewIncomingCall(with: uuid, update: callUpdate) { error in
+            if let error = error {
+                self.sendPhoneCallEvents(description: "LOG|Placeholder incoming call report failed: \(error.localizedDescription).", isError: false)
+            }
+            // End the placeholder immediately whether or not the report succeeded.
+            self.callKitProvider.reportCall(with: uuid, endedAt: Date(), reason: .failed)
         }
     }
     
