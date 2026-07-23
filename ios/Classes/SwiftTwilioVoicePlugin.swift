@@ -389,7 +389,8 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         // Updating callkit configuration
         let configuration = callKitProvider.configuration
         configuration.includesCallsInRecents = value
-        
+        callKitProvider.configuration = configuration
+
         // Save and persist setting
         UserDefaults.standard.set(value, forKey: callLoggingEnabledKey)
         return true;
