@@ -1953,7 +1953,10 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                     return
                 }
                 val direction = intent.getIntExtra(TVBroadcastReceiver.EXTRA_CALL_DIRECTION, -1)
-                val callDirection = CallDirection.fromId(direction)!!.label
+                val callDirection = CallDirection.fromId(direction)?.label
+                    ?: CallDirection.OUTGOING.label.also {
+                        Log.w(TAG, "EVENT_CONNECTED: unknown call direction id $direction, defaulting to Outgoing")
+                    }
 //                callSid = callHandle
                 logEvents("", arrayOf("Connected", from, to, callDirection))
             }
