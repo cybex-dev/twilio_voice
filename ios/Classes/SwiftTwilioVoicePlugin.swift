@@ -79,8 +79,23 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         UNUserNotificationCenter.current().delegate = self
 
         let appDelegate = UIApplication.shared.delegate
-        guard let controller = appDelegate?.window??.rootViewController as? FlutterViewController else {
-            fatalError("rootViewController is not type FlutterViewController")
+        // UIScene lifecycle (modern Flutter template): appDelegate.window is nil
+        // because the window belongs to the scene. Resolve it from the connected
+        // scenes instead of force-crashing.
+        let resolvedWindow = (appDelegate?.window ?? nil)
+            ?? UIApplication.shared.connectedScenes
+                .compactMap { $0 as? UIWindowScene }
+                .flatMap { $0.windows }
+                .first(where: { $0.isKeyWindow })
+            ?? UIApplication.shared.connectedScenes
+                .compactMap { $0 as? UIWindowScene }
+                .flatMap { $0.windows }
+                .first
+        guard let controller = resolvedWindow?.rootViewController as? FlutterViewController else {
+            // rootVC not attached yet during registration; the method/event
+            // channels are also wired in register(with:), so skip the redundant
+            // init-time channel setup rather than crashing.
+            return
         }
         let registrar = controller.registrar(forPlugin: "twilio_voice")
         if let unwrappedRegistrar = registrar {
