@@ -1046,6 +1046,8 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         callKitProvider.reportNewIncomingCall(with: uuid, update: callUpdate) { error in
             if let error = error {
                 self.sendPhoneCallEvents(description: "LOG|Failed to report incoming call successfully: \(error.localizedDescription).", isError: false)
+                self.callKitProvider.reportCall(with: uuid, endedAt: Date(), reason: .failed)
+                self.sendPhoneCallEvents(description: "Call Ended", isError: false)
             } else {
                 self.sendPhoneCallEvents(description: "LOG|Incoming call successfully reported.", isError: false)
             }

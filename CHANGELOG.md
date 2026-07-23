@@ -72,6 +72,7 @@
 * fix: [ios] changing `enableCallLogging` setting now correctly updates call logging behaviour for subsequent calls.
 * fix: [macos] `toggleBluetooth` now returns `Future` with correct value (though bluetooth not yet implemented).
 * fix: [ios] fix invalid Twilio VoIP payload crashing app
+* fix: [ios] fix plugin in limbo when new incoming call fails to register
 * Feat: update example.
 * Docs: update CHANGELOG
 
