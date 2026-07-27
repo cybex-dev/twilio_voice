@@ -328,8 +328,11 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
         /// https://www.twilio.com/blog/client-javascript-sdk-1-7-ga
         List<String> codecs = ["opus", "pcmu"];
         twilio_js.DeviceOptions options = twilio_js.DeviceOptions(
+          logLevel: 1,
           codecPreferences: codecs.map((e) => e.toJS).toList().toJS,
           closeProtection: true,
+          enableImprovedSignalingErrorPrecision: true,
+          allowIncomingWhileBusy: false,
         );
 
         /// create new Twilio device
@@ -515,8 +518,11 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
 
   twilio_js.DeviceOptions get _deviceOptions {
     return twilio_js.DeviceOptions(
+      logLevel: 1,
       codecPreferences: _codecs.map((e) => e.toJS).toList().toJS,
       closeProtection: _closeProtection,
+      enableImprovedSignalingErrorPrecision: true,
+      allowIncomingWhileBusy: false,
       sounds: _soundMap.jsify(),
     );
   }
