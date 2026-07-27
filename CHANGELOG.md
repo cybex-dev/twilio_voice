@@ -3,6 +3,7 @@
 * **BREAKING CHANGES:**
   * Minimum iOS deployment version updated to iOS 13.0 (from iOS 11.0) to support the latest Twilio iOS SDK, Flutter's minimum iOS, and the Firebase iOS pods. 
   * [Web] WASM support: the web implementation migrated from `package:js`/`dart:html`/`dart:js_util` to `dart:js_interop` + `package:web`, so apps can now build with `flutter build web --wasm`. This raises the minimum Dart SDK to `3.3.0` (extension types) and Flutter to `3.22.0`. The `js` dependency has been removed, and `web_callkit` updated to `^1.0.0` (which bundles/registers its service worker automatically - see its README; the manual service-worker copy is no longer required).
+  * [Web, macOS] The Twilio Voice JS SDK (`twilio.min.js`, **v2.18.0**) is now **bundled with the plugin** and loaded automatically.
   * Feat: Completed migration to Federated Plugin structure. This requires one change:
   ```dart
   /// old
@@ -55,13 +56,14 @@
 * fix: [web] custom parameters are correctly resolved when call is answered
 * fix: [web] change hold toggle to not implemented defaulting to false always. Experimental holding feature in development for web platform (see [PR #322](https://github.com/cybex-dev/twilio_voice/pull/322))
 * fix: [macos] set `developerExtrasEnabled: true` only in debug mode with `DEBUG` directive
-* feat: [web,macos] Twilio Voice JS SDK is now loaded via `<script>` tag defined in `index.html` instead of bundling, copying or importing making CI/CD easier and more robust. See [README.md#updating-twilio-voice-js-sdk](README.md#updating-twilio-voice-js-sdk) for more details.
+* feat: [web,macos] Twilio Voice JS SDK loading reworked - no longer copied or imported into the app.
 * fix: [web] prevent race condition caused by calling `setTokens` on non-existent `Device` creating an orphaned/leaked device.
 * feat: [macos] add missing `ringing` event for outgoing calls to unify platform behavior contract.
 * feat: [macos] reconnecting now uses correct `onCallReconnecting` delegate handler instead of `onCallError`
 * feat: [macos] accepting incoming call now sets correct status
 * feat: [macos] fix logging call events, `speakerOn`, `speakerOff`, `holdOn`, `holdOff`, `bluetoothOn`, `bluetoothOff`, `reconnecting` and `reconnected` events now log correctly.
 * feat: [macos] improve robustness of `WKWebView` JS handlers for serialization & deserialization of JS Objects & JSON data.
+* fix: [macos] `setTokens` now waits for the plugin's `WKWebView` to finish initialising (and the Twilio JS SDK to become available) before creating the `Device`.
 * fix: [macos] fix request mic permission access returning early false 
 * fix: [macos] improve performance on startup by refactoring and removing unnecessary initialization code. 
 * fix: [macos] fail gracefully when calling `setTokens` and plugin is not yet ready.
