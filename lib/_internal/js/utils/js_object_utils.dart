@@ -1,26 +1,24 @@
-// import 'dart:js_interop';
-// TODO(cybex-dev) implement js_interop for js package
-// ignore: deprecated_member_use
-import 'package:js/js.dart';
-// TODO(cybex-dev) implement js_interop for js_util package
-// ignore: deprecated_member_use
-import 'package:js/js_util.dart';
+import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
 
-Map<String, String> jsToStringMap(dynamic jsonObject) {
+/// Converts a plain JS object into a Dart `Map<String, String>` by iterating
+/// over its own enumerable keys.
+Map<String, String> jsToStringMap(JSAny? jsonObject) {
   final map = <String, String>{};
-  final keys = objectKeys(jsonObject);
-  for (dynamic key in keys) {
-    final value = getProperty(jsonObject, key);
-    map[key] = value;
+  final obj = jsonObject as JSObject;
+  final keys = objectKeys(obj);
+  for (final key in keys.toDart) {
+    final value = obj.getProperty<JSAny?>(key);
+    map[key.toDart] = value?.dartify()?.toString() ?? '';
   }
   return map;
 }
 
 @JS('JSON.stringify')
-external String stringify(Object obj);
+external String stringify(JSAny obj);
 
 @JS('Object.keys')
-external List<String> objectKeys(Object obj);
+external JSArray<JSString> objectKeys(JSAny obj);
 
 @JS('Array.from')
-external Object toArray(dynamic source);
+external JSArray toArray(JSAny source);
