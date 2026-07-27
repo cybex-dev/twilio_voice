@@ -24,7 +24,7 @@ dependencies:
     sdk: flutter
   plugin_platform_interface: ^2.1.4
   web: ^1.1.0
-  web_callkit: ^1.0.0
+  web_callkit: ^1.0.1
 
 dev_dependencies:
   flutter_lints: ^2.0.2

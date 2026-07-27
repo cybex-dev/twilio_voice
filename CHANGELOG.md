@@ -2,7 +2,7 @@
 
 * **BREAKING CHANGES:**
   * Minimum iOS deployment version updated to iOS 13.0 (from iOS 11.0) to support the latest Twilio iOS SDK, Flutter's minimum iOS, and the Firebase iOS pods. 
-  * [Web] WASM support: the web implementation migrated from `package:js`/`dart:html`/`dart:js_util` to `dart:js_interop` + `package:web`, so apps can now build with `flutter build web --wasm`. This raises the minimum Dart SDK to `3.3.0` (extension types) and Flutter to `3.22.0`. The `js` dependency has been removed, and `web_callkit` updated to `^1.0.0` (which bundles/registers its service worker automatically - see its README; the manual service-worker copy is no longer required).
+  * [Web] WASM support: the web implementation migrated from `package:js`/`dart:html`/`dart:js_util` to `dart:js_interop` + `package:web`, so apps can now build with `flutter build web --wasm`. This raises the minimum Dart SDK to `3.3.0` (extension types) and Flutter to `3.22.0`. The `js` dependency has been removed, and `web_callkit` updated to `^1.0.1` (which bundles/registers its service worker automatically - see its README; the manual service-worker copy is no longer required).
   * [Web, macOS] The Twilio Voice JS SDK (`twilio.min.js`, **v2.18.0**) is now **bundled with the plugin** and loaded automatically.
   * Feat: Completed migration to Federated Plugin structure. This requires one change:
   ```dart
