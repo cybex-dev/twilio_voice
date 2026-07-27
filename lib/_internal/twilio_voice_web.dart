@@ -1,28 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
+import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
 
 // TODO(cybex-dev) implement package:web
-// ignore: deprecated_member_use
-import 'dart:html' as html;
-
 // import 'package:flutter/foundation.dart';
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
-
-// Added as temporary measure till sky_engine includes js_util (allowInterop())
-// TODO(cybex-dev) implement js_interop for allowInterop function
-// ignore: deprecated_member_use
-import 'package:js/js.dart' as js;
-
-// TODO(cybex-dev) implement js_interop for js_util package
-// ignore: deprecated_member_use
-import 'package:js/js_util.dart' as js_util;
 import 'package:twilio_voice/_internal/js/call/call_status.dart';
-
-// This is required for JS interop, do not remove even though linter complains
-// TODO(cybex-dev) implement js_interop for js_util package
-// ignore: unused_import,deprecated_member_use
-import 'package:js/js_util.dart';
+import 'package:web/web.dart' as web;
 import 'package:web_callkit/web_callkit_web.dart';
 
 import '../twilio_voice.dart';
@@ -111,11 +97,11 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
 
   twilio_js.Device? device;
 
-  html.Navigator get _webNavigatorDelegate => html.window.navigator;
+  web.Navigator get _webNavigatorDelegate => web.window.navigator;
 
-  html.Permissions? get _webPermissionsDelegate => _webNavigatorDelegate.permissions;
+  web.Permissions get _webPermissionsDelegate => _webNavigatorDelegate.permissions;
 
-  html.MediaDevices? get _webMediaDevicesDelegate => _webNavigatorDelegate.mediaDevices;
+  web.MediaDevices get _webMediaDevicesDelegate => _webNavigatorDelegate.mediaDevices;
 
   late final Call _call = Call();
 
@@ -184,9 +170,12 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
     try {
       final isSafariOrFirefox = RegExp(r'^((?!chrome|android).)*safari|firefox', caseSensitive: false).hasMatch(_webNavigatorDelegate.userAgent);
 
-      if (isSafariOrFirefox && _webPermissionsDelegate != null) {
+      if (isSafariOrFirefox) {
         try {
-          final result = await _webPermissionsDelegate!.request({"name": "microphone"});
+          // `Permissions.request` is a non-standard (Firefox) API not exposed by
+          // package:web, so invoke it dynamically to preserve prior behavior.
+          final descriptor = {"name": "microphone"}.jsify() as JSObject;
+          final result = await _webPermissionsDelegate.callMethod<JSPromise<web.PermissionStatus>>("request".toJS, descriptor).toDart;
           if (result.state == "granted") return true;
         } catch (e) {
           printDebug("Failed to request microphone permission");
@@ -198,8 +187,8 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
       /// This dirty hack to get media stream. Request (to show permissions popup on Chrome
       /// and other browsers, then stop the stream to release the permission)
       /// TODO(cybex-dev) - check supported media streams
-      html.MediaStream mediaStream = await _webMediaDevicesDelegate?.getUserMedia({"audio": true}) ?? await _webNavigatorDelegate.getUserMedia(audio: true);
-      mediaStream.getTracks().forEach((track) => track.stop());
+      final web.MediaStream mediaStream = await _webMediaDevicesDelegate.getUserMedia(web.MediaStreamConstraints(audio: true.toJS)).toDart;
+      mediaStream.getTracks().toDart.forEach((track) => track.stop());
       return hasMicAccess();
     } catch (e) {
       printDebug("Failed to request microphone permission");
@@ -214,11 +203,8 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   Future<bool> hasMicAccess() async {
     logLocalEvent("checkPermissionForMicrophone");
     try {
-      final perm = await _webPermissionsDelegate?.query({"name": "microphone"});
-      if (perm == null) {
-        printDebug("Failed to query microphone permission");
-        return false;
-      }
+      final descriptor = {"name": "microphone"}.jsify() as JSObject;
+      final perm = await _webPermissionsDelegate.query(descriptor).toDart;
       if (perm.state == "granted") {
         return true;
       } else if (perm.state == "prompt") {
@@ -276,7 +262,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
     }
     try {
       final promise = device!.unregister();
-      await js_util.promiseToFuture(promise);
+      await promise.toDart;
       _detachDeviceListeners(device!);
       _clearCalls();
       return true;
@@ -342,8 +328,11 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
         /// https://www.twilio.com/blog/client-javascript-sdk-1-7-ga
         List<String> codecs = ["opus", "pcmu"];
         twilio_js.DeviceOptions options = twilio_js.DeviceOptions(
-          codecPreferences: codecs,
+          logLevel: 1,
+          codecPreferences: codecs.map((e) => e.toJS).toList().toJS,
           closeProtection: true,
+          enableImprovedSignalingErrorPrecision: true,
+          allowIncomingWhileBusy: false,
         );
 
         /// create new Twilio device
@@ -353,7 +342,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
 
         // Register device to accept notifications
         final promise = device!.register();
-        await js_util.promiseToFuture(promise);
+        await promise.toDart;
       }
 
       return true;
@@ -363,20 +352,25 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
     }
   }
 
-  final _deviceListenerWrappers = <Function, Function>{};
-
-  Function _wrapDeviceListener(Function handler) => _deviceListenerWrappers[handler] ??= js.allowInterop(handler);
+  // Cached JS function references for device listeners. `.toJS` returns a NEW
+  // JSFunction on every call, so add/removeListener must use the SAME cached
+  // JSFunction or removeListener silently fails to detach.
+  late final JSFunction _onDeviceRegisteredJs = _onDeviceRegistered.toJS;
+  late final JSFunction _onDeviceUnregisteredJs = _onDeviceUnregistered.toJS;
+  late final JSFunction _onDeviceErrorJs = _onDeviceError.toJS;
+  late final JSFunction _onDeviceIncomingJs = _onDeviceIncoming.toJS;
+  late final JSFunction _onTokenWillExpireJs = _onTokenWillExpire.toJS;
 
   /// Attach event listeners to [twilio_js.Device]
   /// See [twilio_js.Device.addListener](https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#deviceaddlistenereventname-listener)
   void _attachDeviceListeners(twilio_js.Device device) {
     // ignore: unnecessary_null_comparison
     assert(device != null, "Device cannot be null");
-    device.addListener("registered", _wrapDeviceListener(_onDeviceRegistered));
-    device.addListener("unregistered", _wrapDeviceListener(_onDeviceUnregistered));
-    device.addListener("error", _wrapDeviceListener(_onDeviceError));
-    device.addListener("incoming", _wrapDeviceListener(_onDeviceIncoming));
-    device.addListener("tokenWillExpire", _wrapDeviceListener(_onTokenWillExpire));
+    device.addListener("registered", _onDeviceRegisteredJs);
+    device.addListener("unregistered", _onDeviceUnregisteredJs);
+    device.addListener("error", _onDeviceErrorJs);
+    device.addListener("incoming", _onDeviceIncomingJs);
+    device.addListener("tokenWillExpire", _onTokenWillExpireJs);
   }
 
   /// Detach event listeners to [twilio_js.Device]
@@ -384,11 +378,11 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   void _detachDeviceListeners(twilio_js.Device device) {
     // ignore: unnecessary_null_comparison
     assert(device != null, "Device cannot be null");
-    device.removeListener("registered", _wrapDeviceListener(_onDeviceRegistered));
-    device.removeListener("unregistered", _wrapDeviceListener(_onDeviceUnregistered));
-    device.removeListener("error", _wrapDeviceListener(_onDeviceError));
-    device.removeListener("incoming", _wrapDeviceListener(_onDeviceIncoming));
-    device.removeListener("tokenWillExpire", _wrapDeviceListener(_onTokenWillExpire));
+    device.removeListener("registered", _onDeviceRegisteredJs);
+    device.removeListener("unregistered", _onDeviceUnregisteredJs);
+    device.removeListener("error", _onDeviceErrorJs);
+    device.removeListener("incoming", _onDeviceIncomingJs);
+    device.removeListener("tokenWillExpire", _onTokenWillExpireJs);
   }
 
   /// On device registered and ready to make/receive calls via [twilio_js.Device.addListener] and [twilio_js.TwilioDeviceEvents.registered]
@@ -397,18 +391,6 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
     printDebug("_onDeviceRegistered");
     printDebug("Device registered for callInvites");
   }
-
-  // /// On device registered and ready to make/receive calls via [twilioJs.Device.addListener] and [twilioJs.TwilioDeviceEvents.registered]
-  // /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#registered-event
-  // Function _onDeviceRegistered() {
-  //   // final _f = (twilioJs.Device device) {
-  //   //   logLocalEvent("Device registered for callInvites", prefix: "");
-  //   // };
-  //   // return allowInterop(_f);
-  //   return allowInterop((twilioJs.Device device) {
-  //     logLocalEvent("Device registered for callInvites", prefix: "");
-  //   });
-  // }
 
   /// On device unregistered, access token disabled and won't receive any more call invites [twilio_js.Device.removeListener] and [twilio_js.TwilioDeviceEvents.unregistered]
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#unregistered-event
@@ -536,9 +518,12 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
 
   twilio_js.DeviceOptions get _deviceOptions {
     return twilio_js.DeviceOptions(
-      codecPreferences: _codecs,
+      logLevel: 1,
+      codecPreferences: _codecs.map((e) => e.toJS).toList().toJS,
       closeProtection: _closeProtection,
-      sounds: js_util.jsify(_soundMap),
+      enableImprovedSignalingErrorPrecision: true,
+      allowIncomingWhileBusy: false,
+      sounds: _soundMap.jsify(),
     );
   }
 
@@ -767,10 +752,10 @@ class Call extends MethodChannelTwilioCall {
     // Log.d(TAG, "calling to " + call.argument("To").toString());
     // final options = twilioJs.DeviceConnectOptions(params);
     try {
-      final callParams = js_util.jsify(params);
+      final callParams = params.jsify();
       final options = twilio_js.DeviceConnectOptions(params: callParams);
       final promise = _device!.connect(options);
-      nativeCall = await js_util.promiseToFuture(promise);
+      nativeCall = await promise.toDart;
 
       _attachCallEventListeners(_jsCall!);
       logLocalEvent("Call placed");
@@ -797,10 +782,10 @@ class Call extends MethodChannelTwilioCall {
     });
 
     try {
-      final callParams = js_util.jsify(params);
+      final callParams = params.jsify();
       final options = twilio_js.DeviceConnectOptions(params: callParams);
       final promise = _device!.connect(options);
-      nativeCall = await js_util.promiseToFuture(promise);
+      nativeCall = await promise.toDart;
 
       _attachCallEventListeners(_jsCall!);
     } catch (e) {
@@ -810,24 +795,33 @@ class Call extends MethodChannelTwilioCall {
     return true;
   }
 
-  final _callListenerWrappers = <Function, Function>{};
-
-  Function _wrapCallListener(Function handler) => _callListenerWrappers[handler] ??= js.allowInterop(handler);
+  // Cached JS function references for call listeners. `.toJS` returns a NEW
+  // JSFunction on every call, so add/removeListener must use the SAME cached
+  // JSFunction or removeListener silently fails to detach.
+  late final JSFunction _onCallRingingJs = _onCallRinging.toJS;
+  late final JSFunction _onCallAcceptJs = _onCallAccept.toJS;
+  late final JSFunction _onCallDisconnectJs = _onCallDisconnect.toJS;
+  late final JSFunction _onCallCancelJs = _onCallCancel.toJS;
+  late final JSFunction _onCallRejectJs = _onCallReject.toJS;
+  late final JSFunction _onCallErrorJs = _onCallError.toJS;
+  late final JSFunction _onCallReconnectingJs = _onCallReconnecting.toJS;
+  late final JSFunction _onCallReconnectedJs = _onCallReconnected.toJS;
+  late final JSFunction _onLogEventJs = _onLogEvent.toJS;
 
   /// Attach event listeners to the active call
   /// See [twilio_js.Call.addListener]
   void _attachCallEventListeners(twilio_js.Call call) {
     // ignore: unnecessary_null_comparison
     assert(call != null, "Call cannot be null");
-    call.addListener("ringing", _wrapCallListener(_onCallRinging));
-    call.addListener("accept", _wrapCallListener(_onCallAccept));
-    call.addListener("disconnect", _wrapCallListener(_onCallDisconnect));
-    call.addListener("cancel", _wrapCallListener(_onCallCancel));
-    call.addListener("reject", _wrapCallListener(_onCallReject));
-    call.addListener("error", _wrapCallListener(_onCallError));
-    call.addListener("reconnecting", _wrapCallListener(_onCallReconnecting));
-    call.addListener("reconnected", _wrapCallListener(_onCallReconnected));
-    call.addListener("log", _wrapCallListener(_onLogEvent));
+    call.addListener("ringing", _onCallRingingJs);
+    call.addListener("accept", _onCallAcceptJs);
+    call.addListener("disconnect", _onCallDisconnectJs);
+    call.addListener("cancel", _onCallCancelJs);
+    call.addListener("reject", _onCallRejectJs);
+    call.addListener("error", _onCallErrorJs);
+    call.addListener("reconnecting", _onCallReconnectingJs);
+    call.addListener("reconnected", _onCallReconnectedJs);
+    call.addListener("log", _onLogEventJs);
   }
 
   /// Detach event listeners to the active call
@@ -836,15 +830,15 @@ class Call extends MethodChannelTwilioCall {
   void _detachCallEventListeners(twilio_js.Call call) {
     // ignore: unnecessary_null_comparison
     assert(call != null, "Call cannot be null");
-    call.removeListener("ringing", _wrapCallListener(_onCallRinging));
-    call.removeListener("accept", _wrapCallListener(_onCallAccept));
-    call.removeListener("disconnect", _wrapCallListener(_onCallDisconnect));
-    call.removeListener("cancel", _wrapCallListener(_onCallCancel));
-    call.removeListener("reject", _wrapCallListener(_onCallReject));
-    call.removeListener("error", _wrapCallListener(_onCallError));
-    call.removeListener("reconnecting", _wrapCallListener(_onCallReconnecting));
-    call.removeListener("reconnected", _wrapCallListener(_onCallReconnected));
-    call.removeListener("log", _wrapCallListener(_onLogEvent));
+    call.removeListener("ringing", _onCallRingingJs);
+    call.removeListener("accept", _onCallAcceptJs);
+    call.removeListener("disconnect", _onCallDisconnectJs);
+    call.removeListener("cancel", _onCallCancelJs);
+    call.removeListener("reject", _onCallRejectJs);
+    call.removeListener("error", _onCallErrorJs);
+    call.removeListener("reconnecting", _onCallReconnectingJs);
+    call.removeListener("reconnected", _onCallReconnectedJs);
+    call.removeListener("log", _onLogEventJs);
   }
 
   void _onLogEvent(String status) {
@@ -976,7 +970,7 @@ class Call extends MethodChannelTwilioCall {
   }
 
   /// On active call reconnecting to Twilio network
-  void _onCallReconnecting(dynamic twilioError) {
+  void _onCallReconnecting(JSAny? twilioError) {
     logLocalEvent("Reconnecting");
     final callSid = _getSid();
     if (callSid != null) {
@@ -1028,11 +1022,14 @@ class Call extends MethodChannelTwilioCall {
 
 /// Since Call.customParameters is of type Map (but specifically implements a LegacyJavaScriptObject), we cannot access the Map directly.
 /// Instead, we convert it to an array using [toArray] and then convert it to a Map
-Map<String, String> _getCustomCallParameters(dynamic callParameters) {
-  final list = toArray(callParameters) as List<dynamic>;
+Map<String, String> _getCustomCallParameters(JSAny? callParameters) {
+  final list = toArray(callParameters!).toDart;
   final entries = list.map((e) {
-    final entry = e as List;
-    return MapEntry<String, String>(entry.first.toString(), entry.last.toString());
+    final entry = (e as JSArray).toDart;
+    return MapEntry<String, String>(
+      entry.first.dartify().toString(),
+      entry.last.dartify().toString(),
+    );
   });
   return Map<String, String>.fromEntries(entries);
 }

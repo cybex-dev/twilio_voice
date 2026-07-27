@@ -205,15 +205,17 @@ See [example](https://github.com/cybex-dev/twilio_voice/blob/master/example/andr
 ### Web Setup:
 
 **BREAKING CHANGES:**
-Since we are now using `web_callkit` package, the web implementation requires copying over only 2 files, please see the required files below.
+Since `web_callkit` 1.0.0, the notification service worker is bundled with the package and registered
+automatically - it no longer needs to be copied into your `web/` directory. Only the Twilio Voice JS
+SDK is required (and that can be loaded from a CDN via a `<script>` tag, see below).
 
-Web requires 2 files to be copied over/provided for web implementation to work correctly. These files are:
+Web requires 1 file to be provided for the web implementation to work correctly:
 1. `twilio.min.js`
-2. `js_notifications-sw.js`
 
-Both of these files need to be copied over to the `web/` directory of your project. See [[Notes]](https://github.com/cybex-dev/twilio_voice/blob/master/NOTES.md#ios--macos)
+This file needs to be copied over to the `web/` directory of your project (or referenced from a CDN,
+see the `<script>` snippet below). See [[Notes]](https://github.com/cybex-dev/twilio_voice/blob/master/NOTES.md#ios--macos)
 
-_The names of these files are very important, so make sure to have the file names exactly as described above._
+_The name of this file is very important, so make sure to have the file name exactly as described above._
 
 The folder structure should look like this:
 
@@ -225,13 +227,16 @@ your_project/
 │   ├── ...
 │   ├── index.html
 │   ├── twilio.min.js
-│   ├── js_notifications-sw.js
 │   ├── ...
 ├── ...
 ```
 
-**Note:** This is required for the browser to handle notifications in the background. The service
-worker will handle incoming call notifications and display them even when the app is not in focus.
+**Note:** the service worker (provided by `web_callkit`/`js_notifications`) lets the browser handle
+notifications in the background - displaying incoming call notifications even when the app is not in
+focus. It is registered for you; no manual copy step is required.
+
+**WASM:** the web implementation uses `dart:js_interop`/`package:web`, so it supports
+`flutter build web --wasm`. This requires Dart `>=3.3.0` and Flutter `>=3.22.0`.
 
 Finally, add the following code to your `index.html` file, **at the end of body tag**:
 

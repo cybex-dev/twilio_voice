@@ -12,8 +12,10 @@ topics:
   - phone
 
 environment:
-  sdk: ">=2.18.0 <4.0.0"
-  flutter: ">=1.10.0"
+  # Dart 3.3+ required for extension types (dart:js_interop) used by the web implementation.
+  sdk: ">=3.3.0 <4.0.0"
+  # Flutter 3.22+ ships Dart 3.4 and is the minimum required by web_callkit 1.0.0.
+  flutter: ">=3.22.0"
 
 dependencies:
   flutter:
@@ -21,10 +23,8 @@ dependencies:
   flutter_web_plugins:
     sdk: flutter
   plugin_platform_interface: ^2.1.4
-  # temporarily - upgrade to js: 0.7.2 then finally js_interop:
-  js: ^0.7.1
   web: ^1.1.0
-  web_callkit: ^0.0.4+1
+  web_callkit: ^1.0.0
 
 dev_dependencies:
   flutter_lints: ^2.0.2
