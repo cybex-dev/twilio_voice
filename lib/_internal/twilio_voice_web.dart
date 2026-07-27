@@ -389,18 +389,6 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
     printDebug("Device registered for callInvites");
   }
 
-  // /// On device registered and ready to make/receive calls via [twilioJs.Device.addListener] and [twilioJs.TwilioDeviceEvents.registered]
-  // /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#registered-event
-  // Function _onDeviceRegistered() {
-  //   // final _f = (twilioJs.Device device) {
-  //   //   logLocalEvent("Device registered for callInvites", prefix: "");
-  //   // };
-  //   // return allowInterop(_f);
-  //   return allowInterop((twilioJs.Device device) {
-  //     logLocalEvent("Device registered for callInvites", prefix: "");
-  //   });
-  // }
-
   /// On device unregistered, access token disabled and won't receive any more call invites [twilio_js.Device.removeListener] and [twilio_js.TwilioDeviceEvents.unregistered]
   /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#unregistered-event
   void _onDeviceUnregistered() {
