@@ -19,8 +19,13 @@ abstract class SharedPlatformInterface extends PlatformInterface {
   EventChannel get eventChannel => _eventChannel;
   final EventChannel _eventChannel = const EventChannel(kEventChannelName);
 
+  /// Static so every subclass instance shares one event bus: on web, TwilioVoiceWeb's
+  /// [callEventsListener] subscribes to this stream while its separate Call instance
+  /// emits call-lifecycle events (Call Ended, Mute, ...) via [logLocalEvent]. With a
+  /// per-instance controller those events would go to an unsubscribed controller and
+  /// silently vanish.
   // ignore: close_sinks
-  StreamController<String>? _callEventsController;
+  static StreamController<String>? _callEventsController;
   StreamController<String> get callEventsController {
     _callEventsController ??= StreamController<String>.broadcast();
     return _callEventsController!;

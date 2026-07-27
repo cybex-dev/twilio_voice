@@ -421,7 +421,7 @@ public class JSObject: NSObject, WKScriptMessageHandler, Disposable {
     static private func toArgString(_ args: [Any]) -> String {
         args.map {
                     if let arg = $0 as? String {
-                        return "\"\(arg)\""
+                        return arg.javascriptStringLiteral
                     } else if let arg = $0 as? Bool {
                         return arg ? "true" : "false"
                     } else if let arg = $0 as? Int {
@@ -429,10 +429,15 @@ public class JSObject: NSObject, WKScriptMessageHandler, Disposable {
                     } else if let arg = $0 as? Double {
                         return "\(arg)"
                     } else if let arg = $0 as? [String: Any] {
-                        return arg.map {
-                                    "\"\($0.key)\": \($0.value)"
-                                }
-                                .joined(separator: ", ")
+                        // Wrap in braces and escape keys/string values so this is a valid,
+                        // injection-safe object literal (was `"key": value` with no braces).
+                        let inner = arg.map { (k, v) -> String in
+                            if let s = v as? String {
+                                return "\(k.javascriptStringLiteral): \(s.javascriptStringLiteral)"
+                            }
+                            return "\(k.javascriptStringLiteral): \(v)"
+                        }.joined(separator: ", ")
+                        return "{\(inner)}"
                     } else if let arg = $0 as? JSONArgumentSerializer {
                         return arg.toObjectArgs()
                     } else {

@@ -1,45 +1,14 @@
-// import 'dart:js_interop';
-// TODO(cybex-dev) implement js_interop for js package
-// ignore: deprecated_member_use
-import 'package:js/js.dart';
+import 'dart:js_interop';
 
-// @JS()
-// @anonymous
-// class TwilioError {
-//   external factory TwilioError({
-//     List causes,
-//     int code,
-//     String description,
-//     String explanation,
-//     String message,
-//     String name,
-//     dynamic originalError,
-//     List solutions,
-//   });
-//
-//   external List get causes;
-//   external int get code;
-//   external String get description;
-//   external String get explanation;
-//   external String get message;
-//   external String get name;
-//   external dynamic get originalError;
-//   external List get solutions;
-// }
-
-@JS()
-@staticInterop
-abstract class TwilioError {
-  external factory TwilioError();
-}
-
-extension TwilioErrorExtension on TwilioError {
-  external List get causes;
+/// Interop wrapper for a Twilio Voice JS `TwilioError` object.
+/// Documentation: https://www.twilio.com/docs/voice/sdks/error-codes
+extension type TwilioError._(JSObject _) implements JSObject {
+  external JSArray get causes;
   external int get code;
   external String get description;
   external String get explanation;
   external String get message;
   external String get name;
-  external dynamic get originalError;
-  external List get solutions;
+  external JSAny? get originalError;
+  external JSArray get solutions;
 }

@@ -6,10 +6,9 @@ public class TVOriginalError {
     var twilioError: [String:Any] = [:]
 
     init (dict: [String: Any]) {
-        if(dict["originalError"] == nil) {
+        guard let dict = dict["originalError"] as? [String:Any] else {
             return
         }
-        let dict = dict["originalError"] as! [String:Any]
         self.code = dict["code"] as? Int ?? -1
         self.message = dict["message"] as? String ?? ""
         self.twilioError = dict["twilioError"] as? [String:Any] ?? [:]

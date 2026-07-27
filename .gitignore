@@ -49,3 +49,15 @@ build/
 *.log
 
 .firebase/
+
+example/android/.kotlin/
+
+example/android/app/.gradle/
+
+example/android/app/local.properties
+
+example/lib/firebase_options.dart
+
+example/macos/Runner/GoogleService-Info.plist
+
+example/firebase.json

@@ -93,10 +93,13 @@ public class TVCall: JSObject, TVCallDelegate, JSMessageHandlerDelegate {
             if let error = error {
                 print(error)
                 completionHandler(nil, error)
+                return
             }
-            if let result = result {
-                completionHandler(TVCallStatus(rawValue: result as! String), nil)
+            guard let statusString = result as? String else {
+                completionHandler(nil, "Unexpected status result: \(String(describing: result))")
+                return
             }
+            completionHandler(TVCallStatus(rawValue: statusString), nil)
         }
     }
 
@@ -146,7 +149,7 @@ public class TVCall: JSObject, TVCallDelegate, JSMessageHandlerDelegate {
     /// - SeeAlso Twilio [Call.Events](https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#events)
     func attachEventListeners() {
         print("Attaching event listeners to [TVCall]")
-        let events: [TVCallEvent] = [.accept, .cancel, .disconnect, .error, .reconnected, .reconnected, .reject, .status]
+        let events: [TVCallEvent] = [.accept, .cancel, .disconnect, .error, .reconnecting, .reconnected, .reject, .ringing]
         events.map {
                     $0.rawValue
                 }
@@ -167,8 +170,7 @@ public class TVCall: JSObject, TVCallDelegate, JSMessageHandlerDelegate {
     func detachEventListeners() {
         print("Detaching event listeners from [TVCall]")
         detachMessageHandler()
-        return;
-        let events: [TVCallEvent] = [.accept, .cancel, .disconnect, .error, .reconnected, .reconnected, .reject, .status]
+        let events: [TVCallEvent] = [.accept, .cancel, .disconnect, .error, .reconnecting, .reconnected, .reject, .ringing]
         events.map {
                     $0.rawValue
                 }
@@ -278,20 +280,22 @@ public class TVCall: JSObject, TVCallDelegate, JSMessageHandlerDelegate {
                 break
             case .accept:
                 onCallAccept(self)
+                onCallStatus(.connected)
+                break
+            case .ringing:
+                onCallStatus(.ringing)
                 break
             case .disconnect:
                 onCallDisconnect(self)
                 break
             case .error:
-                if let error = message.args[0] as? [String: Any] {
-                    let error = TVError(dict: error)
-                    onCallError(error)
+                if message.args.count > 0, let error = message.args[0] as? [String: Any] {
+                    onCallError(TVError(dict: error))
                 }
                 break
             case .reconnecting:
-                if let error = message.args[0] as? [String: Any] {
-                    let error = TVError(dict: error)
-                    onCallError(error)
+                if message.args.count > 0, let error = message.args[0] as? [String: Any] {
+                    onCallReconnecting(TVError(dict: error))
                 }
                 break
             case .reconnected:
@@ -299,14 +303,6 @@ public class TVCall: JSObject, TVCallDelegate, JSMessageHandlerDelegate {
                 break
             case .reject:
                 onCallReject()
-                break
-            case .status:
-                if (message.args.count > 0) {
-                    let status = message.args[0] as? String
-                    if let statusString = status, let status = TVCallStatus(rawValue: statusString) {
-                        onCallStatus(status)
-                    }
-                }
                 break
             default:
                 print("Unhandled event: \(event)")

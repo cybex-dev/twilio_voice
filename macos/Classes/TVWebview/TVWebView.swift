@@ -10,6 +10,10 @@ public class TVWebView: WKWebView, WKUIDelegate {
         super.init(frame: CGRect.zero, configuration: WKWebViewConfiguration())
         self.loggingEnabled = loggingEnabled
 
+        // User scripts must be registered before the page is loaded so they are injected into it.
+        overrideLogging()
+        injectTwilioVoiceSDK()
+
         let bundle = Bundle(for: TwilioVoicePlugin.self)
         if let url = bundle.url(forResource: "Resources/index", withExtension: "html") {
             loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
@@ -22,12 +26,103 @@ public class TVWebView: WKWebView, WKUIDelegate {
 
                   """)
         }
+    }
 
-        overrideLogging()
+    /// Asset path of the bundled Twilio Voice JS SDK, as declared in the plugin's `pubspec.yaml`.
+    private static let sdkAsset = "assets/twilio.min.js"
+    private static let sdkPackage = "twilio_voice"
+
+    /// Injects the bundled Twilio Voice JS SDK into the webview at document start, so
+    /// `window.Twilio` is defined before `index.html` runs.
+    ///
+    /// The SDK ships **once**, as a Flutter asset (`assets/twilio.min.js`) shared with the web
+    /// implementation, rather than being duplicated into this plugin's macOS `Resources/` bundle.
+    /// Injecting it as a `WKUserScript` (rather than a `<script src=...>` in `index.html`) also
+    /// avoids `file://` cross-directory read restrictions, since the Flutter assets live in a
+    /// different bundle to `index.html`.
+    private func injectTwilioVoiceSDK() {
+        guard let source = TVWebView.loadBundledSDKSource() else {
+            NSLog("""
+
+                  WARNING! - Unable to load the bundled Twilio Voice JS SDK asset '\(TVWebView.sdkAsset)'
+                    from package '\(TVWebView.sdkPackage)'. VoIP functionality will be unavailable.
+                    Ensure the twilio_voice package's assets are included in your macOS build.
+
+                  """)
+            return
+        }
+        configuration.userContentController.addUserScript(
+            WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: true)
+        )
+    }
+
+    /// Resolves and reads the bundled Twilio Voice JS SDK from the Flutter asset bundle.
+    ///
+    /// On macOS the Flutter assets are packaged inside `App.framework`, not directly in the main
+    /// bundle, and the key returned by [FlutterDartProject.lookupKey] may or may not already carry
+    /// a `flutter_assets/` prefix depending on the Flutter version. Rather than depending on any
+    /// one of those, this tries each known layout in turn and uses the first that resolves.
+    private static func loadBundledSDKSource() -> String? {
+        let key = FlutterDartProject.lookupKey(forAsset: sdkAsset, fromPackage: sdkPackage)
+        // Location of the asset within `flutter_assets`, independent of the key format above.
+        let relativeAssetPath = "packages/\(sdkPackage)/\(sdkAsset)"
+
+        var candidates: [URL] = []
+
+        // 1. Flutter's asset key resolved against the application's main bundle.
+        if let path = Bundle.main.path(forResource: key, ofType: nil) {
+            candidates.append(URL(fileURLWithPath: path))
+        }
+
+        // 2. `flutter_assets` inside App.framework - the macOS layout.
+        if let frameworks = Bundle.main.privateFrameworksURL {
+            let resources = frameworks.appendingPathComponent("App.framework/Resources")
+            let flutterAssets = resources.appendingPathComponent("flutter_assets")
+            candidates.append(flutterAssets.appendingPathComponent(relativeAssetPath))
+            // Cover both key shapes: with and without the `flutter_assets/` prefix.
+            candidates.append(flutterAssets.appendingPathComponent(key))
+            candidates.append(resources.appendingPathComponent(key))
+        }
+
+        for url in candidates {
+            if let source = try? String(contentsOf: url, encoding: .utf8) {
+                return source
+            }
+        }
+
+        NSLog("[TwilioVoice] Unable to locate the bundled Twilio Voice JS SDK. lookupKey='\(key)'; tried: \(candidates.map { $0.path }.joined(separator: ", "))")
+        return nil
     }
 
     required init?(coder: NSCoder) {
         super.init(coder: coder)
+    }
+
+    /// Runs [completionHandler] once the Twilio JS SDK is available in the webview (i.e.
+    /// `Twilio.Device` is defined).
+    ///
+    /// The SDK itself is bundled and injected as a `WKUserScript` at document start (see
+    /// [injectTwilioVoiceSDK]), so there is no network fetch to wait on - but the webview still
+    /// loads `index.html` **asynchronously**. A call made shortly after launch can therefore
+    /// arrive before the document exists, when `evaluateJavaScript` has nothing to evaluate
+    /// against. This polls until the SDK is reachable, or the retry budget is exhausted.
+    ///
+    /// Completes with `false` if the SDK never becomes available (e.g. the webview failed to
+    /// attach, or the bundled asset could not be loaded) so callers can fail cleanly instead of
+    /// operating against an undefined `Twilio.Device`. The check re-runs on every call, so a
+    /// later attempt still succeeds once the webview is ready.
+    func whenSDKReady(retries: Int = 30, interval: TimeInterval = 0.5, completionHandler: @escaping (Bool) -> Void) {
+        evaluateJavaScript("typeof Twilio !== 'undefined' && typeof Twilio.Device !== 'undefined'") { [weak self] result, _ in
+            if (result as? Bool) == true {
+                completionHandler(true)
+            } else if retries > 0, let self = self {
+                DispatchQueue.main.asyncAfter(deadline: .now() + interval) {
+                    self.whenSDKReady(retries: retries - 1, interval: interval, completionHandler: completionHandler)
+                }
+            } else {
+                completionHandler(false)
+            }
+        }
     }
 
     private func overrideLogging() {

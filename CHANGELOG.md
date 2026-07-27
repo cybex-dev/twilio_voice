@@ -1,6 +1,9 @@
-## Next Release
+## 0.4.0
 
-* BREAKING CHANGES:
+* **BREAKING CHANGES:**
+  * Minimum iOS deployment version updated to iOS 13.0 (from iOS 11.0) to support the latest Twilio iOS SDK, Flutter's minimum iOS, and the Firebase iOS pods. 
+  * [Web] WASM support: the web implementation migrated from `package:js`/`dart:html`/`dart:js_util` to `dart:js_interop` + `package:web`, so apps can now build with `flutter build web --wasm`. This raises the minimum Dart SDK to `3.3.0` (extension types) and Flutter to `3.22.0`. The `js` dependency has been removed, and `web_callkit` updated to `^1.0.1` (which bundles/registers its service worker automatically - see its README; the manual service-worker copy is no longer required).
+  * [Web, macOS] The Twilio Voice JS SDK (`twilio.min.js`, **v2.18.0**) is now **bundled with the plugin** and loaded automatically.
   * Feat: Completed migration to Federated Plugin structure. This requires one change:
   ```dart
   /// old
@@ -9,6 +12,12 @@
   // new 
   TwilioVoicePlatform.instance
   ```
+* feat: [Android, iOS, Web, macOS] Update Twilio SDKs to latest versions, see release notes for:
+  * [Android 6.10.0](https://www.twilio.com/docs/voice/sdks/android/3x-changelog#6100), and
+  * [iOS 6.13.6](https://www.twilio.com/docs/voice/sdks/ios/changelog#6136), and
+  * [Web 2.18.0](https://www.twilio.com/docs/voice/sdks/javascript/changelog#2180-january-5-2026), and
+  * [macOS 2.18.0](https://www.twilio.com/docs/voice/sdks/javascript/changelog#2180-january-5-2026),
+* chore: [Android] Update build tooling to Android Gradle Plugin 8.9.1 and Kotlin 2.1.0 (Gradle wrapper 8.11.1), compileSdk 36.
 * Feat: [Web] Add Twilio Device [DeviceState] accessor protecting un/registration.
 * Feat: [Web] Add Twilio Device `updateToken(String)` function to allow updating of active device tokens.
 * Fix: [Web] Twilio Device does not unregister on `unregister()` method call due to 'device.off' not visible in js object causing device event listeners to remain attached on unregistered device.
@@ -16,6 +25,58 @@
 * Feat: [Web] Update internal [CallStatus] mapping method.
 * Fix: [Web] Await Twilio Device `register()` and `unregister()` method calls.
 * Fix: [Web] Prevent duplicate `TwilioVoiceWeb` instances.
+* Feat: [iOS] Add support for call logging via `enableCallLogging(bool)` to record call in recents. No other platform currently supports this, see [NOTES.md](NOTES.md#limitations) for more details.
+* Fix: `showMissedCallNotifications` method call not working due to incorrect method channel name.
+* Fix: [Android] fix permission request callback not completing on permission re-request.
+* Fix: [Android] add missing Android Foreground Service `phoneCall`.
+* Fix: [Android] reactive to microphone permission changes while call is ongoing.
+* Fix: [Android] failure while connecting to incoming/outgoing call with another call in-progress, `TVConnectionService` now checks for ongoing calls prior to stopping service. 
+* Feat: [Android, macOS] support null `From`/`To` parameters in raw `connect()` function.  
+* Feat: [Android] new FCM Token ignored on new token registration, now nowifies `twilio_voice` plugin of updated token.
+* Fix: [Web] code cleanup & refactor 
+* Fix: [iOS] remove unnecessary device token log when failed to register with Twilio.
+* Fix: [iOS] send hex-formatted device token to Dart.
+* Feat: [iOS] add missing event to notify of updated device push token
+* Fix: [iOS] remove invalid push token
+* Fix: [iOS] align parameters for `makeCall` as required or throw malformed with type checks
+* Fix: [macOS] fix future hanging when placing call and an error occurs/not registered with Twilio.
+* Fix: [iOS] set and use `DefaultAudioDevice` for audio routing and controlling with Twilio SDK
+* Fix: [iOS] remove duplicate plugin registration [#222](https://github.com/cybex-dev/twilio_voice/issues/222)
+* Feat: [iOS] log incoming push notifications not handled by Twilio SDK
+* fix: [iOS] incorrect parsing of systemVersion in `pushRegistry` delegate for handling push notifications.
+* fix: [iOS] notify callkit of failure to start/answer call or failure to answer completion handler.
+* fix: [iOS] keep `CallKit` call mute/hold state in-sync when actions are performed on CallKit UI.
+* fix: [iOS] query `isHolding` only with no event emitted
+* feat: [iOS] CallKit controller used for mute / hold call actions
+* fix: [iOS] unable to disable call logging on iOS due to incorrect parameter from method channel args. 
+* fix: [iOS] use registered notification delegate instead of setting `UNUserNotificationCenter.current().delegate = self` to avoid overwriting other notification delegates.
+* fix: [iOS] add missing "Incoming" call event to unify platform behavior contract for incoming calls.
+* fix: [web] function caching ensuring proper cleanup on calls/devices 
+* fix: [web] improved robustness of functions with active/no calls
+* fix: [web] custom parameters are correctly resolved when call is answered
+* fix: [web] change hold toggle to not implemented defaulting to false always. Experimental holding feature in development for web platform (see [PR #322](https://github.com/cybex-dev/twilio_voice/pull/322))
+* fix: [macos] set `developerExtrasEnabled: true` only in debug mode with `DEBUG` directive
+* feat: [web,macos] Twilio Voice JS SDK loading reworked - no longer copied or imported into the app.
+* fix: [web] prevent race condition caused by calling `setTokens` on non-existent `Device` creating an orphaned/leaked device.
+* feat: [macos] add missing `ringing` event for outgoing calls to unify platform behavior contract.
+* feat: [macos] reconnecting now uses correct `onCallReconnecting` delegate handler instead of `onCallError`
+* feat: [macos] accepting incoming call now sets correct status
+* feat: [macos] fix logging call events, `speakerOn`, `speakerOff`, `holdOn`, `holdOff`, `bluetoothOn`, `bluetoothOff`, `reconnecting` and `reconnected` events now log correctly.
+* feat: [macos] improve robustness of `WKWebView` JS handlers for serialization & deserialization of JS Objects & JSON data.
+* fix: [macos] `setTokens` now waits for the plugin's `WKWebView` to finish initialising (and the Twilio JS SDK to become available) before creating the `Device`.
+* fix: [macos] fix request mic permission access returning early false 
+* fix: [macos] improve performance on startup by refactoring and removing unnecessary initialization code. 
+* fix: [macos] fail gracefully when calling `setTokens` and plugin is not yet ready.
+* fix: [android] fix crash on `CancelledCallInvite` received via FCM push notification when app is in background.
+* fix: [android] fix potential crash when on `CallInvite` received when app is backgrounded / dozing on API 26+. 
+* fix: [android] use app name as phone account label if not specified. 
+* fix: [android] buffer native log events until dart initialization completed and ready to receive events.
+* feat: [android] correctly show missed call honouring `showMissedCallNotifications` setting when app is backgrounded or terminated.
+* fix: [ios] changing `enableCallLogging` setting now correctly updates call logging behaviour for subsequent calls.
+* fix: [macos] `toggleBluetooth` now returns `Future` with correct value (though bluetooth not yet implemented).
+* fix: [ios] fix invalid Twilio VoIP payload crashing app
+* fix: [ios] fix plugin in limbo when new incoming call fails to register
+* fix: [macOS,web] add missing `updateCallKitIcon` native implementation to unify platform behaviour contract.
 * Feat: update example.
 * Docs: update CHANGELOG
 

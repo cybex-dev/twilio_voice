@@ -19,11 +19,11 @@ Any and all [Feature Requests](https://github.com/cybex-dev/twilio_voice/issues/
 
 ## Features
 
-- Receive and place calls from iOS devices, uses Callkit to receive calls (Twilio Voice SDK [v6.13.0](https://www.twilio.com/docs/voice/sdks/ios/changelog#6130)).
-- Receive and place calls from Android devices, uses ~~custom UI~~ native call screen to receive calls (via a `ConnectionService` impl) (Twilio Voice SDK [v6.9.0](https://www.twilio.com/docs/voice/sdks/android/3x-changelog#690)).
-- Receive and place calls from Web (FCM push notification integration not yet supported by Twilio Voice Web, see [here](https://github.com/twilio/twilio-voice.js/pull/159#issuecomment-1551553299) for discussion)
+- Receive and place calls from iOS devices, uses Callkit to receive calls (Twilio Voice SDK [v6.13.6](https://www.twilio.com/docs/voice/sdks/ios/changelog#6136)).
+- Receive and place calls from Android devices, uses ~~custom UI~~ native call screen to receive calls (via a `ConnectionService` impl) (Twilio Voice SDK [v6.10.0](https://www.twilio.com/docs/voice/sdks/android/3x-changelog#6100)).
+- Receive and place calls from Web [v2.18.0](https://www.twilio.com/docs/voice/sdks/javascript/changelog#2180-january-5-2026) (FCM push notification integration not yet supported by Twilio Voice Web, see [here](https://github.com/twilio/twilio-voice.js/pull/159#issuecomment-1551553299) for discussion)
 - Receive and place calls from MacOS devices, uses custom UI to receive calls (in future & macOS
-  13.0+, we'll be using CallKit).
+  13.0+, we'll be using CallKit) based on [v2.18.0](https://www.twilio.com/docs/voice/sdks/javascript/changelog#2180-january-5-2026)
 - Interpret TwiML parameters to populate UI, see below [Interpreting Parameters](#interpreting-parameters)
 
 ### Feature addition schedule:
@@ -204,50 +204,43 @@ See [example](https://github.com/cybex-dev/twilio_voice/blob/master/example/andr
 
 ### Web Setup:
 
-**BREAKING CHANGES:**
-Since we are now using `web_callkit` package, the web implementation requires copying over only 2 files, please see the required files below.
+Nothing to do, the plugin handles everything for you.
 
-Web requires 2 files to be copied over/provided for web implementation to work correctly. These files are:
-1. `twilio.min.js`
-2. `js_notifications-sw.js`
+The Twilio Voice JS SDK is now **bundled with this plugin** and loaded automatically, and since
+`web_callkit` 1.0.0 the notification service worker is bundled and registered automatically too.
+There are **no files to copy** into your `web/` directory and **no `<script>` tag to add** to your
+`web/index.html`.
 
-Both of these files need to be copied over to the `web/` directory of your project. See [[Notes]](https://github.com/cybex-dev/twilio_voice/blob/master/NOTES.md#ios--macos)
+**Migrating from a previous version?** Remove the Twilio Voice JS SDK `<script>` tag from your
+`web/index.html` and delete `twilio.min.js` / `js_notifications-sw.js` from your `web/` folder if
+you copied them there:
 
-_The names of these files are very important, so make sure to have the file names exactly as described above._
+This is optional - if you leave your own `<script>` tag in place, the plugin detects the existing
+`window.Twilio` global and will **not** inject a second copy, so existing integrations keep working.
+Note that a self-supplied SDK is *not* version-checked against the plugin, so prefer removing it
+and using the bundled version this plugin was built against.
 
-The folder structure should look like this:
+The SDK is loaded automatically the first time you call
+`TwilioVoicePlatform.instance.setTokens(...)`. If you would like to pre-load it earlier (e.g. on a
+splash screen) you can await it explicitly:
 
+```dart
+// web only
+await (TwilioVoicePlatform.instance as TwilioVoiceWeb).ensureSdkLoaded();
 ```
-your_project/
-├── ...
-├── lib/
-├── web/
-│   ├── ...
-│   ├── index.html
-│   ├── twilio.min.js
-│   ├── js_notifications-sw.js
-│   ├── ...
-├── ...
-```
 
-**Note:** This is required for the browser to handle notifications in the background. The service
-worker will handle incoming call notifications and display them even when the app is not in focus.
+If the SDK fails to load, `setTokens(...)` returns `false` and the reason is emitted as a `LOG`
+call event.
 
-Finally, add the following code to your `index.html` file, **at the end of body tag**:
+See [[Notes]](https://github.com/cybex-dev/twilio_voice/blob/master/NOTES.md#web) and
+[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) for the bundled SDK version and its license.
 
-```html
-    <body>
-        <!--Start Twilio Voice impl-->
-        <!--twilio native js library-->
-        <script type="text/javascript" src="./twilio.min.js"></script>
-        <!--End Twilio Voice impl-->
+**Note:** the service worker (provided by `web_callkit`/`js_notifications`) lets the browser handle
+notifications in the background - displaying incoming call notifications even when the app is not in
+focus. It is registered for you; no manual copy step is required.
 
-        <script>
-            window.addEventListener('load', function(ev) {
-              // Download main.dart.js
-              ...          
-    </body>
-```
+**WASM:** the web implementation uses `dart:js_interop`/`package:web`, so it supports
+`flutter build web --wasm`. This requires Dart `>=3.3.0` and Flutter `>=3.22.0`.
 
 #### Web Considerations
 
@@ -967,5 +960,28 @@ when deploying (as part of the deploy text)
 
 ## Updating Twilio Voice JS SDK
 
-`twilio.js` is no longer hosted via CDNs (see [reference](https://github.com/twilio/twilio-voice.js/blob/master/README.md#cdn)), instead it is hosted via npm / github. See instructions found [here](https://github.com/twilio/twilio-voice.js/blob/master/README.md#github)
-This is automatically added to your `web/index.html` file, as a `<script/>` tag during runtime. See [here](./lib/_internal/twilio_loader.dart) for more info.);
+The Twilio Voice JS SDK is **bundled with this plugin** and loaded automatically on both web and
+macOS — you do not add a `<script>` tag, and there is no CDN dependency at runtime. This pins the
+SDK to the exact version the plugin's interop was written and tested against, the same way the SDK
+version is pinned per platform (iOS podspec, Android `build.gradle`).
+
+The bundled version is recorded in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md), which also
+carries the required Apache-2.0 notices for the redistributed SDK.
+
+The SDK ships **once**, as a Flutter asset (`assets/twilio.min.js`), and is shared by both platforms
+that need it:
+
+| Platform | How the bundled SDK is loaded |
+|---|---|
+| web | served at `assets/packages/twilio_voice/assets/twilio.min.js`, injected on first `setTokens(...)` |
+| macOS | read from the Flutter asset bundle, injected into the plugin's `WKWebView` as a `WKUserScript` |
+
+**Using a different SDK version.** Because the Dart/Swift interop targets a specific SDK version,
+changing it is a plugin-level change rather than an app-level one. Replace `assets/twilio.min.js`,
+then update the recorded version in `THIRD_PARTY_LICENSES.md` and `CHANGELOG.md`. Download builds
+from the [Twilio Voice JS SDK releases](https://github.com/twilio/twilio-voice.js/releases) or
+[npm](https://www.npmjs.com/package/@twilio/voice-sdk).
+
+**Web escape hatch.** If your app supplies its own SDK `<script>` tag, the plugin detects the
+existing `window.Twilio` global and skips injecting the bundled copy. This is not version-checked,
+so use it only if you specifically need a different build.

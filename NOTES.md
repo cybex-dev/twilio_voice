@@ -5,21 +5,32 @@
 
 Web implementation relies on the [js_notifications](https://pub.dev/packages/js_notifications) package for browser notifications. These notifications including Call functionality is used by a middleware package [web_callkit](https://pub.dev/packages/web_callkit) which provides boilerplate for call management and browser notification integration.
 
-- `js_notifications` requires the service worker file `js_notifications-sw.js` to be copied to your web directory. This file is used for handling notifications in the background.
-- `web_callkit` provides the boilerplate for call management and browser notification integration, however this package requires both files used in `js_notifications` package.
+- `js_notifications` (1.0.0+) bundles its service worker with the package and registers it automatically - the `js_notifications-sw.js` file no longer needs to be copied to your web directory. This service worker is used for handling notifications in the background.
+- `web_callkit` provides the boilerplate for call management and browser notification integration; since 1.0.0 it relies on the service worker bundled by `js_notifications`, so no files need to be copied into your `web/` folder.
 
-Further, and most importantly the `twilio_voice` package makes use of custom [twilio_voice.js](https://github.com/twilio/twilio-voice.js/) implementation (these changes are purely to provided Flutter status outputs allowing Flutter to monitor the status of the Twilio Device).
+Further, and most importantly the `twilio_voice` package makes use of the [twilio-voice.js](https://github.com/twilio/twilio-voice.js/) SDK.
 
-The javascript files required by `twilio_voice` is `twilio.min.js`, which is found in the `example/web` folder. This may in future be loaded dynamically, but for now is required to be provided in the `web/` folder.
+The Twilio Voice JS SDK (`twilio.min.js`) is **bundled with the plugin** (`assets/twilio.min.js`, served at `assets/packages/twilio_voice/assets/twilio.min.js`) and injected automatically the first time `setTokens(...)` is called - the Dart interop binds to the `window.Twilio` global, and the plugin ensures that global exists before constructing a `Device`. No `<script>` tag or copied file is required in your app's `web/` folder.
+
+If your app already provides its own SDK `<script>` tag, the plugin detects the existing `window.Twilio` global and does not inject a second copy (the self-supplied SDK is not version-checked). Pre-load explicitly with `(TwilioVoicePlatform.instance as TwilioVoiceWeb).ensureSdkLoaded()` if needed. See [README - Web Setup](README.md#web-setup).
+
+The bundled SDK is redistributed under the Apache License 2.0 - see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) for the version and required notices.
+
+**WASM:** the web implementation uses `dart:js_interop` + `package:web`, so `flutter build web --wasm` is supported (requires Dart >=3.3.0, Flutter >=3.22.0).
 
 ### Android
 
 **Package Information:**
 > minSdkVersion: 26
-> compileSdkVersion: 34
+> 
+> compileSdkVersion: 36
 
 **Gradle:**
-> gradle-wrapper: 8.2.1-all
+> gradle-wrapper: 8.11.1-all
+> 
+> Android Gradle Plugin (AGP): 8.9.1
+> 
+> Kotlin: 2.1.0
 
 **Permissions:**
 * `android.permission.FOREGROUND_SERVICE`
@@ -66,6 +77,11 @@ alternatively, this could be found in Phone App settings -> Other/Advanced Call 
 
 ### iOS & macOS
 
+**iOS Pod Information:**
+> s.platform = :ios, '13.0'
+> 
+> s.ios.deployment_target = '13.0'
+
 If you encounter this error
 > warning: The macOS deployment target 'MACOSX_DEPLOYMENT_TARGET' is set to 10.XX, but the range of supported deployment target versions is 10.XY to 13.1.99. (in target 'ABCD' from project 'Pods')
 
@@ -92,6 +108,21 @@ end
 
 ## Limitations
 
+### General
+
+Twilio does not reliably provide a way to determine whether a call was answered elsewhere (e.g. on another device), which unfortunately means any call that is made to a receiving device and is either cancelled early or answered elsewhere will be logged as a missed call. This is a limitation of the Twilio API and not the plugin itself. See [here](https://github.com/twilio/twilio-voice.js/issues/435) for more information.
+
+### Android
+
+Android `ConnectionService` provides the fundamentals to managing calls, including but not limited to call logging. Using a Managed `ConnectionService` means that call logging is handled by the system's "Phone App", and so there is not access or control over call logging at this time.
+
 ### macOS
 
 Clearly, macOS isn't uppermost in mind when looking at a mobile first platform like Flutter. There are some functionality limitations for the platform/interop such as [UIImage](https://docs.flutter.dev/ui/assets-and-images#loading-ios-images-in-flutter) support and Twilio Voice library support as a whole. Hopefully we'll be seeing these implemented in future.
+
+With respect to CallKit integration for macOS, there isn't any direct support for CallKit other than via MacCatalyst which at present is somewhat out of scope for the project at this time.
+
+
+### Web
+
+As Web uses a custom [WebCallkit](https://github.com/cybex-dev/web_callkit) integration, this facilitates basic call management and browser notification integration. Call logging is not supported at this time.

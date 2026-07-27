@@ -26,8 +26,10 @@ import com.twilio.twilio_voice.types.BundleExtensions.getParcelableSafe
 import com.twilio.twilio_voice.types.CallDirection
 import com.twilio.twilio_voice.types.CompletionHandler
 import com.twilio.twilio_voice.types.ContextExtension.appName
+import com.twilio.twilio_voice.types.ContextExtension.checkPermission
 import com.twilio.twilio_voice.types.ContextExtension.hasCallPhonePermission
 import com.twilio.twilio_voice.types.ContextExtension.hasManageOwnCallsPermission
+import com.twilio.twilio_voice.types.ContextExtension.hasMicrophoneAccess
 import com.twilio.twilio_voice.types.IntentExtension.getParcelableExtraSafe
 import com.twilio.twilio_voice.types.TelecomManagerExtension.getPhoneAccountHandle
 import com.twilio.twilio_voice.types.TelecomManagerExtension.hasCallCapableAccount
@@ -36,6 +38,7 @@ import com.twilio.twilio_voice.types.TelecomManagerExtension.registerPhoneAccoun
 import com.twilio.twilio_voice.types.ValueBundleChanged
 import com.twilio.voice.*
 import com.twilio.voice.Call
+//import com.twilio.voice.CallException
 
 class TVConnectionService : ConnectionService() {
 
@@ -46,7 +49,12 @@ class TVConnectionService : ConnectionService() {
 
         val TWI_SCHEME: String = "twi"
 
-        val SERVICE_TYPE_MICROPHONE: Int = 100
+        /**
+         * Notification id used for the foreground-service (ongoing call) notification.
+         */
+        const val FOREGROUND_NOTIFICATION_ID: Int = 100
+
+        val SERVICE_TYPE_MICROPHONE: Int = FOREGROUND_NOTIFICATION_ID
 
         //region ACTIONS_* Constants
         /**
@@ -110,6 +118,14 @@ class TVConnectionService : ConnectionService() {
          * Action used to poll the ConnectionService for the active call handle.
          */
         const val ACTION_ACTIVE_HANDLE: String = "ACTION_ACTIVE_HANDLE"
+
+        /**
+         * Action used to re-issue [startForeground] with recomputed foreground service types,
+         * e.g. after RECORD_AUDIO is granted mid-call so the microphone type can be added to
+         * the already-running service (a foreground service's types are fixed at the last
+         * [startForeground] call, not re-evaluated when permissions change).
+         */
+        const val ACTION_REFRESH_FOREGROUND_SERVICE_TYPES: String = "ACTION_REFRESH_FOREGROUND_SERVICE_TYPES"
         //endregion
 
         //region EXTRA_* Constants
@@ -132,6 +148,19 @@ class TVConnectionService : ConnectionService() {
          * Extra used with [ACTION_CANCEL_CALL_INVITE] to cancel a call connection
          */
         const val EXTRA_CANCEL_CALL_INVITE: String = "EXTRA_CANCEL_CALL_INVITE"
+
+        /**
+         * Extra used with [ACTION_CANCEL_CALL_INVITE] describing the [CancelledCallInvite]'s
+         * [com.twilio.voice.CallException] error code. This is used to determine whether a call
+         * may be considered a missed call.
+         */
+        const val EXTRA_CANCEL_CALL_INVITE_ERROR_CODE: String = "EXTRA_CANCEL_CALL_INVITE_ERROR_CODE"
+
+        /**
+         * Extra used with [EXTRA_CANCEL_CALL_INVITE_ERROR_CODE] when no error is provided or as
+         * a default value.
+         */
+        const val NO_ERROR_CODE: Int = 0
 
         /**
          * Extra used with [ACTION_PLACE_OUTGOING_CALL] to place an outgoing call connection. Denotes the Twilio Voice access token.
@@ -238,24 +267,43 @@ class TVConnectionService : ConnectionService() {
                 }
 
                 ACTION_CANCEL_CALL_INVITE -> {
+                    tryStartForegroundService()
+
                     // Load CancelledCallInvite class loader
                     // See: https://github.com/twilio/voice-quickstart-android/issues/561#issuecomment-1678613170
                     it.setExtrasClassLoader(CallInvite::class.java.classLoader)
                     val cancelledCallInvite = it.getParcelableExtraSafe<CancelledCallInvite>(EXTRA_CANCEL_CALL_INVITE) ?: run {
                         Log.e(TAG, "onStartCommand: ACTION_CANCEL_CALL_INVITE is missing parcelable EXTRA_CANCEL_CALL_INVITE")
-                        return@let
-                    }
+                                // Tear down the foreground service we just started if nothing else is running.
+                                onConnectionEnded(null)
+                                return@let
+                            }
 
                     val callHandle = cancelledCallInvite.callSid
-                    getConnection(callHandle)?.onAbort() ?: run {
-                        Log.e(TAG, "onStartCommand: [ACTION_CANCEL_CALL_INVITE] could not find connection for callHandle: $callHandle")
+                    val connection = getConnection(callHandle) as? TVCallInviteConnection
+                    if (connection == null) {
+                        Log.e(TAG, "onStartCommand: [ACTION_CANCEL_CALL_INVITE] could not find incoming connection for callHandle: $callHandle")
+                    } else {
+                        val errorCode = it.getIntExtra(EXTRA_CANCEL_CALL_INVITE_ERROR_CODE, NO_ERROR_CODE)
+
+                        when (errorCode) {
+//                            NO_ERROR_CODE -> Unit
+//                            CallException.EXCEPTION_REQUEST_TERMINATED_ERROR -> connection.reportAnsweredElsewhere()
+                            else -> connection.reportMissedCall()
+                        }
                     }
+                    // Stop the foreground service if the cancel left no active calls (also
+                    // covers the no-connection case). Idempotent with reportMissedCall's teardown.
+                    onConnectionEnded(null)
                 }
 
                 ACTION_INCOMING_CALL -> {
+                    tryStartForegroundService()
+
                     // Load CallInvite class loader & get callInvite
                     val callInvite = it.getParcelableExtraSafe<CallInvite>(EXTRA_INCOMING_CALL_INVITE) ?: run {
                         Log.e(TAG, "onStartCommand: 'ACTION_INCOMING_CALL' is missing parcelable 'EXTRA_INCOMING_CALL_INVITE'")
+                        onConnectionEnded(null)
                         return@let
                     }
 
@@ -263,6 +311,7 @@ class TVConnectionService : ConnectionService() {
                     if (!telecomManager.canReadPhoneState(applicationContext)) {
                         Log.e(TAG, "onCallInvite: Permission to read phone state not granted or requested.")
                         callInvite.reject(applicationContext)
+                        onConnectionEnded(null)
                         return@let
                     }
 
@@ -270,10 +319,12 @@ class TVConnectionService : ConnectionService() {
                     val phoneAccount = telecomManager.getPhoneAccount(phoneAccountHandle)
                     if(phoneAccount == null) {
                         Log.e(TAG, "onStartCommand: PhoneAccount is null, make sure to register one with `registerPhoneAccount()`")
+                        onConnectionEnded(null)
                         return@let
                     }
                     if(!phoneAccount.isEnabled) {
                         Log.e(TAG, "onStartCommand: PhoneAccount is not enabled, prompt the user to enable the phone account by opening settings with `openPhoneAccountSettings()`")
+                        onConnectionEnded(null)
                         return@let
                     }
 
@@ -287,6 +338,7 @@ class TVConnectionService : ConnectionService() {
                                     "- Have you activated the Calling Account?"
                         )
                         callInvite.reject(applicationContext)
+                        onConnectionEnded(null)
                         return@let
                     }
 
@@ -413,7 +465,9 @@ class TVConnectionService : ConnectionService() {
                         putBundle(TelecomManager.EXTRA_OUTGOING_CALL_EXTRAS, myBundle)
                     }
 
-                    val address: Uri = Uri.fromParts(PhoneAccount.SCHEME_TEL, to, null)
+                    // Raw connect() calls have no To; use an empty address rather than
+                    // passing null into the Uri.
+                    val address: Uri = Uri.fromParts(PhoneAccount.SCHEME_TEL, to ?: "", null)
                     telecomManager.placeCall(address, extras)
                 }
 
@@ -469,6 +523,18 @@ class TVConnectionService : ConnectionService() {
                     sendBroadcastCallHandle(applicationContext, activeCallHandle)
                 }
 
+                ACTION_REFRESH_FOREGROUND_SERVICE_TYPES -> {
+                    // Re-issue startForeground with recomputed types so e.g. the microphone
+                    // type joins a call whose foreground service was started before
+                    // RECORD_AUDIO was granted.
+                    if (hasActiveCalls()) {
+                        tryStartForegroundService()
+                    } else {
+                        // Nothing to refresh; don't leave a needlessly started service behind.
+                        stopSelfSafe()
+                    }
+                }
+
                 else -> {
                     Log.e(TAG, "onStartCommand: unknown action: ${it.action}")
                 }
@@ -519,7 +585,7 @@ class TVConnectionService : ConnectionService() {
         applyParameters(connection, callParams)
         connection.setRinging()
 
-        startForegroundService()
+        tryStartForegroundService()
         return connection
     }
 
@@ -530,25 +596,26 @@ class TVConnectionService : ConnectionService() {
         super.onCreateOutgoingConnection(connectionManagerPhoneAccount, request)
         Log.d(TAG, "onCreateOutgoingConnection")
 
-        val extras = request?.extras
-        val myBundle: Bundle = extras?.getBundle(EXTRA_OUTGOING_PARAMS) ?: run {
-            Log.e(TAG, "onCreateOutgoingConnection: request is missing Bundle EXTRA_OUTGOING_PARAMS")
-            throw Exception("onCreateOutgoingConnection: request is missing Bundle EXTRA_OUTGOING_PARAMS");
+        // Never throw from a ConnectionService callback: it runs in a Telecom binder callback
+        // and an uncaught exception kills the process. Invalid requests return a failed
+        // Connection instead, which Telecom tears down gracefully.
+        fun failedConnection(reason: String): Connection {
+            Log.e(TAG, "onCreateOutgoingConnection: $reason")
+            sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, "")
+            return Connection.createFailedConnection(DisconnectCause(DisconnectCause.ERROR, reason))
         }
 
-        // check required EXTRA_TOKEN, EXTRA_TO, EXTRA_FROM
-        val token: String = myBundle.getString(EXTRA_TOKEN) ?: run {
-            Log.e(TAG, "onCreateOutgoingConnection: ACTION_PLACE_OUTGOING_CALL is missing String EXTRA_TOKEN")
-            throw Exception("onCreateOutgoingConnection: ACTION_PLACE_OUTGOING_CALL is missing String EXTRA_TOKEN");
-        }
-        val to = myBundle.getString(EXTRA_TO) ?: run {
-            Log.e(TAG, "onCreateOutgoingConnection: ACTION_PLACE_OUTGOING_CALL is missing String EXTRA_TO")
-            throw Exception("onCreateOutgoingConnection: ACTION_PLACE_OUTGOING_CALL is missing String EXTRA_TO");
-        }
-        val from = myBundle.getString(EXTRA_FROM) ?: run {
-            Log.e(TAG, "onCreateOutgoingConnection: ACTION_PLACE_OUTGOING_CALL is missing String EXTRA_FROM")
-            throw Exception("onCreateOutgoingConnection: ACTION_PLACE_OUTGOING_CALL is missing String EXTRA_FROM");
-        }
+        val myBundle: Bundle = request?.extras?.getBundle(EXTRA_OUTGOING_PARAMS)
+            ?: return failedConnection("request is missing Bundle EXTRA_OUTGOING_PARAMS")
+
+        val token: String = myBundle.getString(EXTRA_TOKEN)
+            ?: return failedConnection("ACTION_PLACE_OUTGOING_CALL is missing String EXTRA_TOKEN")
+
+        // To/From are deliberately absent for raw connect() calls (EXTRA_CONNECT_RAW): all
+        // routing parameters travel in EXTRA_OUTGOING_PARAMS and the TwiML application
+        // decides the destination, so both are optional here.
+        val to = myBundle.getString(EXTRA_TO)
+        val from = myBundle.getString(EXTRA_FROM)
 
         // Get all params from bundle
         val params = HashMap<String, String>()
@@ -562,8 +629,8 @@ class TVConnectionService : ConnectionService() {
                 }
             }
         }
-        params["From"] = from
-        params["To"] = to
+        from?.let { params["From"] = it }
+        to?.let { params["To"] = it }
 
         // create connect options
         val connectOptions = ConnectOptions.Builder(token)
@@ -585,8 +652,8 @@ class TVConnectionService : ConnectionService() {
                 val call = connection.twilioCall!!
                 val callSid = call.sid!!
 
-                // Resolve call parameters
-                val callParams = TVCallParametersImpl(mStorage, call, to, from, params)
+                // Resolve call parameters (raw connect() calls carry no explicit To/From)
+                val callParams = TVCallParametersImpl(mStorage, call, to ?: "", from ?: "", params)
                 connection.setCallParameters(callParams)
 
                 // If call is not attached, attach it
@@ -602,12 +669,8 @@ class TVConnectionService : ConnectionService() {
         // Set call disconnected listener, removes connection from active connections when call is disconnected
         val onCallInitializingDisconnectedListener: CompletionHandler<DisconnectCause> = CompletionHandler {
             connection.twilioCall?.let {
-                if (activeConnections.containsKey(it.sid)) {
-                    activeConnections.remove(it.sid)
-                }
                 sendBroadcastEvent(applicationContext, TVBroadcastReceiver.ACTION_CALL_ENDED, it.sid ?: "", connection.extras)
-                stopForegroundService()
-                stopSelfSafe()
+                onConnectionEnded(it.sid)
             }
         }
 
@@ -634,9 +697,28 @@ class TVConnectionService : ConnectionService() {
         // Apply extras
         connection.extras = request.extras
 
-        startForegroundService()
+        tryStartForegroundService()
 
         return connection
+    }
+
+    /**
+     * Tears down state for a single ended connection: removes it from [activeConnections]
+     * and only demotes the service (stopForeground + stopSelf) once no active calls remain.
+     * With concurrent calls, ending one call must not demote the service - the remaining
+     * call still depends on the foreground state for its process priority and (Android 11+)
+     * background microphone access.
+     * @param callSid The SID of the ended connection, or null if it never received one
+     * (e.g. a connection that failed during creation).
+     */
+    private fun onConnectionEnded(callSid: String?) {
+        callSid?.let { activeConnections.remove(it) }
+        if (!hasActiveCalls()) {
+            stopForegroundService()
+            stopSelf()
+        } else {
+            Log.d(TAG, "onConnectionEnded: ${activeConnections.size} call(s) still active, keeping foreground service")
+        }
     }
 
     /**
@@ -656,19 +738,11 @@ class TVConnectionService : ConnectionService() {
             sendBroadcastCallHandle(applicationContext, extra?.getString(TVBroadcastReceiver.EXTRA_CALL_HANDLE))
         }
         val onDisconnect: CompletionHandler<DisconnectCause> = CompletionHandler {
-            if (activeConnections.containsKey(callSid)) {
-                activeConnections.remove(callSid)
-            }
-            stopForegroundService()
-            stopSelfSafe()
+            onConnectionEnded(callSid)
         }
         val onCallState: CompletionHandler<Call.State> = CompletionHandler { state ->
             if (state == Call.State.DISCONNECTED) {
-                if (activeConnections.containsKey(callSid)) {
-                    activeConnections.remove(callSid)
-                }
-                stopForegroundService()
-                stopSelfSafe()
+                onConnectionEnded(callSid)
             }
         }
 
@@ -717,13 +791,17 @@ class TVConnectionService : ConnectionService() {
     override fun onCreateOutgoingConnectionFailed(connectionManagerPhoneAccount: PhoneAccountHandle?, request: ConnectionRequest?) {
         super.onCreateOutgoingConnectionFailed(connectionManagerPhoneAccount, request)
         Log.d(TAG, "onCreateOutgoingConnectionFailed")
-        stopForegroundService()
+        // The failed connection was never added to activeConnections; only demote the
+        // service if no other call is active.
+        onConnectionEnded(null)
     }
 
     override fun onCreateIncomingConnectionFailed(connectionManagerPhoneAccount: PhoneAccountHandle?, request: ConnectionRequest?) {
         super.onCreateIncomingConnectionFailed(connectionManagerPhoneAccount, request)
         Log.d(TAG, "onCreateIncomingConnectionFailed")
-        stopForegroundService()
+        // The failed connection was never added to activeConnections; only demote the
+        // service if no other call is active.
+        onConnectionEnded(null)
     }
 
     private fun getOrCreateChannel(): NotificationChannel {
@@ -759,19 +837,37 @@ class TVConnectionService : ConnectionService() {
 
     private fun cancelNotification() {
         val notificationManager: NotificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.cancel(SERVICE_TYPE_MICROPHONE)
+        notificationManager.cancel(FOREGROUND_NOTIFICATION_ID)
     }
 
     /// Source: https://github.com/react-native-webrtc/react-native-callkeep/blob/master/android/src/main/java/io/wazo/callkeep/VoiceConnectionService.java#L295
-    private fun startForegroundService() {
+    private fun tryStartForegroundService() {
         val notification = createNotification()
         Log.d(TAG, "[VoiceConnectionService] Starting foreground service")
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                // Optional for Android +11, required for Android +14
-                startForeground(SERVICE_TYPE_MICROPHONE, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                // phoneCall: the correct type for a ConnectionService-managed call. Its
+                // prerequisite (MANAGE_OWN_CALLS) is a manifest permission, so the service
+                // can always start with this type - including from the background on an
+                // incoming FCM push, where a microphone-typed start is restricted.
+                var serviceTypes = ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL
+                // microphone: keeps mic access alive while the app is backgrounded mid-call
+                // (Android 11+ while-in-use restrictions). Only added when:
+                //  - RECORD_AUDIO is already granted (starting a microphone-typed FGS without
+                //    it throws a SecurityException on Android 14+), and
+                //  - the FOREGROUND_SERVICE_MICROPHONE permission is present in the merged
+                //    manifest (API 34+). Apps that prefer a phoneCall-only foreground service
+                //    (e.g. to avoid the Play Console microphone FGS declaration) can remove it
+                //    with: <uses-permission android:name=
+                //    "android.permission.FOREGROUND_SERVICE_MICROPHONE" tools:node="remove"/>
+                val hasFgsMicPermission = Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
+                        checkPermission(android.Manifest.permission.FOREGROUND_SERVICE_MICROPHONE)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && hasMicrophoneAccess() && hasFgsMicPermission) {
+                    serviceTypes = serviceTypes or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                }
+                startForeground(FOREGROUND_NOTIFICATION_ID, notification, serviceTypes)
             } else {
-                startForeground(SERVICE_TYPE_MICROPHONE, notification)
+                startForeground(FOREGROUND_NOTIFICATION_ID, notification)
             }
         } catch (e: Exception) {
             Log.w(TAG, "[VoiceConnectionService] Can't start foreground service : $e")
@@ -782,7 +878,9 @@ class TVConnectionService : ConnectionService() {
     private fun stopForegroundService() {
         Log.d(TAG, "[VoiceConnectionService] stopForegroundService")
         try {
-            stopForeground(SERVICE_TYPE_MICROPHONE)
+            // STOP_FOREGROUND_REMOVE is a flags value; previously the notification id (100)
+            // was passed here, which is not a valid flag.
+            stopForeground(STOP_FOREGROUND_REMOVE)
             cancelNotification()
         } catch (e: java.lang.Exception) {
             Log.w(TAG, "[VoiceConnectionService] can't stop foreground service :$e")

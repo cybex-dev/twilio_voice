@@ -17,7 +17,9 @@ public class TVDevice: JSObject, TVDeviceDelegate, JSMessageHandlerDelegate {
         super.jsObjectDelegate = self
         JSObject.assign(webView: webView, objectName: "Twilio.Device", withArgs: [token, options], assignTo: jsObjectName, mutatable: true) { result, error in
             if let error = error {
-                print(String(describing: error))
+                print("Error creating Twilio.Device: \(String(describing: error))")
+                createdCompletionHandler(nil, error)
+                return
             }
             createdCompletionHandler(self, nil)
         }

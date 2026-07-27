@@ -1,6 +1,6 @@
 name: twilio_voice
 description: Provides an interface to Twilio's Programmable Voice SDK to allow adding voice-over-IP (VoIP) calling into your Flutter applications.
-version: 0.3.2+2
+version: 0.4.0
 homepage: https://twilio-voice-web.web.app/
 repository: https://github.com/cybex-dev/twilio_voice
 issue_tracker: https://github.com/cybex-dev/twilio_voice/issues
@@ -12,8 +12,10 @@ topics:
   - phone
 
 environment:
-  sdk: ">=2.18.0 <4.0.0"
-  flutter: ">=1.10.0"
+  # Dart 3.3+ required for extension types (dart:js_interop) used by the web implementation.
+  sdk: ">=3.3.0 <4.0.0"
+  # Flutter 3.22+ ships Dart 3.4 and is the minimum required by web_callkit 1.0.0.
+  flutter: ">=3.22.0"
 
 dependencies:
   flutter:
@@ -21,10 +23,8 @@ dependencies:
   flutter_web_plugins:
     sdk: flutter
   plugin_platform_interface: ^2.1.4
-  # temporarily - upgrade to js: 0.7.2 then finally js_interop:
-  js: ^0.7.1
   web: ^1.1.0
-  web_callkit: ^0.0.4+1
+  web_callkit: ^1.0.1
 
 dev_dependencies:
   flutter_lints: ^2.0.2
@@ -56,6 +56,13 @@ flutter:
         fileName: _internal/twilio_voice_web.dart
       macos:
         pluginClass: TwilioVoicePlugin
+
+  # The Twilio Voice JS SDK is bundled with the plugin and loaded automatically by the web
+  # implementation (see TwilioVoiceWeb.ensureSdkLoaded). Apps no longer need to add a <script>
+  # tag to their web/index.html. Served at:
+  #   assets/packages/twilio_voice/assets/twilio.min.js
+  assets:
+    - assets/twilio.min.js
 
   # To add assets to your plugin package, add an assets section, like this:
   # assets:

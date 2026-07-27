@@ -48,7 +48,7 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
   /// Setting is persisted across restarts until overridden
   @override
   set showMissedCallNotifications(bool value) {
-    _channel.invokeMethod('show-notifications', <String, dynamic>{"show": value});
+    _channel.invokeMethod('showNotifications', <String, dynamic>{"show": value});
   }
 
   /// Unregisters from Twilio
@@ -441,6 +441,14 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
   Future<void> updateSounds({Map<SoundName, String>? sounds}) {
     // TODO: implement updateSounds
     throw UnimplementedError();
+  }
+
+  @override
+  Future<void> enableCallLogging({bool enable = true}) {
+    if (defaultTargetPlatform != TargetPlatform.iOS) {
+      return Future.value();
+    }
+    return _channel.invokeMethod('enableCallLogging', <String, dynamic>{"enable": enable});
   }
 }
 

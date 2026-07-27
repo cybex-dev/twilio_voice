@@ -3,6 +3,7 @@ package com.twilio.twilio_voice
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.Application
 import android.content.Context
 import android.content.DialogInterface
 import android.content.Intent
@@ -21,6 +22,7 @@ import androidx.core.content.ContextCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.twilio.twilio_voice.constants.Constants
 import com.twilio.twilio_voice.constants.FlutterErrorCodes
+import com.twilio.twilio_voice.fcm.VoiceFirebaseMessagingService
 import com.twilio.twilio_voice.receivers.TVBroadcastReceiver
 import com.twilio.twilio_voice.service.TVConnectionService
 import com.twilio.twilio_voice.storage.Storage
@@ -87,6 +89,14 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     private var methodChannel: MethodChannel? = null
     private var eventChannel: EventChannel? = null
     private var eventSink: EventSink? = null
+
+    /// Events emitted before the Dart side subscribes to the event channel (e.g. an
+    /// incoming call arriving during a cold start, before the listener attaches) are
+    /// buffered here and flushed in [onListen], instead of being silently dropped.
+    /// Bounded so a listener that never attaches cannot grow this without limit; oldest
+    /// events are discarded first. Accessed only on the main thread.
+    private val pendingEvents = ArrayDeque<String>()
+    private val maxPendingEvents = 50
 
     // member instance functions
     private var callListener = callListener()
@@ -237,12 +247,12 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     ): Boolean {
         Log.d(TAG, "onRequestPermissionsResult: $requestCode")
 
-        if (permissions.isNotEmpty()) {
-            permissionResultHandler[requestCode]?.let { handler ->
-                val granted = grantResults[0] == PackageManager.PERMISSION_GRANTED
-                handler(granted)
-                permissionResultHandler.remove(requestCode)
-            }
+        permissionResultHandler.remove(requestCode)?.let { handler ->
+            // Empty arrays mean the request was cancelled by the system (e.g. interaction
+            // interrupted) — treat as denied rather than leaking the handler, which would
+            // leave the awaiting Dart Future hanging.
+            val granted = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
+            handler(granted)
         }
 
         if (requestCode == REQUEST_CODE_MICROPHONE) {
@@ -252,6 +262,16 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                     Log.d(TAG, "onRequestPermissionsResult: Microphone foreground permission granted: $granted");
                 });
                 logEventPermission("Microphone", true)
+
+                // If a call's foreground service is already running (started before the mic
+                // permission was granted), refresh its foreground service types so the
+                // microphone type is added mid-call.
+                context?.let { ctx ->
+                    Intent(ctx, TVConnectionService::class.java).apply {
+                        action = TVConnectionService.ACTION_REFRESH_FOREGROUND_SERVICE_TYPES
+                        ctx.startService(this)
+                    }
+                }
             } else {
                 Log.d(TAG, "Microphone permission not granted")
                 logEventPermission("Microphone", false)
@@ -320,6 +340,14 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     override fun onListen(arguments: Any?, events: EventSink?) {
         Log.i(TAG, "Setting event sink")
         this.eventSink = events
+        // Flush events buffered before the listener attached (e.g. an incoming call that
+        // arrived during a cold start, before Dart subscribed).
+        if (events != null && pendingEvents.isNotEmpty()) {
+            Log.i(TAG, "Flushing ${pendingEvents.size} buffered event(s)")
+            val buffered = pendingEvents.toList()
+            pendingEvents.clear()
+            buffered.forEach { events.success(it) }
+        }
     }
 
     override fun onCancel(arguments: Any?) {
@@ -1097,8 +1125,11 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         connect: Boolean = false
     ): Boolean {
         assert(accessToken.isNotEmpty()) { "Twilio Access Token cannot be empty" }
-        assert(!connect && (to == null || to.isNotEmpty())) { "To cannot be empty" }
-        assert(!connect && (from == null || from.isNotEmpty())) { "From cannot be empty" }
+        // Raw connect() calls may omit To/From entirely (the TwiML app decides routing);
+        // only regular makeCall requires them. The previous expressions were inverted and
+        // would have failed for every raw connect had assertions been enabled.
+        assert(connect || !to.isNullOrEmpty()) { "To cannot be empty" }
+        assert(connect || !from.isNullOrEmpty()) { "From cannot be empty" }
 
         telecomManager?.let { tm ->
             if (!tm.hasCallCapableAccount(ctx, TVConnectionService::class.java.name)) {
@@ -1318,17 +1349,45 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     }
 
     //region Flutter ActivityPluginBinding
+    /**
+     * Catches microphone grants made outside the plugin's own permission flow (e.g. the user
+     * enabling the mic in system Settings mid-call): when the app comes back to the
+     * foreground during an active call with the mic granted, refresh the call's foreground
+     * service types so the microphone type can join. The refresh is idempotent - if the
+     * types are already up to date, re-issuing startForeground is a no-op.
+     */
+    private val activityLifecycleListener = object : Application.ActivityLifecycleCallbacks {
+        override fun onActivityResumed(resumedActivity: Activity) {
+            if (resumedActivity != activity) return
+            if (TVConnectionService.hasActiveCalls() && resumedActivity.hasMicrophoneAccess()) {
+                Intent(resumedActivity, TVConnectionService::class.java).apply {
+                    action = TVConnectionService.ACTION_REFRESH_FOREGROUND_SERVICE_TYPES
+                    resumedActivity.startService(this)
+                }
+            }
+        }
+
+        override fun onActivityCreated(a: Activity, savedInstanceState: Bundle?) {}
+        override fun onActivityStarted(a: Activity) {}
+        override fun onActivityPaused(a: Activity) {}
+        override fun onActivityStopped(a: Activity) {}
+        override fun onActivitySaveInstanceState(a: Activity, outState: Bundle) {}
+        override fun onActivityDestroyed(a: Activity) {}
+    }
+
     override fun onAttachedToActivity(activityPluginBinding: ActivityPluginBinding) {
         Log.d(TAG, "onAttachedToActivity")
         activity = activityPluginBinding.activity
         activityPluginBinding.addOnNewIntentListener(this)
         activityPluginBinding.addRequestPermissionsResultListener(this)
+        activityPluginBinding.activity.application.registerActivityLifecycleCallbacks(activityLifecycleListener)
         registerReceiver()
     }
 
     override fun onDetachedFromActivityForConfigChanges() {
         Log.d(TAG, "onDetachedFromActivityForConfigChanges")
         unregisterReceiver()
+        activity?.application?.unregisterActivityLifecycleCallbacks(activityLifecycleListener)
         activity = null
     }
 
@@ -1337,12 +1396,14 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         activity = activityPluginBinding.activity
         activityPluginBinding.addRequestPermissionsResultListener(this)
         activityPluginBinding.addOnNewIntentListener(this)
+        activityPluginBinding.activity.application.registerActivityLifecycleCallbacks(activityLifecycleListener)
         registerReceiver()
     }
 
     override fun onDetachedFromActivity() {
         Log.d(TAG, "onDetachedFromActivity")
         unregisterReceiver()
+        activity?.application?.unregisterActivityLifecycleCallbacks(activityLifecycleListener)
         activity = null
     }
     //endregion
@@ -1360,6 +1421,8 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 addAction(TVBroadcastReceiver.ACTION_CALL_ENDED)
                 addAction(TVBroadcastReceiver.ACTION_CALL_STATE)
                 addAction(TVBroadcastReceiver.ACTION_INCOMING_CALL_IGNORED)
+
+                addAction(VoiceFirebaseMessagingService.ACTION_NEW_TOKEN)
 
                 addAction(TVNativeCallActions.ACTION_ANSWERED)
                 addAction(TVNativeCallActions.ACTION_REJECTED)
@@ -1404,16 +1467,10 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
 
     //region Logging
     private fun logEvents(descriptions: Array<String>) {
-        if (eventSink == null) {
-            return
-        }
         logEvents("LOG", "|", "|", descriptions, false)
     }
 
     private fun logEvents(prefix: String, descriptions: Array<String>) {
-        if (eventSink == null) {
-            return
-        }
         logEvents(prefix, "|", "|", descriptions, false)
     }
 
@@ -1424,9 +1481,6 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         descriptions: Array<String>,
         isError: Boolean = false
     ) {
-        if (eventSink == null) {
-            return
-        }
         val description = descriptions.joinToString(descriptionSeparator)
         logEvent(prefix, separator, description, isError)
     }
@@ -1457,16 +1511,25 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         description: String,
         isError: Boolean = false
     ) {
-        if (eventSink == null) {
+        if (isError) {
+            // Errors are transient diagnostics; don't buffer them - drop if no listener.
+            eventSink?.error(FlutterErrorCodes.UNAVAILABLE_ERROR, description, null)
+                ?: Log.w(TAG, "logEvent(error) dropped, no event sink: $description")
             return
         }
-        if (isError) {
-            eventSink!!.error(FlutterErrorCodes.UNAVAILABLE_ERROR, description, null)
-        } else {
-            val message = if (prefix.isEmpty()) description else "$prefix$separator$description"
-            Log.d(TAG, "logEvent: $message")
-            eventSink!!.success(message)
+        val message = if (prefix.isEmpty()) description else "$prefix$separator$description"
+        val sink = eventSink
+        if (sink == null) {
+            // Buffer until the Dart listener attaches (see pendingEvents / onListen).
+            if (pendingEvents.size >= maxPendingEvents) {
+                pendingEvents.removeFirst()
+            }
+            pendingEvents.addLast(message)
+            Log.d(TAG, "logEvent: buffered (no event sink yet): $message")
+            return
         }
+        Log.d(TAG, "logEvent: $message")
+        sink.success(message)
     }
     //endregion
 
@@ -1623,21 +1686,32 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         }
 
         logEvent("requestPermissionFor$permissionName")
+        permissionResultHandler[requestCode] = onPermissionResult
+
         val shouldShowRationale = ActivityCompat.shouldShowRequestPermissionRationale(activity!!, manifestPermission)
         if (shouldShowRationale) {
+            var proceedClicked = false
             val clickListener =
-                DialogInterface.OnClickListener { _: DialogInterface?, _: Int ->
+                DialogInterface.OnClickListener { dialog: DialogInterface?, _: Int ->
+                    proceedClicked = true
+                    dialog?.dismiss()
+                }
+            val dismissListener = DialogInterface.OnDismissListener { _: DialogInterface? ->
+                if (proceedClicked) {
+                    logEvent("Request" + permissionName + "Access")
                     ActivityCompat.requestPermissions(
                         activity!!, arrayOf(manifestPermission), requestCode
                     )
+                } else {
+                    // Cancelled or dismissed without proceeding: complete the pending result
+                    // as denied instead of leaving the Dart Future hanging.
+                    logEvent("Request" + permissionName + "AccessDismissed")
+                    permissionResultHandler.remove(requestCode)?.invoke(false)
                 }
-            val dismissListener = DialogInterface.OnDismissListener { _: DialogInterface? ->
-                logEvent("Request" + permissionName + "Access")
             }
             showPermissionRationaleDialog(activity!!, "$permissionName Permissions", description, clickListener, dismissListener)
         } else {
             ActivityCompat.requestPermissions(activity!!, arrayOf(manifestPermission), requestCode)
-            permissionResultHandler[requestCode] = onPermissionResult
         }
     }
 
@@ -1845,7 +1919,10 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                     return
                 }
                 val direction = intent.getIntExtra(TVBroadcastReceiver.EXTRA_CALL_DIRECTION, -1)
-                val callDirection = CallDirection.fromId(direction).toString()
+                val callDirection = CallDirection.fromId(direction)?.label
+                    ?: CallDirection.OUTGOING.label.also {
+                        Log.w(TAG, "EVENT_RINGING: unknown call direction id $direction, defaulting to Outgoing")
+                    }
 
 //                callSid = callHandle
                 logEvents("", arrayOf("Ringing", from, to, callDirection))
@@ -1876,7 +1953,10 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                     return
                 }
                 val direction = intent.getIntExtra(TVBroadcastReceiver.EXTRA_CALL_DIRECTION, -1)
-                val callDirection = CallDirection.fromId(direction)!!.label
+                val callDirection = CallDirection.fromId(direction)?.label
+                    ?: CallDirection.OUTGOING.label.also {
+                        Log.w(TAG, "EVENT_CONNECTED: unknown call direction id $direction, defaulting to Outgoing")
+                    }
 //                callSid = callHandle
                 logEvents("", arrayOf("Connected", from, to, callDirection))
             }
@@ -1913,6 +1993,29 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
             TVNativeCallEvents.EVENT_MISSED -> {
                 logEvent("", "Missed Call")
                 logEvent("", "Call Ended")
+            }
+
+            VoiceFirebaseMessagingService.ACTION_NEW_TOKEN -> {
+                val newToken = intent.getStringExtra(VoiceFirebaseMessagingService.EXTRA_FCM_TOKEN) ?: run {
+                    Log.e(TAG, "handleBroadcastIntent: ACTION_NEW_TOKEN is missing String EXTRA_FCM_TOKEN")
+                    return
+                }
+                if (newToken == fcmToken) {
+                    return
+                }
+                Log.d(TAG, "handleBroadcastIntent: FCM token rotated")
+                fcmToken = newToken
+
+                // Re-register the rotated token with Twilio using the cached access token.
+                // Without this, Twilio keeps the stale binding and incoming calls silently
+                // stop until the app's next `tokens` call. If no access token is cached yet
+                // (engine restarted), registration is healed by the next `tokens` call.
+                accessToken?.let { token ->
+                    registerForCallInvites(token, newToken)
+                }
+
+                // Notify Dart (OnDeviceTokenChanged) so the app can persist the new token.
+                logEvent(Constants.kDEVICETOKEN, newToken)
             }
 
             else -> {

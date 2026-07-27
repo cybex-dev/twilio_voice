@@ -46,10 +46,15 @@ class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageListene
 
 
     override fun onNewToken(token: String) {
-        val intent = Intent(ACTION_NEW_TOKEN).also {
-            it.putExtra(EXTRA_FCM_TOKEN, token)
+        Log.d(TAG, "onNewToken: FCM token rotated")
+        // Deliver via LocalBroadcastManager to TwilioVoicePlugin (when the app is running) so
+        // it can re-register the rotated token with Twilio and notify the Dart side. The
+        // previous global implicit broadcast reached no receiver on API 26+, silently losing
+        // the rotation until the app's next `tokens` call.
+        Intent(ACTION_NEW_TOKEN).apply {
+            putExtra(EXTRA_FCM_TOKEN, token)
+            LocalBroadcastManager.getInstance(applicationContext).sendBroadcast(this)
         }
-        sendBroadcast(intent)
     }
 
     /**
@@ -124,7 +129,7 @@ class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageListene
             if(!shouldRejectOnNoPermissions) {
                 return
             }
-            
+
             Log.e(TAG, "onCallInvite: Rejecting incoming call\nSID: ${callInvite.callSid}")
 
             // send broadcast to TVBroadcastReceiver, we notify Flutter about incoming call
@@ -146,7 +151,11 @@ class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageListene
         Intent(applicationContext, TVConnectionService::class.java).apply {
             action = TVConnectionService.ACTION_INCOMING_CALL
             putExtra(TVConnectionService.EXTRA_INCOMING_CALL_INVITE, callInvite)
-            applicationContext.startService(this)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                applicationContext.startForegroundService(this)
+            } else {
+                applicationContext.startService(this)
+            }
         }
 
         // send broadcast to TVBroadcastReceiver, we notify Flutter about incoming call
@@ -159,11 +168,22 @@ class VoiceFirebaseMessagingService : FirebaseMessagingService(), MessageListene
     }
 
     override fun onCancelledCallInvite(cancelledCallInvite: CancelledCallInvite, callException: CallException?) {
-        Log.d(TAG, "onCancelledCallInvite: ", callException)
+        Log.d(
+            TAG,
+            "onCancelledCallInvite: {\n\t" +
+                    "Message: ${callException?.message ?: "no message"}, \n\t" +
+                    "LocalizedMessage: ${callException?.localizedMessage ?: "no localized message"}, \n\t" +
+                    "ErrorCode: ${callException?.errorCode ?: "no code"}, \n\t" +
+                    "}",
+            callException
+        )
+
         Intent(applicationContext, TVConnectionService::class.java).apply {
             action = TVConnectionService.ACTION_CANCEL_CALL_INVITE
             putExtra(TVConnectionService.EXTRA_CANCEL_CALL_INVITE, cancelledCallInvite)
-//            applicationContext.startService(this)
+            callException?.errorCode?.let { t ->
+                putExtra(TVConnectionService.EXTRA_CANCEL_CALL_INVITE_ERROR_CODE, t)
+            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 applicationContext.startForegroundService(this) // Ensure it's started as a foreground service
             } else {

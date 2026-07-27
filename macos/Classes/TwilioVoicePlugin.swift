@@ -81,29 +81,30 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
         super.init()
         webView = TVWebView(messageHandler: "twilio_voice")
         webView?.uiDelegate = self
+        #if DEBUG
         webView?.configuration.preferences.setValue(true, forKey: "developerExtrasEnabled")
-        Thread.sleep(forTimeInterval: 1)
+        #endif
         clients = UserDefaults.standard.object(forKey: kClientList) as? [String: String] ?? [:]
 
         // Register notification categories
         registerNotificationCategories()
         UNUserNotificationCenter.current().delegate = self
 
-        let app = NSApplication.shared
-        guard let window = app.windows.first else {
-            fatalError("no mainWindow to grab")
+        // Attach the hidden webview (it runs the Twilio JS SDK) to the Flutter view.
+        // Best-effort: on non-standard hosts (add-to-app, custom window setup, or a window
+        // not yet ready) log and skip instead of crashing the app at launch - the previous
+        // fatalError guards took down any app without a plain FlutterViewController root.
+        // Note: the method/event channels are wired in register(with:); the init-time event
+        // channel here was a duplicate and has been removed. The previous 1s Thread.sleep
+        // (blocking the main thread during launch) has also been removed - nothing in init
+        // depends on the webview finishing its async load.
+        if let webView = webView,
+           let viewController = NSApplication.shared.windows.first?.contentViewController as? FlutterViewController {
+            webView.alphaValue = 0.0
+            viewController.view.addSubview(webView)
+        } else {
+            NSLog("[TwilioVoice] WARNING: could not attach the plugin webview to a FlutterViewController window; VoIP functionality will be unavailable. Ensure a standard Flutter macOS window setup.")
         }
-        guard let viewController = window.contentViewController else {
-            fatalError("rootViewController hasn't been set")
-        }
-        guard let viewController = viewController as? FlutterViewController else {
-            fatalError("rootViewController is not type FlutterViewController")
-        }
-        webView?.alphaValue = 0.0
-        viewController.view.addSubview(webView!)
-        let registrar = viewController.registrar(forPlugin: "twilio_voice")
-        let eventChannel = FlutterEventChannel(name: "twilio_voice/events", binaryMessenger: registrar.messenger)
-        eventChannel.setStreamHandler(self)
     }
 
 
@@ -160,10 +161,30 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
                 completionHandler(value ?? false)
             }
         } else {
-            if let webView = webView {
-                twilioDevice = TVDevice(token, options: options, webView: webView) { (device, error) in
+            guard let webView = webView else {
+                completionHandler(false)
+                return
+            }
+
+            // Wait until the webview has loaded and the Twilio JS SDK is available before
+            // creating the device. The SDK is bundled and injected at document start, but the
+            // webview loads index.html asynchronously - a setTokens called right after launch
+            // would otherwise run `new Twilio.Device(...)` against an undefined Twilio.Device.
+            webView.whenSDKReady { [weak self] ready in
+                guard let self = self else {
+                    completionHandler(false)
+                    return
+                }
+                guard ready else {
+                    self.logEvent(description: "Twilio JS SDK is not available; cannot register. Ensure the plugin's webview initialised correctly.")
+                    completionHandler(false)
+                    return
+                }
+
+                self.twilioDevice = TVDevice(token, options: options, webView: webView) { (device, error) in
                     if let error = error {
                         print("Error TVDevice:init : \(String(describing: error))")
+                        self.twilioDevice = nil
                         completionHandler(false)
                         return
                     }
@@ -184,7 +205,6 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
                 }
             }
         }
-
     }
 
 
@@ -209,19 +229,25 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     ///   - to: recipient
     ///   - extraOptions: extra options
     ///   - completionHandler: completion handler -> (Bool?)
-    private func place(from: String?, to: String?, extraOptions: [String: Any]?, completionHandler: @escaping OnCompletionValueHandler<Bool>) -> Void {
-        assert(from.isNotEmpty(), "\(Constants.PARAM_FROM) cannot be empty")
-        assert(to.isNotEmpty(), "\(Constants.PARAM_TO) cannot be empty")
+    private func place(from: String?, to: String?, extraOptions: [String: Any]?, connect: Bool = false, completionHandler: @escaping OnCompletionValueHandler<Bool>) -> Void {
+        // Raw connect() calls may omit To/From entirely (the TwiML app decides routing);
+        // only regular makeCall requires them. Mirrors the Android placeCall(connect:)
+        // contract: assert(connect || !isNullOrEmpty).
+        assert(connect || (from?.isNotEmpty() ?? false), "\(Constants.PARAM_FROM) cannot be empty")
+        assert(connect || (to?.isNotEmpty() ?? false), "\(Constants.PARAM_TO) cannot be empty")
 //        assert(extraOptions?.keys.contains(Constants.PARAM_FROM) ?? true, "\(Constants.PARAM_FROM) cannot be passed in extraOptions")
 //        assert(extraOptions?.keys.contains(Constants.PARAM_TO) ?? true, "\(Constants.PARAM_TO) cannot be passed in extraOptions")
 //        assert(twilioDevice != nil, "Twilio Device must be initialized before making calls")
 
         logEvent(description: "Making new call")
 
-        var params: [String: Any] = [
-            if(from != nil) Constants.PARAM_FROM: from,
-            if(to != nil) Constants.PARAM_TO: to,
-        ]
+        var params: [String: Any] = [:]
+        if let from = from {
+            params[Constants.PARAM_FROM] = from
+        }
+        if let to = to {
+            params[Constants.PARAM_TO] = to
+        }
         if let extraOptions = extraOptions {
             params.merge(extraOptions) { (_, new) in
                 new
@@ -241,7 +267,15 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
                     completionHandler(true)
                     return
                 }
+                // Neither a call nor an error: complete rather than leaving the Dart
+                // Future hanging.
+                completionHandler(false)
             }
+        } else {
+            // Device not initialized (setTokens not called): complete with failure
+            // rather than leaving the Dart Future hanging with no log.
+            logEvent(description: "Cannot place call: Twilio Device not initialized, call `setTokens` first")
+            completionHandler(false)
         }
     }
 
@@ -292,7 +326,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     /// - Parameter speakerIsOn: should toggle to speaker mode, if true
     /// - Parameter completionHandler: completion handler -> (Bool?)
     private func toggleSpeaker(_ speakerIsOn: Bool, completionHandler: @escaping OnCompletionValueHandler<Bool>) -> Void {
-        logEvent(description: speakerIsOn ? "Speaker On" : "Speaker Off")
+        logEvent(prefix: "", description: speakerIsOn ? "Speaker On" : "Speaker Off")
         completionHandler(false)
     }
 
@@ -362,7 +396,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     /// - Parameter shouldHold: true if should hold call, false unholds
     /// - Parameter completionHandler: completion handler -> (Bool?)
     private func holdCall(_ shouldHold: Bool, completionHandler: OnCompletionValueHandler<Bool>) -> Void {
-        logEvent(description: shouldHold ? "Hold" : "Unhold")
+        logEvent(prefix: "", description: shouldHold ? "Hold" : "Unhold")
         completionHandler(false)
     }
 
@@ -498,12 +532,9 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     /// - Parameter completionHandler: completion handler -> (Bool?)
     private func requestMicPermission(completionHandler: @escaping OnCompletionValueHandler<Bool>) -> Void {
         logEvent(description: "requesting mic permission")
-        completionHandler(false)
-
         requestMicAccess { granted, error in
             if let error = error {
-                self.logEvent(prefix: "", description: "Microphone permission denied")
-                print("[TVPlugin:hasMicPermission] Error requesting microphone permissions: \(error)")
+                print("[TVPlugin:requestMicPermission] Error requesting microphone permissions: \(error)")
             }
             completionHandler(granted ?? false)
         }
@@ -531,8 +562,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
 
         requestBackgroundPermissions { granted, error in
             if let error = error {
-                self.logEvent(prefix: "", description: "Background notification permissions denied")
-                print("[TVPlugin:requestMicPermission] Error requesting background permissions: \(error)")
+                print("[TVPlugin:requestBackgroundPermission] Error requesting background permissions: \(error)")
             }
             completionHandler(granted ?? false)
         }
@@ -599,8 +629,11 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
             }
             break
         case .connect:
-            guard let to = arguments[Constants.PARAM_TO] as? String?
-            guard let from = arguments[Constants.PARAM_FROM] as? String
+            // Raw connect: To/From are optional (aligned with the iOS implementation) -
+            // routing parameters travel in the remaining arguments and the TwiML
+            // application decides the destination.
+            let to = arguments[Constants.PARAM_TO] as? String
+            let from = arguments[Constants.PARAM_FROM] as? String
 
             var params: [String: Any] = [:]
             arguments.forEach { (key, value) in
@@ -609,7 +642,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
                 }
             }
 
-            place(from: from, to: to, extraOptions: params) { success in
+            place(from: from, to: to, extraOptions: params, connect: true) { success in
                 result(success ?? false)
             }
             break
@@ -679,12 +712,10 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
                 return
             }
 
-            // TODO: toggle bluetooth
+            // TODO: implement bluetooth audio-route toggling if/when supported on macOS.
             // toggleAudioRoute(toSpeaker: speakerIsOn)
-            guard eventSink != nil else {
-                return
-            }
-            logEvent(description: bluetoothOn ? "Bluetooth On" : "Bluetooth Off")
+            logEvent(prefix: "", description: bluetoothOn ? "Bluetooth On" : "Bluetooth Off")
+            result(bluetoothOn)
             break;
 
         case .isBluetoothOn:
@@ -872,6 +903,12 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
 
             result(showNotifications(show))
             break
+
+        case .updateCallKitIcon:
+            // macOS has no CallKit, so there is no call icon to update. Handle as a graceful
+            // no-op (success) rather than falling through to FlutterMethodNotImplemented.
+            result(true)
+            break
         }
     }
 
@@ -945,11 +982,12 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     private func requestBackgroundPermissions(completionHandler: @escaping OnCompletionHandler<Bool>) -> Void {
         let center = UNUserNotificationCenter.current()
         center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
-
+            self.onMain {
             if let error = error {
-                completionHandler(false, error.localizedDescription)
-            } else {
-                completionHandler(granted, nil)
+                    completionHandler(false, error.localizedDescription)
+                } else {
+                    completionHandler(granted, nil)
+                }
             }
         }
     }
@@ -957,10 +995,12 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     private func requiresBackgroundPermissions(completionHandler: @escaping OnCompletionHandler<Bool>) -> Void {
         let center = UNUserNotificationCenter.current()
         center.getNotificationSettings { settings in
+            self.onMain {
             if settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional {
-                completionHandler(true, nil)
-            } else {
-                completionHandler(false, nil)
+                    completionHandler(true, nil)
+                } else {
+                    completionHandler(false, nil)
+                }
             }
         }
     }
@@ -1058,6 +1098,14 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     ///   - separator: message separator e.g. "|"
     ///   - description: Description or event to send
     ///   - isError: true if error
+    private func onMain(_ block: @escaping () -> Void) {
+        if Thread.isMainThread {
+            block()
+        } else {
+            DispatchQueue.main.async(execute: block)
+        }
+    }
+
     private func logEvent(prefix: String = "LOG", separator: String = "|", description: String, isError: Bool = false) {
         NSLog(description)
         guard let eventSink = eventSink else {
@@ -1066,7 +1114,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
 
         if isError {
             let flutterError = FlutterError(code: FlutterErrorCodes.UNAVAILABLE_ERROR, message: description, details: nil)
-            eventSink(flutterError)
+            onMain { eventSink(flutterError) }
         } else {
             var message = "";
             if (prefix.isEmpty) {
@@ -1075,7 +1123,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
                 message = prefix + separator + description;
             }
 
-            eventSink(message)
+            onMain { eventSink(message) }
         }
     }
 
@@ -1123,8 +1171,9 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
 
                 var params: [String: Any] = [:]
                 userInfo.forEach({ (key, value) in
-                    let key = key as! String
-                    params[key] = value
+                    if let key = key as? String {
+                        params[key] = value
+                    }
                 })
 
                 let from = params[Constants.PARAM_FROM] as? String
@@ -1336,11 +1385,11 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     }
 
     public func onCallReconnecting(_ error: TVError) {
-        logEvent(description: "Reconnecting: \(error.code) \(error.message)")
+        logEvent(prefix: "", description: "Reconnecting: \(error.code) \(error.message)")
     }
 
     public func onCallReconnected() {
-        logEvent(description: "Reconnected")
+        logEvent(prefix: "", description: "Reconnected")
     }
 
     public func onCallReject() {

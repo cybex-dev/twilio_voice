@@ -7,8 +7,12 @@ public class TVDeviceConnectOptions: JSONArgumentSerializer {
     var params: [String: String] = [:]
 
     init(to: String?, from: String?, customParameters: [String:Any]) {
-        if(to != nil) params[Constants.PARAM_TO] = to
-        if(from != nil) params[Constants.PARAM_FROM] = from
+        if let to = to {
+            params[Constants.PARAM_TO] = to
+        }
+        if let from = from {
+            params[Constants.PARAM_FROM] = from
+        }
         let stringMap = customParameters.map({ (key, value) -> (String, String) in
             (key, String(describing: value))
         });

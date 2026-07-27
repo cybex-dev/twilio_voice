@@ -1,10 +1,14 @@
 import Cocoa
 import FlutterMacOS
 
-@NSApplicationMain
+@main
 class AppDelegate: FlutterAppDelegate {
     override func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         print("App Delegate")
+        return true
+    }
+
+    override func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
         return true
     }
 }
