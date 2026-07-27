@@ -165,10 +165,26 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
                 completionHandler(false)
                 return
             }
-                twilioDevice = TVDevice(token, options: options, webView: webView) { (device, error) in
+
+            // Wait until the webview has loaded and the Twilio JS SDK is available before
+            // creating the device. The SDK is bundled and injected at document start, but the
+            // webview loads index.html asynchronously - a setTokens called right after launch
+            // would otherwise run `new Twilio.Device(...)` against an undefined Twilio.Device.
+            webView.whenSDKReady { [weak self] ready in
+                guard let self = self else {
+                    completionHandler(false)
+                    return
+                }
+                guard ready else {
+                    self.logEvent(description: "Twilio JS SDK is not available; cannot register. Ensure the plugin's webview initialised correctly.")
+                    completionHandler(false)
+                    return
+                }
+
+                self.twilioDevice = TVDevice(token, options: options, webView: webView) { (device, error) in
                     if let error = error {
                         print("Error TVDevice:init : \(String(describing: error))")
-                    self.twilioDevice = nil
+                        self.twilioDevice = nil
                         completionHandler(false)
                         return
                     }
@@ -183,12 +199,12 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
                                 completionHandler(false)
                             } else {
                                 completionHandler(true)
+                            }
                         }
                     }
                 }
             }
         }
-
     }
 
 

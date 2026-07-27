@@ -122,6 +122,82 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
     return _callEventsListener!;
   }
 
+  //region Twilio Voice JS SDK loading
+
+  /// Path the bundled Twilio Voice JS SDK is served from in a Flutter web build. Declared as an
+  /// asset in this package's `pubspec.yaml`.
+  static const String _bundledSdkAssetPath = 'assets/packages/twilio_voice/assets/twilio.min.js';
+
+  /// In-flight/completed SDK load, so concurrent and repeat calls await the same operation.
+  Future<void>? _sdkLoadFuture;
+
+  /// Whether the Twilio Voice JS SDK global (`window.Twilio`) is available.
+  bool get isSdkLoaded => web.window.hasProperty("Twilio".toJS).toDart;
+
+  /// Ensures the Twilio Voice JS SDK is loaded and `window.Twilio` is available.
+  ///
+  /// The SDK is bundled with this package, so apps do not need to add a `<script>` tag to their
+  /// `web/index.html`. If the SDK is already present - because the app loads it itself (e.g. a
+  /// CDN `<script>` tag, as previous versions of this plugin required) - the bundled copy is not
+  /// injected and the existing global is used, so existing integrations keep working.
+  ///
+  /// Called automatically by [setTokens]; exposed so apps can pre-load the SDK earlier (e.g.
+  /// during splash) if desired. Completes with an error if the SDK could not be loaded; the
+  /// failure is not cached, so a later call will retry.
+  Future<void> ensureSdkLoaded() => _sdkLoadFuture ??= _loadSdk();
+
+  Future<void> _loadSdk() async {
+    // Already provided by the host app - use it rather than loading a second copy.
+    if (isSdkLoaded) {
+      return;
+    }
+
+    // Resolve against the document base URI so deployments under a non-root `<base href>` work.
+    final url = Uri.parse(web.document.baseURI).resolve(_bundledSdkAssetPath).toString();
+    logLocalEvent("Loading bundled Twilio Voice JS SDK from '$url'");
+
+    final script = web.HTMLScriptElement()
+      ..type = "text/javascript"
+      ..async = false
+      ..src = url;
+
+    final completer = Completer<void>();
+    JSFunction? onLoad;
+    JSFunction? onError;
+
+    void finish([Object? error]) {
+      if (onLoad != null) script.removeEventListener("load", onLoad);
+      if (onError != null) script.removeEventListener("error", onError);
+      if (completer.isCompleted) return;
+      if (error != null) {
+        // Don't cache a failed load - allow a retry on the next call.
+        _sdkLoadFuture = null;
+        completer.completeError(error);
+      } else {
+        completer.complete();
+      }
+    }
+
+    onLoad = ((web.Event _) {
+      if (isSdkLoaded) {
+        finish();
+      } else {
+        finish(StateError("Twilio Voice JS SDK loaded from '$url' but 'window.Twilio' is not defined."));
+      }
+    }).toJS;
+    onError = ((web.Event _) {
+      finish(StateError("Failed to load the Twilio Voice JS SDK from '$url'. Ensure the twilio_voice package assets are included in your web build."));
+    }).toJS;
+
+    script.addEventListener("load", onLoad);
+    script.addEventListener("error", onError);
+    web.document.head!.appendChild(script);
+
+    return completer.future;
+  }
+
+  //endregion
+
   /// This feature is not available for web
   @override
   Future<bool?> showBackgroundCallUI() {
@@ -293,6 +369,17 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   Future<bool?> setTokens({required String accessToken, String? deviceToken}) async {
     // TODO use updateOptions for Twilio device
     assert(accessToken.isNotEmpty, "Access token cannot be empty");
+    // The Twilio JS SDK is bundled with this package and injected on demand - `twilio_js.Device`
+    // resolves the `window.Twilio` global, so the SDK must be present before we construct it.
+    try {
+      await ensureSdkLoaded();
+    } catch (e) {
+      printDebug("Failed to load Twilio Voice JS SDK: $e");
+      // Keep the default "LOG" prefix - a prefix-less string is not a valid event and would
+      // throw in [parseCallEvent].
+      logLocalEvent("Failed to load Twilio Voice JS SDK: $e");
+      return false;
+    }
     // assert(deviceToken != null && deviceToken.isNotEmpty, "Device token cannot be null or empty");
     // if (device != null) {
     //   // check active calls?
