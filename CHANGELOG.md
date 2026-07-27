@@ -1,4 +1,4 @@
-## Next Release
+## 0.4.0
 
 * **BREAKING CHANGES:**
   * Minimum iOS deployment version updated to iOS 13.0 (from iOS 11.0) to support the latest Twilio iOS SDK, Flutter's minimum iOS, and the Firebase iOS pods. 
