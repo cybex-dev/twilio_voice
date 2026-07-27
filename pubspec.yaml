@@ -57,6 +57,13 @@ flutter:
       macos:
         pluginClass: TwilioVoicePlugin
 
+  # The Twilio Voice JS SDK is bundled with the plugin and loaded automatically by the web
+  # implementation (see TwilioVoiceWeb.ensureSdkLoaded). Apps no longer need to add a <script>
+  # tag to their web/index.html. Served at:
+  #   assets/packages/twilio_voice/assets/twilio.min.js
+  assets:
+    - assets/twilio.min.js
+
   # To add assets to your plugin package, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg
