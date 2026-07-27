@@ -57,25 +57,40 @@ public class TVWebView: WKWebView, WKUIDelegate {
     }
 
     /// Resolves and reads the bundled Twilio Voice JS SDK from the Flutter asset bundle.
+    ///
+    /// On macOS the Flutter assets are packaged inside `App.framework`, not directly in the main
+    /// bundle, and the key returned by [FlutterDartProject.lookupKey] may or may not already carry
+    /// a `flutter_assets/` prefix depending on the Flutter version. Rather than depending on any
+    /// one of those, this tries each known layout in turn and uses the first that resolves.
     private static func loadBundledSDKSource() -> String? {
         let key = FlutterDartProject.lookupKey(forAsset: sdkAsset, fromPackage: sdkPackage)
+        // Location of the asset within `flutter_assets`, independent of the key format above.
+        let relativeAssetPath = "packages/\(sdkPackage)/\(sdkAsset)"
 
-        // Preferred: Flutter's asset key resolved against the application's main bundle.
-        if let path = Bundle.main.path(forResource: key, ofType: nil),
-           let source = try? String(contentsOfFile: path, encoding: .utf8) {
-            return source
+        var candidates: [URL] = []
+
+        // 1. Flutter's asset key resolved against the application's main bundle.
+        if let path = Bundle.main.path(forResource: key, ofType: nil) {
+            candidates.append(URL(fileURLWithPath: path))
         }
 
-        // Fallback: on macOS the Flutter assets are packaged inside App.framework.
+        // 2. `flutter_assets` inside App.framework - the macOS layout.
         if let frameworks = Bundle.main.privateFrameworksURL {
-            let url = frameworks
-                .appendingPathComponent("App.framework/Resources/flutter_assets")
-                .appendingPathComponent(key)
+            let resources = frameworks.appendingPathComponent("App.framework/Resources")
+            let flutterAssets = resources.appendingPathComponent("flutter_assets")
+            candidates.append(flutterAssets.appendingPathComponent(relativeAssetPath))
+            // Cover both key shapes: with and without the `flutter_assets/` prefix.
+            candidates.append(flutterAssets.appendingPathComponent(key))
+            candidates.append(resources.appendingPathComponent(key))
+        }
+
+        for url in candidates {
             if let source = try? String(contentsOf: url, encoding: .utf8) {
                 return source
             }
         }
 
+        NSLog("[TwilioVoice] Unable to locate the bundled Twilio Voice JS SDK. lookupKey='\(key)'; tried: \(candidates.map { $0.path }.joined(separator: ", "))")
         return nil
     }
 
