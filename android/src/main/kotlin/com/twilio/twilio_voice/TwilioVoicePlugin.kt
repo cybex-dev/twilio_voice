@@ -1972,6 +1972,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                     return
                 }
                 logEvent("Call Error: ${code}, $message");
+                logEvent("", "Call Ended")
             }
 
             TVNativeCallEvents.EVENT_RECONNECTING -> {
