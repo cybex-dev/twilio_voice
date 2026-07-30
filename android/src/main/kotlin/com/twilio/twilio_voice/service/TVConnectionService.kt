@@ -691,7 +691,11 @@ class TVConnectionService : ConnectionService() {
         connection.setOnCallDisconnected(onCallInitializingDisconnectedListener)
 //        connection.setOnCallEventListener(onEvent)
 
-        // Setup connection UI parameters
+        // Set callername on initialization - if present.
+        to?.takeIf { it.isNotEmpty() }?.let {
+            connection.setAddress(Uri.fromParts(PhoneAccount.SCHEME_TEL, it, null), TelecomManager.PRESENTATION_ALLOWED)
+            connection.setCallerDisplayName(it, TelecomManager.PRESENTATION_ALLOWED)
+        }
         connection.setInitializing()
 
         // Apply extras
