@@ -60,7 +60,7 @@ First, add the package to your `pubspec.yaml` file:
 ```yaml
 dependencies:
   ...
-  twilio_voice: ^0.3.2+2
+  twilio_voice: ^0.4.0
 ```
 
 Then run `flutter pub get` in your terminal.
