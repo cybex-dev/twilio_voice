@@ -11,6 +11,7 @@ class StorageImpl(ctx: Context) : Storage {
     private val kDefaultCaller: String = "defaultCaller"
     private val kRejectOnNoPermissions: String = "rejectOnNoPermissions"
     private val kShowNotifications: String = "show-notifications"
+    private val kAllowIncomingWhileBusy: String = "allowIncomingWhileBusy"
 
     override var defaultCaller
         get() = prefs.getString(kDefaultCaller, null)
@@ -26,6 +27,14 @@ class StorageImpl(ctx: Context) : Storage {
         set(value) {
             val editor = prefs.edit()
             editor.putBoolean(kRejectOnNoPermissions, value)
+            editor.apply()
+        }
+
+    override var allowIncomingWhileBusy
+        get() = prefs.getBoolean(kAllowIncomingWhileBusy, true)
+        set(value) {
+            val editor = prefs.edit()
+            editor.putBoolean(kAllowIncomingWhileBusy, value)
             editor.apply()
         }
 

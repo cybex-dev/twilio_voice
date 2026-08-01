@@ -93,10 +93,34 @@ internal class VoiceMessageListener(private val context: Context) : MessageListe
                     "Parameters: ${callInvite.customParameters.entries.joinToString { "${it.key}:${it.value}" }},\n\t" +
                     "}"
         )
+        val storage = StorageImpl(context)
+
+        // Reject the invite when already on a call and the app opted out of concurrent calls.
+        // Deliberately uses TVConnectionService.hasActiveCalls() - the plugin's *own* connections -
+        // rather than TelecomManager.isOnCall(), which reports true for any call on the device
+        // (including unrelated SIM/carrier calls).
+        if (!storage.allowIncomingWhileBusy && TVConnectionService.hasActiveCalls()) {
+            Log.i(TAG, "onCallInvite: already on a call and allowIncomingWhileBusy is false, rejecting\nSID: ${callInvite.callSid}")
+
+            // Notify Flutter the call was ignored, mirroring the no-permissions path.
+            Intent(context, TVBroadcastReceiver::class.java).apply {
+                action = TVBroadcastReceiver.ACTION_INCOMING_CALL_IGNORED
+                putExtra(
+                    TVBroadcastReceiver.EXTRA_INCOMING_CALL_IGNORED_REASON,
+                    arrayOf("Already on a call and `allowIncomingWhileBusy` is disabled.")
+                )
+                putExtra(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callInvite.callSid)
+                LocalBroadcastManager.getInstance(context).sendBroadcast(this)
+            }
+
+            callInvite.reject(context)
+            return
+        }
+
         // Get TelecomManager instance
         val tm = context.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
 
-        val shouldRejectOnNoPermissions: Boolean = StorageImpl(context).rejectOnNoPermissions
+        val shouldRejectOnNoPermissions: Boolean = storage.rejectOnNoPermissions
         var missingPermissions: Array<String> = emptyArray()
 
         // Check permission READ_PHONE_STATE
