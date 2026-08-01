@@ -149,6 +149,16 @@ abstract class TwilioVoicePlatform extends SharedPlatformInterface {
   /// Only available on Android
   Future<bool> rejectCallOnNoPermissions({bool shouldReject = false});
 
+  /// Whether an incoming call invite is accepted while a call handled by this plugin is already
+  /// active. If set to false, the next incoming call invite is rejected immediately. If set to true, the next incoming call invite is accepted and a second call is created. Defaults to true.
+  ///
+  /// Note: the concept of "busy" refers to calls belonging to this plugin - on Android an unrelated SIM/carrier call
+  /// does not count.
+  Future<bool> setAllowIncomingWhileBusy({bool allow = true});
+
+  /// Whether incoming calls are raised while already on a call. Defaults to true.
+  Future<bool> getAllowIncomingWhileBusy();
+
   /// Returns true if call is rejected when no `CALL_PHONE` permissions are granted nor Phone Account (via `isPhoneAccountEnabled`) is registered. Defaults to false.
   ///
   /// Only available on Android
