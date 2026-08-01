@@ -50,6 +50,25 @@ object TwilioVoiceFcm {
         }
         return handled
     }
+
+    /**
+     * Notifies the plugin that the FCM token has rotated, so it can re-register it with Twilio.
+     * Note: this is the FCM device token, not the Twilio access token.
+     *
+     * @param context any [Context]; the application context is used internally.
+     * @param token the new FCM registration token.
+     */
+    @JvmStatic
+    fun updateToken(context: Context, token: String) {
+        Log.d(TAG, "updateToken: FCM token rotated")
+        val appContext = context.applicationContext
+        // Deliver via LocalBroadcastManager to TwilioVoicePlugin (when the app is running) so it
+        // can re-register the rotated token with Twilio and notify the Dart side.
+        Intent(VoiceFirebaseMessagingService.ACTION_NEW_TOKEN).apply {
+            putExtra(VoiceFirebaseMessagingService.EXTRA_FCM_TOKEN, token)
+            LocalBroadcastManager.getInstance(appContext).sendBroadcast(this)
+        }
+    }
 }
 
 /**

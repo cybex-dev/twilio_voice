@@ -1,8 +1,6 @@
 package com.twilio.twilio_voice.fcm
 
-import android.content.Intent
 import android.util.Log
-import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 
@@ -28,15 +26,7 @@ class VoiceFirebaseMessagingService : FirebaseMessagingService() {
     }
 
     override fun onNewToken(token: String) {
-        Log.d(TAG, "onNewToken: FCM token rotated")
-        // Deliver via LocalBroadcastManager to TwilioVoicePlugin (when the app is running) so
-        // it can re-register the rotated token with Twilio and notify the Dart side. The
-        // previous global implicit broadcast reached no receiver on API 26+, silently losing
-        // the rotation until the app's next `tokens` call.
-        Intent(ACTION_NEW_TOKEN).apply {
-            putExtra(EXTRA_FCM_TOKEN, token)
-            LocalBroadcastManager.getInstance(applicationContext).sendBroadcast(this)
-        }
+        TwilioVoiceFcm.updateToken(applicationContext, token)
     }
 
     /**
