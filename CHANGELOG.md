@@ -79,6 +79,7 @@
 * fix: [ios] fix invalid Twilio VoIP payload crashing app
 * fix: [ios] fix plugin in limbo when new incoming call fails to register
 * fix: [macOS,web] add missing `updateCallKitIcon` native implementation to unify platform behaviour contract.
+* feat: add `setAllowIncomingWhileBusy(allow: bool)` to control whether multiple incoming call invites are allowed (i.e. handle 2 or more calls at once). All platforms default to true;
 * Feat: update example.
 * Docs: update CHANGELOG
 
