@@ -75,6 +75,72 @@ alternatively, this could be found in Phone App settings -> Other/Advanced Call 
 
 (if there is a method to programmatically open this, please submit a PR)
 
+#### Android FCM Setup
+
+Android delivers the `com.google.firebase.MESSAGING_EVENT` intent to a **single** resolved service it does **not** "fan out" to every registered `FirebaseMessagingService` as one would expect coming from iOS and their delegates. 
+An app can have multiple services listening for the same `MESSAGE_EVENT` intent, but that does not mean the app is configured to work correctly since **Service A** receiving this intent (this time) does not mean **Service B** will be configured to handle the message correctly. 
+
+e.g Using both `awesome_notifications_fcm` and `twilio_voice` will cause this problem. 
+ 
+
+##### The Fix
+
+To resolve this, edit your class subclassing `FirebaseMessagingService` and forward both messages and token rotations to the plugin:
+1. (if you are subclassing `FirebaseMessagingService`), you will need to make two changes: add the following to your `onMessageReceived` and `onNewToken` methods in your subclass of `FirebaseMessagingService`:
+```kotlin
+override fun onMessageReceived(remoteMessage: RemoteMessage) {
+    // Call the TwilioVoiceFcm.handleMessage(...) method to handle the incoming FCM message
+    if (TwilioVoiceFcm.handleMessage(this, remoteMessage.data)) {
+        // The message was handled by Twilio Voice, no further processing is needed
+        return
+    }
+
+    // Handle other messages here if needed
+}
+
+override fun onNewToken(token: String) {
+    // `onNewToken` goes to the same single service as messages, so forward rotations too -
+    // without this Twilio keeps the stale binding and incoming calls eventually stop.
+    TwilioVoiceFcm.updateToken(this, token)
+
+    // Handle the rotated token for your own services here if needed
+}
+```
+2. If you are not subclassing `FirebaseMessagingService` proceed with standard setup instructions in [Android Setup](README.md#android-setup).
+3. If you wish to have a completely custom implementation, you will need to use the `TwilioVoiceFcm.handleMessage(...)` method to handle incoming FCM messages as in option 1 above, but will need to add your own service implementation and register it in your `AndroidManifest.xml` as described in [Android Setup](README.md#android-setup).
+
+
+#### Android Subclassing FCM
+
+How do I know if my app is using a subclass of `FirebaseMessagingService`?
+
+1. Look in your project's `android/app/src` folder all the way to a `MainActivity.java` or `MainActivity.kt` or similar file. If you see a class that extends `FirebaseMessagingService`, then your app has a subclass of `FirebaseMessagingService`. This means there is the presence of an service implementation which does not mean it **will** be used. To check if it will be used, see 2. 
+2. Open your `AndroidManifest.xml` and check for any `<service>` that has an intent filter for `com.google.firebase.MESSAGING_EVENT`. If you find such an entry, associated with the class found above then your app is using a subclass of `FirebaseMessagingService` and it will be used to handle incoming FCM messages. e.g.
+
+```xml
+<manifest xmlns:tools="http://schemas.android.com/tools"
+    xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application
+        android:icon="@mipmap/ic_launcher"
+        android:label="twilio_voice_example">
+      ...
+        <service
+            android:name="com.twilio.twilio_voice.fcm.VoiceFirebaseMessagingService" <!-- <------ This subclasses FirebaseMessagingService-->
+            android:exported="false"
+            android:stopWithTask="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" /> <!-- <------ This will receive FCM messages-->
+            </intent-filter>
+        </service>
+      ...
+    </application>
+</manifest>
+
+```
+
+If the `VoiceFirebaseMessagingService` is not present but instead another service handles FCM messages which is not configured to call `TwilioVoiceFcm.handleMessage(...)`, there is a very high possibility you will not receive any calls. To see how to configure your own service to handle FCM messages, see [Android Setup](README.md#android-setup) and [here](#android-subclassing-fcm) for more insight regarding FCM configuration.
+
 ### iOS & macOS
 
 **iOS Pod Information:**
