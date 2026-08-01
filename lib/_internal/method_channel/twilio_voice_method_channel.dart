@@ -249,6 +249,22 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
     return _channel.invokeMethod<bool?>('rejectCallOnNoPermissions', {"shouldReject": shouldReject}).then<bool>((bool? value) => value ?? false);
   }
 
+  /// Whether an incoming call invite is accepted while a call handled by this plugin is already
+  /// active. Defaults to true.
+  ///
+  /// "Busy" only considers calls belonging to this plugin - an unrelated SIM/carrier call does not
+  /// count.
+  @override
+  Future<bool> setAllowIncomingWhileBusy({bool allow = true}) {
+    return _channel.invokeMethod<bool?>('setAllowIncomingWhileBusy', {"allow": allow}).then<bool>((bool? value) => value ?? false);
+  }
+
+  /// Whether incoming calls are raised while already on a call. Defaults to true.
+  @override
+  Future<bool> getAllowIncomingWhileBusy() {
+    return _channel.invokeMethod<bool?>('getAllowIncomingWhileBusy', {}).then<bool>((bool? value) => value ?? true);
+  }
+
   /// Returns true if call is rejected when no `CALL_PHONE` permissions are granted nor Phone Account (via `isPhoneAccountEnabled`) is registered. Defaults to false.
   ///
   /// Only available on Android

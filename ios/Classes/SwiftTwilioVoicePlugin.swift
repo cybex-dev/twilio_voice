@@ -11,6 +11,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     
     final let defaultCallKitIcon = "callkit_icon"
     final let callLoggingEnabledKey = "TV_CALL_LOGGING_ENABLED"
+    final let allowIncomingWhileBusyKey = "TV_ALLOW_INCOMING_WHILE_BUSY"
     var callKitIcon: String?
 
     var _result: FlutterResult?
@@ -374,6 +375,16 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             // update icon & persist
             result(updateCallKitIcon(icon: newIcon))
             return
+        } else if flutterCall.method == "setAllowIncomingWhileBusy" {
+            guard let allow = arguments["allow"] as? Bool else {
+                result(FlutterError(code: "MALFORMED_ARGUMENTS", message: "No 'allow' argument provided or invalid type", details: nil))
+                return
+            }
+            UserDefaults.standard.set(allow, forKey: allowIncomingWhileBusyKey)
+            result(true)
+        } else if flutterCall.method == "getAllowIncomingWhileBusy" {
+            // Mirror the default used by callInviteReceived when the key was never set.
+            result(UserDefaults.standard.optionalBool(forKey: allowIncomingWhileBusyKey) ?? true)
         } else if flutterCall.method == "enableCallLogging" {
             let value = arguments["enable"] as? Bool ?? true
             
@@ -687,7 +698,17 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         
         var from:String = callInvite.from ?? defaultCaller
         from = from.replacingOccurrences(of: "client:", with: "")
-        
+
+        // Check if the user has allowed incoming calls while busy. If not, reject the call invite if there is an active call or call invite.
+        // Ensure we report a failed call to CallKit.
+        let allowIncomingWhileBusy = UserDefaults.standard.optionalBool(forKey: allowIncomingWhileBusyKey) ?? true
+        if !allowIncomingWhileBusy && (self.call != nil || self.callInvite != nil) {
+            self.sendPhoneCallEvents(description: "LOG|callInviteReceived: already on a call and allowIncomingWhileBusy is false, rejecting", isError: false)
+            reportFailedIncomingCall()
+            callInvite.reject()
+            return
+        }
+
         self.sendPhoneCallEvents(description: "Incoming|\(from)|\(callInvite.to)|Incoming\(formatCustomParams(params: callInvite.customParameters))", isError: false)
         self.sendPhoneCallEvents(description: "Ringing|\(from)|\(callInvite.to)|Incoming\(formatCustomParams(params: callInvite.customParameters))", isError: false)
         reportIncomingCall(from: from, uuid: callInvite.uuid)

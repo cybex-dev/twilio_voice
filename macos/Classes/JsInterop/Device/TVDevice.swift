@@ -69,6 +69,23 @@ public class TVDevice: JSObject, TVDeviceDelegate, JSMessageHandlerDelegate {
         }
     }
 
+    /// Update the device's options, e.g. to change `allowIncomingWhileBusy` on an already-created
+    /// device without re-registering it.
+    /// - Parameters:
+    ///   - options: the new device options
+    ///   - completionHandler: completion handler
+    /// - SeeAlso: Twilio [Device.updateOptions](https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice#deviceupdateoptionsoptions)
+    func updateOptions(_ options: DeviceInitOptions, completionHandler: @escaping OnCompletionValueHandler<Bool>) -> Void {
+        call(method: "updateOptions", withArgs: [options]) { result, error in
+            if let error = error {
+                print("Error TVDevice:updateOptions : \(String(describing: error))")
+                completionHandler(false)
+                return
+            }
+            completionHandler(true)
+        }
+    }
+
     /// Connect this device to Twilio Application to engage in a call
     /// - Parameters
     ///   - options: connect options, includes params [Constants.PARAM_TO, Constants.PARAM_FROM, Constants.PARAM_CUSTOM_PARAMETERS]

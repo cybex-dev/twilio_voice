@@ -22,6 +22,18 @@ class LocalStorageWeb extends ILocalStorageWeb {
   }
 
   @override
+  bool getAllowIncomingWhileBusy(bool defaultValue) {
+    final value = _localStorage.getItem(kAllowIncomingWhileBusy);
+    if (value == null) return defaultValue;
+    return value == "true";
+  }
+
+  @override
+  void saveAllowIncomingWhileBusy(bool value) {
+    _localStorage.setItem(kAllowIncomingWhileBusy, value.toString());
+  }
+
+  @override
   void addRegisteredClient(String id, String name) {
     _localStorage.setItem(id, name);
   }
