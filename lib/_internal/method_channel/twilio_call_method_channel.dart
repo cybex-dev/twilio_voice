@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:twilio_voice/twilio_voice.dart';
 
-import '../../models/call_quality_event.dart';
 import '../platform_interface/twilio_call_platform_interface.dart';
 
 // abstract class MethodChannelTwilioCall extends TwilioVoiceSharedPlatform {

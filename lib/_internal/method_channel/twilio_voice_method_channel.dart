@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-import '../../models/call_quality_event.dart';
 import '../../twilio_voice.dart';
 import '../js/core/enums/device_sound_name.dart';
 import '../platform_interface/twilio_call_platform_interface.dart';

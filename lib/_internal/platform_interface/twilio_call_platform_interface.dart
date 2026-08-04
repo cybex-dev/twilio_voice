@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
-import '../../models/call_quality_event.dart';
 import '../../twilio_voice.dart';
 import '../method_channel/twilio_call_method_channel.dart';
 import 'shared_platform_interface.dart';
