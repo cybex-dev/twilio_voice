@@ -61,3 +61,11 @@ example/lib/firebase_options.dart
 example/macos/Runner/GoogleService-Info.plist
 
 example/firebase.json
+
+# Swift Package Manager (plugin packages only - an app's Package.resolved should be committed)
+ios/twilio_voice/.build/
+ios/twilio_voice/.swiftpm/
+ios/twilio_voice/Package.resolved
+macos/twilio_voice/.build/
+macos/twilio_voice/.swiftpm/
+macos/twilio_voice/Package.resolved
