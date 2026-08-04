@@ -68,7 +68,7 @@ class _CallStatusState extends State<CallStatus> {
               activeCall != null ? Text(activeCall.callDirection == CallDirection.incoming ? "Incoming" : "Outgoing") : const Text("N/A"),
               _CallSID(),
               _events.isEmpty ? const Text("N/A") : Text(_events.last.toString()),
-              _CallQuality(),
+              const _CallQuality(),
             ],
           ),
         ),
