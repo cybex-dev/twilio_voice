@@ -794,6 +794,28 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         self.sendPhoneCallEvents(description: "Reconnected", isError: false)
     }
 
+    /// Source: https://twilio.github.io/twilio-voice-ios/docs/latest/Protocols/TVOCallDelegate.html#//api/name/call:didReceiveQualityWarnings:previousWarnings:
+    public func callDidReceiveQualityWarnings(call: Call, currentWarnings: Set<NSNumber>, previousWarnings: Set<NSNumber>) {
+        let current = wireNames(for: currentWarnings)
+        let previous = wireNames(for: previousWarnings)
+        self.sendPhoneCallEvents(description: "Quality|\(current)|\(previous)", isError: false)
+    }
+
+    /// Source: https://twilio.github.io/twilio-voice-ios/docs/latest/Constants/TVOCallQualityWarning.html
+    private func wireNames(for warnings: Set<NSNumber>) -> String {
+        return warnings.compactMap { warning -> String? in
+            guard let value = Call.QualityWarning(rawValue: warning.uintValue) else { return nil }
+            switch value {
+            case .highRtt: return "high-rtt"
+            case .highJitter: return "high-jitter"
+            case .highPacketsLostFraction: return "high-packet-loss"
+            case .lowMos: return "low-mos"
+            case .constantAudioInputLevel: return "constant-audio-input-level"
+            @unknown default: return nil
+            }
+        }.joined(separator: ",")
+    }
+
     public func callDidFailToConnect(call: Call, error: Error) {
         self.sendPhoneCallEvents(description: "LOG|Call failed to connect: \(error.localizedDescription)", isError: false)
         self.sendPhoneCallEvents(description: "Call Ended", isError: false)
