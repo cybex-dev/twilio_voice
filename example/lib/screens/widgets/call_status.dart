@@ -52,7 +52,7 @@ class _CallStatusState extends State<CallStatus> {
         // Labels
         const Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: [Text("From:"), Text("To:"), Text("Direction:"), Text("SID:"), Text("State:")],
+          children: [Text("From:"), Text("To:"), Text("Direction:"), Text("SID:"), Text("State:"), Text("Quality:")],
         ),
 
         // Spacer
@@ -68,6 +68,7 @@ class _CallStatusState extends State<CallStatus> {
               activeCall != null ? Text(activeCall.callDirection == CallDirection.incoming ? "Incoming" : "Outgoing") : const Text("N/A"),
               _CallSID(),
               _events.isEmpty ? const Text("N/A") : Text(_events.last.toString()),
+              _CallQuality(),
             ],
           ),
         ),
@@ -129,6 +130,31 @@ class _StatusIcon extends StatelessWidget {
       ),
       width: 16,
       height: 16,
+    );
+  }
+}
+
+class _CallQuality extends StatelessWidget {
+  const _CallQuality({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder(
+      stream: TwilioVoicePlatform.instance.call.qualityWarnings,
+      builder: (context, snapshot) {
+        if(TwilioVoicePlatform.instance.call.activeCall == null) {
+          return const Text("N/A");
+        }
+        if(snapshot.hasError) {
+          return Text("Error: ${snapshot.error}");
+        }
+        final warnings = snapshot.data?.current ?? {};
+        if (warnings.isEmpty) {
+          return const Text("Good");
+        } else {
+          return Text(warnings.map((e) => e.name).join(", "));
+        }
+      },
     );
   }
 }
