@@ -14,11 +14,11 @@ A new Flutter plugin project.
   s.author           = { 'Your Company' => 'email@example.com' }
 
   s.source           = { :path => '.' }
-  s.source_files     = 'Classes/**/*'
+  s.source_files     = 'twilio_voice/Sources/twilio_voice/**/*.swift'
   s.dependency 'FlutterMacOS'
 
   s.platform = :osx, '11.0'
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES' }
   s.swift_version = '5.0'
-  s.resources = "Resources/*"
+  s.resources        = 'twilio_voice/Sources/twilio_voice/Resources/*'
 end
