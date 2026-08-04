@@ -149,7 +149,7 @@ public class TVCall: JSObject, TVCallDelegate, JSMessageHandlerDelegate {
     /// - SeeAlso Twilio [Call.Events](https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#events)
     func attachEventListeners() {
         print("Attaching event listeners to [TVCall]")
-        let events: [TVCallEvent] = [.accept, .cancel, .disconnect, .error, .reconnecting, .reconnected, .reject, .ringing]
+        let events: [TVCallEvent] = [.accept, .cancel, .disconnect, .error, .reconnecting, .reconnected, .reject, .ringing, .warning, .warningCleared]
         events.map {
                     $0.rawValue
                 }
@@ -264,6 +264,10 @@ public class TVCall: JSObject, TVCallDelegate, JSMessageHandlerDelegate {
         callDelegate?.onCallReject()
     }
 
+    public func onCallQualityWarning(_ name: String, isCleared: Bool) {
+        callDelegate?.onCallQualityWarning(name, isCleared: isCleared)
+    }
+
     public func onCallStatus(_ status: TVCallStatus) {
         callDelegate?.onCallStatus(status)
     }
@@ -303,6 +307,16 @@ public class TVCall: JSObject, TVCallDelegate, JSMessageHandlerDelegate {
                 break
             case .reject:
                 onCallReject()
+                break
+            case .warning:
+                if message.args.count > 0, let name = message.args[0] as? String {
+                    callDelegate?.onCallQualityWarning(name, isCleared: false)
+                }
+                break
+            case .warningCleared:
+                if message.args.count > 0, let name = message.args[0] as? String {
+                    callDelegate?.onCallQualityWarning(name, isCleared: true)
+                }
                 break
             default:
                 print("Unhandled event: \(event)")

@@ -48,6 +48,11 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
             }
         }
         didSet {
+            activeCallSid = nil
+            activeQualityWarnings.removeAll()
+            twilioCall?.resolveParams { [weak self] params, _ in
+                self?.activeCallSid = params?.callSid
+            }
             // attach event listeners to new call
             if let call = twilioCall {
                 call.attachEventListeners()
@@ -1386,6 +1391,22 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
 
     public func onCallReconnecting(_ error: TVError) {
         logEvent(prefix: "", description: "Reconnecting: \(error.code) \(error.message)")
+    }
+    private var activeCallSid: String?
+
+    private var activeQualityWarnings: [String: Set<String>] = [:]
+
+    public func onCallQualityWarning(_ name: String, isCleared: Bool) {
+        let sid = activeCallSid ?? ""
+        let previous = activeQualityWarnings[sid] ?? []
+        var current = previous
+        if isCleared {
+            current.remove(name)
+        } else {
+            current.insert(name)
+        }
+        activeQualityWarnings[sid] = current
+        logEvent(prefix: "", description: "Quality|\(current.joined(separator: ","))|\(previous.joined(separator: ","))")
     }
 
     public func onCallReconnected() {
