@@ -1438,6 +1438,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 addAction(TVNativeCallEvents.EVENT_CONNECT_FAILURE)
                 addAction(TVNativeCallEvents.EVENT_RECONNECTING)
                 addAction(TVNativeCallEvents.EVENT_RECONNECTED)
+                addAction(TVNativeCallEvents.EVENT_QUALITY_WARNINGS_CHANGED)
                 addAction(TVNativeCallEvents.EVENT_DISCONNECTED_LOCAL)
                 addAction(TVNativeCallEvents.EVENT_DISCONNECTED_REMOTE)
                 addAction(TVNativeCallEvents.EVENT_MISSED)
@@ -1977,6 +1978,12 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
 
             TVNativeCallEvents.EVENT_RECONNECTING -> {
                 logEvent("", "Reconnecting");
+            }
+
+            TVNativeCallEvents.EVENT_QUALITY_WARNINGS_CHANGED -> {
+                val current = intent.getStringExtra(TVBroadcastReceiver.EXTRA_QUALITY_WARNINGS_CURRENT) ?: ""
+                val previous = intent.getStringExtra(TVBroadcastReceiver.EXTRA_QUALITY_WARNINGS_PREVIOUS) ?: ""
+                logEvents("", arrayOf("Quality", current, previous))
             }
 
             TVNativeCallEvents.EVENT_RECONNECTED -> {
