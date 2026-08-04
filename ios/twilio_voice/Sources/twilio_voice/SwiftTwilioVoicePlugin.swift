@@ -6,6 +6,14 @@ import TwilioVoice
 import CallKit
 import UserNotifications
 
+/// Exposed to Objective-C as `TwilioVoicePlugin`, which is the class name Flutter's generated
+/// plugin registrant calls into (`pluginClass` in `pubspec.yaml`).
+///
+/// This used to be a separate Objective-C shim (`TwilioVoicePlugin.h/.m`) that forwarded to this
+/// class. Swift Package Manager does not support mixed-language targets, so the shim was removed
+/// and its Objective-C name adopted here instead - keeping the registrant, and any manual
+/// `[TwilioVoicePlugin registerWithRegistrar:]` call, working unchanged.
+@objc(TwilioVoicePlugin)
 public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHandler, PKPushRegistryDelegate, NotificationDelegate, CallDelegate, AVAudioPlayerDelegate, CXProviderDelegate {
     let callObserver = CXCallObserver()
     

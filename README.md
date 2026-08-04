@@ -70,6 +70,36 @@ Please follow Twilio's quickstart setup for each platform, you don't need to wri
 but it will help you understand the basic functionality of setting up your server, registering your
 iOS app for VOIP, etc.
 
+### Swift Package Manager (iOS & macOS)
+
+This plugin ships both a Swift package and a podspec, so it works with either integration. If your
+app uses CocoaPods there is nothing to do - it keeps working exactly as before.
+
+To use Swift Package Manager instead, enable it once for your Flutter install:
+
+```bash
+flutter config --enable-swift-package-manager
+```
+
+Flutter then resolves this plugin through SPM, and the iOS Twilio Voice SDK is pulled from
+[twilio/twilio-voice-ios](https://github.com/twilio/twilio-voice-ios) (6.13.6+) instead of the
+`TwilioVoice` pod. `TwilioVoice.framework` is embedded into your app automatically; no manual
+"Frameworks, Libraries and Embedded Content" step is needed.
+
+Two things to be aware of:
+
+- **macOS apps must set their deployment target to 11.0 or later.** CocoaPods tolerates an app
+  target below a pod's minimum, but SwiftPM does not, and the build fails with:
+
+  > error: The package product 'twilio-voice' requires minimum platform version 11.0 for the macOS
+  > platform, but this target supports 10.15
+
+  Set `macOS Deployment Target` to `11.0` on the Runner target in Xcode (Flutter's own template
+  still defaults to 10.15). iOS already requires 13.0, which matches Flutter's template default.
+
+- Enabling SPM is a per-machine Flutter setting, not a per-project one. Plugins that do not yet
+  support SPM continue to be resolved through CocoaPods alongside it, so mixed projects are fine.
+
 ### iOS Setup
 
 To customize the icon displayed on a CallKit call, Open XCode and add a png icon named '
