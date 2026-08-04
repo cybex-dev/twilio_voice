@@ -1,3 +1,9 @@
+## Next Release
+
+* feat: added call quality events for all platforms (see `CallQualityEvent` and `TwilioVoicePlatform.instance.call.qualityWarnings`, and [Twilio Call Quality Metrics](https://www.twilio.com/docs/voice/voice-insights/api/call/details-sdk-call-quality-events#error-and-warning-events))
+* Updated Example
+* Updated docs
+
 ## 0.4.0
 
 * **BREAKING CHANGES:**
