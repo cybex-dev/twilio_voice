@@ -1,3 +1,8 @@
+## 0.4.1
+
+* feat: add `setAllowIncomingWhileBusy(allow: bool)` to control whether multiple incoming call invites are allowed (i.e. handle 2 or more calls at once). All platforms default to true;
+* feat: [android] add support for integrating into existing `FirebaseMessagingService` services or default to built in based on `AndroidManifest` declaration.
+
 ## 0.4.0
 
 * **BREAKING CHANGES:**
@@ -73,13 +78,11 @@
 * fix: [android] buffer native log events until dart initialization completed and ready to receive events.
 * feat: [android] correctly show missed call honouring `showMissedCallNotifications` setting when app is backgrounded or terminated.
 * fix: [android] outgoing calls no longer show "Unknown" on the native call screen while connecting.
-* feat: [android] add support for integrating into existing `FirebaseMessagingService` services or default to built in based on `AndroidManifest` declaration.
 * fix: [ios] changing `enableCallLogging` setting now correctly updates call logging behaviour for subsequent calls.
 * fix: [macos] `toggleBluetooth` now returns `Future` with correct value (though bluetooth not yet implemented).
 * fix: [ios] fix invalid Twilio VoIP payload crashing app
 * fix: [ios] fix plugin in limbo when new incoming call fails to register
 * fix: [macOS,web] add missing `updateCallKitIcon` native implementation to unify platform behaviour contract.
-* feat: add `setAllowIncomingWhileBusy(allow: bool)` to control whether multiple incoming call invites are allowed (i.e. handle 2 or more calls at once). All platforms default to true;
 * Feat: update example.
 * Docs: update CHANGELOG
 
