@@ -38,6 +38,13 @@ interface Storage {
     var rejectOnNoPermissions: Boolean
 
     /**
+     * If false, incoming call invites received while a call belonging to this plugin is already
+     * active are rejected immediately. Default is true.
+     * @return true to allow incoming calls while busy, false to reject them.
+     */
+    var allowIncomingWhileBusy: Boolean
+
+    /**
      * Get the default caller name, if not set, return the default [Constants.DEFAULT_UNKNOWN_CALLER]
      * @param id: the id of the registered client
      * @return the default caller name
