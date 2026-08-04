@@ -24,6 +24,7 @@ Any and all [Feature Requests](https://github.com/cybex-dev/twilio_voice/issues/
 - Receive and place calls from Web [v2.18.0](https://www.twilio.com/docs/voice/sdks/javascript/changelog#2180-january-5-2026) (FCM push notification integration not yet supported by Twilio Voice Web, see [here](https://github.com/twilio/twilio-voice.js/pull/159#issuecomment-1551553299) for discussion)
 - Receive and place calls from MacOS devices, uses custom UI to receive calls (in future & macOS
   13.0+, we'll be using CallKit) based on [v2.18.0](https://www.twilio.com/docs/voice/sdks/javascript/changelog#2180-january-5-2026)
+- Get live [call quality metrics](https://www.twilio.com/docs/voice/voice-insights/api/call/call-metrics-resource).
 - Interpret TwiML parameters to populate UI, see below [Interpreting Parameters](#interpreting-parameters)
 
 ### Feature addition schedule:
@@ -575,6 +576,27 @@ Receives calls via [ConnectionService](https://developer.android.com/reference/a
  TwilioVoicePlatform.instance.call.sendDigits(String digits);
 
 ```
+
+#### Call Quality Metrics
+
+Retrieve call quality warnings for an active call using:
+
+```dart
+final warnings = [CallQualityWarning.highPacketLoss, CallQualityWarning.highJitter, CallQualityWarning.highRtt];
+Stream<CallQualityEvent> qualityEventStream = TwilioVoicePlatform.instance.call.qualityWarnings;
+qualityEventStream.listen((e) {
+    final isBadCallQuality = e.current.any((e) => warnings.contains(e));
+    print("Call Quality: ${isBadCallQuality ? "Bad" : "Good"}");
+});
+```
+
+or get last call quality metrics using:
+```dart
+final lastCallQuality = TwilioVoicePlatform.instance.call.lastQualityWarnings;
+print("Last Call Quality: ${lastCallQuality.current}");
+```
+
+TwilioVoicePlatform.instance.call.`. This returns a `CallQualityMetrics` object with the following fields:
 
 ### Permissions
 

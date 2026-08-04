@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:twilio_voice/twilio_voice.dart';
 
@@ -13,6 +15,17 @@ class MethodChannelTwilioCall extends TwilioCallPlatform {
   @override
   set activeCall(ActiveCall? activeCall) {
     _activeCall = activeCall;
+  }
+
+  /// Container for last call quality, null if none are reported or no call active.
+  static CallQualityEvent? _lastQualityWarnings;
+
+  /// Call quality warnings for a call reported by Twilio SDK. Warnings apply to the current ongoing call. Last quality reported stored in [lastQualityWarnings].
+  // ignore: close_sinks
+  static StreamController<CallQualityEvent>? _qualityWarningsController;
+  StreamController<CallQualityEvent> get qualityWarningsController {
+    _qualityWarningsController ??= StreamController<CallQualityEvent>.broadcast();
+    return _qualityWarningsController!;
   }
 
   MethodChannel get _channel => sharedChannel;
@@ -121,5 +134,24 @@ class MethodChannelTwilioCall extends TwilioCallPlatform {
       ...?extraOptions,
     };
     return _channel.invokeMethod('connect', options);
+  }
+
+  /// Stream of [CallQualityEvent]s for current call.
+  @override
+  Stream<CallQualityEvent> get qualityWarnings => qualityWarningsController.stream;
+
+  /// The most recent [CallQualityEvent], or null if none has been reported for the current call.
+  @override
+  CallQualityEvent? get lastQualityWarnings => _lastQualityWarnings;
+
+  @override
+  void updateQualityWarnings(CallQualityEvent event) {
+    _lastQualityWarnings = event;
+    qualityWarningsController.add(event);
+  }
+
+  @override
+  void clearQualityWarnings() {
+    _lastQualityWarnings = null;
   }
 }

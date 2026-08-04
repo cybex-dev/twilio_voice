@@ -51,6 +51,18 @@ class TVBroadcastReceiver(private val plugin: TwilioVoicePlugin) : BroadcastRece
         /**
          * Extra used with [ACTION_ACTIVE_CALL_CHANGED], [ACTION_CALL_ENDED] providing the active call handle.
          */
+        /**
+         * Extra used with [TVNativeCallEvents.EVENT_QUALITY_WARNINGS_CHANGED], a comma-separated
+         * list of currently active call quality warning names.
+         */
+        const val EXTRA_QUALITY_WARNINGS_CURRENT: String = "EXTRA_QUALITY_WARNINGS_CURRENT"
+
+        /**
+         * Extra used with [TVNativeCallEvents.EVENT_QUALITY_WARNINGS_CHANGED], a comma-separated
+         * list of the previously active call quality warning names.
+         */
+        const val EXTRA_QUALITY_WARNINGS_PREVIOUS: String = "EXTRA_QUALITY_WARNINGS_PREVIOUS"
+
         const val EXTRA_CALL_HANDLE: String = "EXTRA_CALL_HANDLE"
 
         /**

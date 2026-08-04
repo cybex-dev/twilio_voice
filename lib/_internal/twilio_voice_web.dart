@@ -913,6 +913,11 @@ class Call extends MethodChannelTwilioCall {
   late final JSFunction _onCallReconnectingJs = _onCallReconnecting.toJS;
   late final JSFunction _onCallReconnectedJs = _onCallReconnected.toJS;
   late final JSFunction _onLogEventJs = _onLogEvent.toJS;
+  late final JSFunction _onCallWarningJs = _onCallWarning.toJS;
+  late final JSFunction _onCallWarningClearedJs = _onCallWarningCleared.toJS;
+
+  /// Map of last call quality warnings emitted by JS call object per call SID.
+  final Map<String, Set<CallQualityWarning>> _activeQualityWarnings = <String, Set<CallQualityWarning>>{};
 
   /// Attach event listeners to the active call
   /// See [twilio_js.Call.addListener]
@@ -928,6 +933,36 @@ class Call extends MethodChannelTwilioCall {
     call.addListener("reconnecting", _onCallReconnectingJs);
     call.addListener("reconnected", _onCallReconnectedJs);
     call.addListener("log", _onLogEventJs);
+    call.addListener("warning", _onCallWarningJs);
+    call.addListener("warning-cleared", _onCallWarningClearedJs);
+  }
+
+  /// On a call quality warning being raised, via [twilio_js.Call.addListener] and
+  /// [twilio_js.TwilioCallEvents.warning].
+  /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#warning-event
+  void _onCallWarning(String name) {
+    _updateQualityWarnings((set) => set.add(CallQualityWarning.fromName(name)));
+  }
+
+  /// On a call quality warning being cleared, via [twilio_js.Call.addListener] and
+  /// [twilio_js.TwilioCallEvents.warningCleared].
+  /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#warning-cleared-event
+  void _onCallWarningCleared(String name) {
+    _updateQualityWarnings((set) => set.remove(CallQualityWarning.fromName(name)));
+  }
+
+  /// Applies [mutate] to the active call's warning set and emits the change as
+  /// "Quality|<current csv>|<previous csv>", matching the native platforms. The SID is used only
+  /// to key the tracked set per call; it is not emitted.
+  void _updateQualityWarnings(void Function(Set<CallQualityWarning>) mutate) {
+    final sid = _getSid() ?? "";
+    final previous = Set<CallQualityWarning>.of(_activeQualityWarnings[sid] ?? const {});
+    final current = Set<CallQualityWarning>.of(previous);
+    mutate(current);
+    _activeQualityWarnings[sid] = current;
+
+    String csv(Set<CallQualityWarning> s) => s.map((e) => e.wireName).join(",");
+    logLocalEventEntries(["Quality", csv(current), csv(previous)], prefix: "");
   }
 
   /// Detach event listeners to the active call
@@ -945,6 +980,9 @@ class Call extends MethodChannelTwilioCall {
     call.removeListener("reconnecting", _onCallReconnectingJs);
     call.removeListener("reconnected", _onCallReconnectedJs);
     call.removeListener("log", _onLogEventJs);
+    call.removeListener("warning", _onCallWarningJs);
+    call.removeListener("warning-cleared", _onCallWarningClearedJs);
+    _activeQualityWarnings.remove(_getSid());
   }
 
   void _onLogEvent(String status) {

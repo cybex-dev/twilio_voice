@@ -43,6 +43,11 @@ object TVNativeCallEvents {
     val EVENT_RECONNECTED: String = "com.twilio.EVENT_RECONNECTED"
 
     /**
+     * The event name for when the set of active call quality warnings changes.
+     */
+    val EVENT_QUALITY_WARNINGS_CHANGED: String = "com.twilio.EVENT_QUALITY_WARNINGS_CHANGED"
+
+    /**
      * The event name for when a call is disconnected locally
      */
     val EVENT_DISCONNECTED_LOCAL: String = "com.twilio.EVENT_DISCONNECTED_LOCAL"

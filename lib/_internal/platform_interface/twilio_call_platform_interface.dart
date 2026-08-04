@@ -7,6 +7,13 @@ import '../method_channel/twilio_call_method_channel.dart';
 import 'shared_platform_interface.dart';
 
 abstract class TwilioCallPlatform extends SharedPlatformInterface {
+
+  /// Stream of [CallQualityEvent]s for current call.
+  Stream<CallQualityEvent> get qualityWarnings;
+
+  /// The most recent [CallQualityEvent], or null if none has been reported for the current call.
+  CallQualityEvent? get lastQualityWarnings;
+
   TwilioCallPlatform() : super(token: _token);
 
   static final Object _token = Object();
@@ -77,4 +84,10 @@ abstract class TwilioCallPlatform extends SharedPlatformInterface {
 
   /// Send digits to active call
   Future<bool?> sendDigits(String digits);
+
+  /// Records [event] as [lastQualityWarnings] and publishes it to [qualityWarnings]. Occurs when a new [CallQualityEvent] is received from the native platform.
+  void updateQualityWarnings(CallQualityEvent event);
+
+  /// Clears [lastQualityWarnings], called when a call ends so a stale value is not reported against the next call.
+  void clearQualityWarnings();
 }

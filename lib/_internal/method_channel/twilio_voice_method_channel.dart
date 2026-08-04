@@ -324,6 +324,17 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
 
   @override
   CallEvent parseCallEvent(String state) {
+    if (state.startsWith("Quality|")) {
+      // Quality|<current csv>|<previous csv> - warning names are fixed tokens containing no '|',
+      // so they are safe in the pipe-delimited protocol. The call is implied by the object the
+      // stream hangs off, so the SID is not repeated.
+      final tokens = state.split('|');
+      call.updateQualityWarnings(CallQualityEvent(
+        current: CallQualityWarning.parseAll(tokens.length > 1 ? tokens[1] : ""),
+        previous: CallQualityWarning.parseAll(tokens.length > 2 ? tokens[2] : ""),
+      ));
+      return CallEvent.log;
+    }
     if (state.startsWith("DEVICETOKEN|")) {
       var token = state.split('|')[1];
       if (deviceTokenChanged != null) {
@@ -354,18 +365,22 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
       // The callee is busy.
       if (tokens[1].contains("31600") || tokens[1].contains("31603") || tokens[1].contains("31486")) {
         call.activeCall = null;
+        call.clearQualityWarnings();
         return CallEvent.declined;
       } else if (tokens.toString().toLowerCase().contains("call rejected")) {
         // Android call reject from string: "LOG|Call Rejected"
         call.activeCall = null;
+        call.clearQualityWarnings();
         return CallEvent.declined;
       } else if (tokens.toString().toLowerCase().contains("rejecting call")) {
         // iOS call reject from string: "LOG|provider:performEndCallAction: rejecting call"
         call.activeCall = null;
+        call.clearQualityWarnings();
         return CallEvent.declined;
       } else if (tokens[1].contains("Call Rejected")) {
         // macOS / web call reject from string: "Call Rejected"
         call.activeCall = null;
+        call.clearQualityWarnings();
         return CallEvent.declined;
       }
       return CallEvent.log;
@@ -418,8 +433,10 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
         return CallEvent.connected;
       case 'Call Ended':
         call.activeCall = null;
+        call.clearQualityWarnings();
         return CallEvent.callEnded;
       case 'Missed Call':
+        call.clearQualityWarnings();
         return CallEvent.missedCall;
       case 'Unhold':
         return CallEvent.unhold;

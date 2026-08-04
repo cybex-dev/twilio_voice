@@ -1,3 +1,9 @@
+## Next Release
+
+* feat: added call quality events for all platforms (see `CallQualityEvent` and `TwilioVoicePlatform.instance.call.qualityWarnings`, and [Twilio Call Quality Metrics](https://www.twilio.com/docs/voice/voice-insights/api/call/details-sdk-call-quality-events#error-and-warning-events))
+* Updated Example
+* Updated docs
+
 ## 0.4.1
 
 * feat: add `setAllowIncomingWhileBusy(allow: bool)` to control whether multiple incoming call invites are allowed (i.e. handle 2 or more calls at once). All platforms default to true;
