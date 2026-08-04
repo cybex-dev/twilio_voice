@@ -135,7 +135,7 @@ class _StatusIcon extends StatelessWidget {
 }
 
 class _CallQuality extends StatelessWidget {
-  const _CallQuality({super.key});
+  const _CallQuality();
 
   @override
   Widget build(BuildContext context) {
