@@ -31,6 +31,19 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     private var clients: [String: String]!
 
     var defaultCaller = "Unknown Caller"
+
+    /// Storage key for [allowIncomingWhileBusy].
+    private let allowIncomingWhileBusyKey = "TV_ALLOW_INCOMING_WHILE_BUSY"
+
+    /// Whether the Twilio Device raises `incoming` while already on a call. Defaults to true; see `setAllowIncomingWhileBusy`.
+    private var allowIncomingWhileBusy: Bool {
+        get {
+            UserDefaults.standard.optionalBool(forKey: allowIncomingWhileBusyKey) ?? true
+        }
+        set {
+            UserDefaults.standard.setValue(newValue, forKey: allowIncomingWhileBusyKey)
+        }
+    }
     var deviceToken: Data? {
         get {
             UserDefaults.standard.data(forKey: kCachedDeviceToken)
@@ -155,7 +168,7 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
         assert(token.isNotEmpty(), "Access token cannot be empty")
 
         let codecs: [String] = ["opus", "pcmu"]
-        let options: DeviceInitOptions = DeviceInitOptions(logLevel: 1, codecPreferences: codecs, closeProtection: false, allowIncomingWhileBusy: false)
+        let options: DeviceInitOptions = DeviceInitOptions(logLevel: 1, codecPreferences: codecs, closeProtection: false, allowIncomingWhileBusy: allowIncomingWhileBusy)
         if let device = twilioDevice {
             device.updateToken(token) { (value) in
                 completionHandler(value ?? false)
@@ -902,6 +915,26 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
             }
 
             result(showNotifications(show))
+            break
+
+        case .setAllowIncomingWhileBusy:
+            guard let allow = arguments["allow"] as? Bool else {
+                let ferror: FlutterError = FlutterError(code: FlutterErrorCodes.MALFORMED_ARGUMENTS, message: "Argument 'allow' missing or incorrect type", details: nil)
+                result(ferror)
+                return
+            }
+
+            allowIncomingWhileBusy = allow
+            // Apply to the active device, if any; otherwise it is picked up on the next setTokens.
+            if let device = twilioDevice {
+                let codecs: [String] = ["opus", "pcmu"]
+                device.updateOptions(DeviceInitOptions(logLevel: 1, codecPreferences: codecs, closeProtection: false, allowIncomingWhileBusy: allow)) { _ in }
+            }
+            result(true)
+            break
+
+        case .getAllowIncomingWhileBusy:
+            result(allowIncomingWhileBusy)
             break
 
         case .updateCallKitIcon:

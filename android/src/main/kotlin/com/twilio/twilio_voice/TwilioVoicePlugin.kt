@@ -996,6 +996,41 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 }
             }
 
+            TVMethodChannels.SET_ALLOW_INCOMING_WHILE_BUSY -> {
+                val allow = call.argument<Boolean>("allow") ?: run {
+                    result.error(
+                        FlutterErrorCodes.MALFORMED_ARGUMENTS,
+                        "No 'allow' provided or invalid type",
+                        null
+                    )
+                    return@onMethodCall
+                }
+
+                storage?.let {
+                    Log.d(TAG, "onMethodCall: allowIncomingWhileBusy is $allow")
+                    it.allowIncomingWhileBusy = allow
+                    result.success(true)
+                } ?: run {
+                    Log.e(
+                        TAG,
+                        "Storage is null, cannot set allowIncomingWhileBusy. Has Storage been initialized?"
+                    )
+                    result.success(false)
+                }
+            }
+
+            TVMethodChannels.GET_ALLOW_INCOMING_WHILE_BUSY -> {
+                storage?.let {
+                    result.success(it.allowIncomingWhileBusy)
+                } ?: run {
+                    Log.e(
+                        TAG,
+                        "Storage is null, cannot get allowIncomingWhileBusy. Has Storage been initialized?"
+                    )
+                    result.success(true)
+                }
+            }
+
             TVMethodChannels.IS_REJECTING_CALL_ON_NO_PERMISSIONS -> {
                 storage?.let {
                     result.success(it.rejectOnNoPermissions)
@@ -1972,6 +2007,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                     return
                 }
                 logEvent("Call Error: ${code}, $message");
+                logEvent("", "Call Ended")
             }
 
             TVNativeCallEvents.EVENT_RECONNECTING -> {

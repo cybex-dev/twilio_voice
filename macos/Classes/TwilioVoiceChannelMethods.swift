@@ -29,4 +29,6 @@ public enum TwilioVoiceChannelMethods: String {
     case requestBackgroundPermissions = "requestBackgroundPermissions"
     case showNotifications = "showNotifications"
     case updateCallKitIcon = "updateCallKitIcon"
+    case setAllowIncomingWhileBusy = "setAllowIncomingWhileBusy"
+    case getAllowIncomingWhileBusy = "getAllowIncomingWhileBusy"
 }

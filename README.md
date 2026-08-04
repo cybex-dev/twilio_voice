@@ -60,7 +60,7 @@ First, add the package to your `pubspec.yaml` file:
 ```yaml
 dependencies:
   ...
-  twilio_voice: ^0.3.2+2
+  twilio_voice: ^0.4.0
 ```
 
 Then run `flutter pub get` in your terminal.
@@ -98,8 +98,21 @@ Firstly, ensure you place this in your app's `proguard-rules.pro` file:
 -keepattributes InnerClasses
 ```
 
-next, register in your `AndroidManifest.xml` the service in charge of displaying incoming call
-notifications:
+next, depends on your implementation requirements.
+
+Since Twilio Voice uses FCM to deliver incoming call notifications, you need to ensure that your app is set up to receive FCM messages. Some plugins subclass `FirebaseMessagingService` to handle FCM messages, which does not play well with `twilio_voice`, see [Android FCM setup](NOTES.md#android-fcm-setup) for more information.
+
+Are you subclassing `FirebaseMessagingService` or using another package that does? e.g. `awesome_notifications_fcm`? (`firebase_messaging` does not apply here). _If you are not sure, read the help here: [am I subclassing FirebaseMessagingService](NOTES.md#android-subclassing-fcm))_
+- If **no**, continue below (or [Standard Android FCM setup](#standard-android-fcm-setup)).
+- If **yes**, proceed to [Using FCM alongside another package](#using-fcm-alongside-another-package).
+
+#### standard Android FCM setup
+register in your `AndroidManifest.xml` the service in charge of displaying incoming call notifications:
+
+> [!IMPORTANT]
+> Only do this if your app does **not** otherwise use FCM. If another package already registers a
+> `FirebaseMessagingService` (`awesome_notifications_fcm`, ...), see
+> [Using FCM alongside another package](#using-fcm-alongside-another-package) instead.
 
 ```xml
 
@@ -114,6 +127,68 @@ notifications:
     ...
 </Application>
 ```
+
+#### Using FCM alongside another package
+
+> [!IMPORTANT]
+> Do this ONLY IF you are using another package that already registers a `FirebaseMessagingService` (e.g. `awesome_notifications_fcm`, ...). If your app does **not** otherwise use FCM, see [standard Android FCM setup](#standard-android-fcm-setup) instead.
+
+
+In your `FirebaseMessagingService` subclass, forward all messages to the Twilio Voice plugin. If the message is a Twilio Voice call invite, the plugin will handle it and you don't need to do anything else.
+```kotlin
+package com.example.myapp
+
+import com.google.firebase.messaging.FirebaseMessagingService
+import com.google.firebase.messaging.RemoteMessage
+import com.twilio.twilio_voice.fcm.TwilioVoiceFcm
+
+class MyMessagingService : FirebaseMessagingService() {
+
+    override fun onMessageReceived(remoteMessage: RemoteMessage) {
+        // Twilio Voice call invite - handled, nothing further to do.
+        if (TwilioVoiceFcm.handleMessage(this, remoteMessage.data)) return
+
+        // ...not a Twilio Voice payload, handle it yourself.
+    }
+
+    override fun onNewToken(token: String) {
+        // Keep Twilio's registration bound to the current device token.
+        TwilioVoiceFcm.updateToken(this, token)
+
+        // ...forward the rotated token to your own services too.
+    }
+}
+```
+
+Ensure your `AndroidManifest.xml` registers your service and make sure you remove the Twilio Voice service registration if you previously added it:
+
+```xml
+<service android:name="com.example.myapp.MyMessagingService"
+    android:stopWithTask="false">
+    <intent-filter>
+        <action android:name="com.google.firebase.MESSAGING_EVENT" />
+    </intent-filter>
+</service>
+```
+
+**Keeping the device token in sync.** `onNewToken` is delivered to the same single service as
+messages, so a service replacing `VoiceFirebaseMessagingService` must forward rotations via
+`TwilioVoiceFcm.updateToken(...)` as shown above. Without it Twilio keeps the stale binding, pushes
+go to a dead token and incoming calls silently stop.
+
+`updateToken` is best-effort: re-registration needs a cached Twilio access token, so it only takes
+effect while the plugin is running. Mirroring it in Dart covers the rest, and is worth doing
+regardless of your FCM setup:
+
+```dart
+FirebaseMessaging.instance.onTokenRefresh.listen((token) async {
+  await TwilioVoicePlatform.instance.setTokens(
+    accessToken: currentAccessToken,
+    deviceToken: token,
+  );
+});
+```
+
 
 #### Phone Account
 

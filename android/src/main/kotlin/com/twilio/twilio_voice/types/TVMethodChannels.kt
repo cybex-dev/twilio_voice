@@ -46,6 +46,8 @@ enum class TVMethodChannels(val method: String) {
     REQUEST_BACKGROUND_PERMISSIONS("requestBackgroundPermissions"),
     IS_PHONE_ACCOUNT_ENABLED("isPhoneAccountEnabled"),
     REJECT_CALL_ON_NO_PERMISSIONS("rejectCallOnNoPermissions"),
+    SET_ALLOW_INCOMING_WHILE_BUSY("setAllowIncomingWhileBusy"),
+    GET_ALLOW_INCOMING_WHILE_BUSY("getAllowIncomingWhileBusy"),
     IS_REJECTING_CALL_ON_NO_PERMISSIONS("isRejectingCallOnNoPermissions"),
     UPDATE_CALLKIT_ICON("updateCallKitIcon"),
     CONNECT("connect");

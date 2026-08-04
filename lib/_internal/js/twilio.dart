@@ -1,5 +1,5 @@
 /// Acts as interface for the Twilio Voice JS SDK
-/// The 2 main components of Twilio Voice SDJ are:
+/// The 2 main components of Twilio Voice SDK are:
 /// 1. Twilio.Device - This is the main object that is used to interact with the Twilio Voice SDK.
 /// Documentation:
 /// - https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice
@@ -9,13 +9,14 @@
 /// Documentation:
 /// - https://www.twilio.com/docs/voice/sdks/javascript/twiliocall
 ///
-/// The Twilio Voice JS SDK is loaded in the webview using the [TwilioVoiceWeb] plugin.
-
-/// Short description of file & functions (high-level)
-/// Load twilio.js or twilio.min.js by filename (see web/twilio.js), @JS annotates this is a JS operation/function. Alternatively,
-/// to call a specific JS function, add this inside the @JS annotation's parentheses e.g. [@JS("JSON.stringify")].
-/// Declare external functions that will be called from JS - keep JS and dart names synonymous - for readers, future devs, and debugging.
-/// These external functions are called from the main `plugin_name_web.dart` file.
+/// The Twilio Voice JS SDK is loaded by the plugin itself (it is bundled as an asset), so
+/// `window.Twilio` is available before these bindings are used - see [TwilioVoiceWeb] on web and
+/// `TVWebView` on macOS.
+///
+/// Interop notes: these types bind to existing JS globals via `dart:js_interop` extension types.
+/// `@JS("<name>")` names the JS object/member being bound; keep the JS and Dart names synonymous
+/// for readers, future devs and debugging. They are consumed from `twilio_voice_web.dart`.
+library;
 
 import 'dart:js_interop';
 

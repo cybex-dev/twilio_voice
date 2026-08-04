@@ -105,6 +105,12 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
 
   late final Call _call = Call();
 
+  /// Whether the Twilio Device raises `incoming` while already on a call.
+  /// Mirrors the SDK's `allowIncomingWhileBusy` device option. See [setAllowIncomingWhileBusy].
+  bool get _allowIncomingWhileBusy => _localStorage.getAllowIncomingWhileBusy(true);
+
+  set _allowIncomingWhileBusy(bool value) => _localStorage.saveAllowIncomingWhileBusy(value);
+
   @override
   Call get call => _call;
 
@@ -208,6 +214,19 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
   Future<bool?> updateCallKitIcon({String? icon}) async {
     return true;
   }
+
+  /// Whether the Twilio Device raises `incoming` while already on a call, via the SDK's
+  /// `allowIncomingWhileBusy` device option. Applied to the active device immediately.
+  @override
+  Future<bool> setAllowIncomingWhileBusy({bool allow = true}) async {
+    _allowIncomingWhileBusy = allow;
+    device?.updateOptions(_deviceOptions);
+    return true;
+  }
+
+  /// Whether the Twilio Device raises `incoming` while already on a call. Defaults to true.
+  @override
+  Future<bool> getAllowIncomingWhileBusy() async => _allowIncomingWhileBusy;
 
   /// Set default caller name for incoming calls if no caller name is provided / registered.
   /// See [LocalStorageWeb.saveDefaultCallerName]
@@ -419,7 +438,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
           codecPreferences: codecs.map((e) => e.toJS).toList().toJS,
           closeProtection: true,
           enableImprovedSignalingErrorPrecision: true,
-          allowIncomingWhileBusy: false,
+          allowIncomingWhileBusy: _allowIncomingWhileBusy,
         );
 
         /// create new Twilio device
@@ -609,7 +628,7 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
       codecPreferences: _codecs.map((e) => e.toJS).toList().toJS,
       closeProtection: _closeProtection,
       enableImprovedSignalingErrorPrecision: true,
-      allowIncomingWhileBusy: false,
+      allowIncomingWhileBusy: _allowIncomingWhileBusy,
       sounds: _soundMap.jsify(),
     );
   }
