@@ -47,6 +47,12 @@ class TVConnectionService : ConnectionService() {
 
         val activeConnections = HashMap<String, TVCallConnection>()
 
+        /**
+         * Pending [CallInvite]s awaiting a Connection, mapped to Call SID. CallInvites are accepted
+         * in [onCreateIncomingConnection] or if failed removed by [onCreateIncomingConnectionFailed].
+         */
+        private val pendingCallInvites = HashMap<String, CallInvite>()
+
         val TWI_SCHEME: String = "twi"
 
         /**
@@ -55,12 +61,6 @@ class TVConnectionService : ConnectionService() {
         const val FOREGROUND_NOTIFICATION_ID: Int = 100
 
         val SERVICE_TYPE_MICROPHONE: Int = FOREGROUND_NOTIFICATION_ID
-
-        //region ACTIONS_* Constants
-        /**
-         * Action used with [VoiceFirebaseMessagingService] to notify of incoming calls
-         */
-        const val ACTION_CALL_INVITE: String = "ACTION_CALL_INVITE"
 
         //region ACTIONS_* Constants
         /**
@@ -138,6 +138,12 @@ class TVConnectionService : ConnectionService() {
          * Extra used with [ACTION_CANCEL_CALL_INVITE] to cancel a call connection.
          */
         const val EXTRA_INCOMING_CALL_INVITE: String = "EXTRA_INCOMING_CALL_INVITE"
+
+        /**
+         * Call SID handed to Telecom in place of the [CallInvite]. A String is safe for any process
+         * to unmarshal - see [pendingCallInvites].
+         */
+        const val EXTRA_INCOMING_CALL_SID: String = "EXTRA_INCOMING_CALL_SID"
 
         /**
          * Extra used to identify a call connection.
@@ -342,10 +348,10 @@ class TVConnectionService : ConnectionService() {
                         return@let
                     }
 
+                    pendingCallInvites[callInvite.callSid] = callInvite
                     val myBundle: Bundle = Bundle().apply {
-                        putParcelable(EXTRA_INCOMING_CALL_INVITE, callInvite)
+                        putString(EXTRA_INCOMING_CALL_SID, callInvite.callSid)
                     }
-                    myBundle.classLoader = CallInvite::class.java.classLoader
 
                     // Add extras for [addNewIncomingCall] method
                     val extras = Bundle().apply {
@@ -559,10 +565,16 @@ class TVConnectionService : ConnectionService() {
             throw Exception("onCreateIncomingConnection: request is missing Bundle EXTRA_INCOMING_CALL_EXTRAS");
         }
 
-        myBundle.classLoader = CallInvite::class.java.classLoader
-        val ci: CallInvite = myBundle.getParcelableSafe(EXTRA_INCOMING_CALL_INVITE) ?: run {
-            Log.e(TAG, "onCreateIncomingConnection: request is missing CallInvite EXTRA_INCOMING_CALL_INVITE")
-            throw Exception("onCreateIncomingConnection: request is missing CallInvite EXTRA_INCOMING_CALL_INVITE");
+        val callSid: String = myBundle.getString(EXTRA_INCOMING_CALL_SID) ?: run {
+            Log.e(TAG, "onCreateIncomingConnection: request is missing EXTRA_INCOMING_CALL_SID")
+            throw Exception("onCreateIncomingConnection: request is missing EXTRA_INCOMING_CALL_SID");
+        }
+
+        // Claim the invite held for this SID; removing it keeps the map from growing if a call is
+        // never connected.
+        val ci: CallInvite = pendingCallInvites.remove(callSid) ?: run {
+            Log.e(TAG, "onCreateIncomingConnection: no pending CallInvite for SID '$callSid'")
+            throw Exception("onCreateIncomingConnection: no pending CallInvite for SID '$callSid'");
         }
 
         // Create storage instance for call parameters
@@ -574,7 +586,8 @@ class TVConnectionService : ConnectionService() {
         // Create connection
         val connection = TVCallInviteConnection(applicationContext, ci, callParams)
 
-        // Remove call invite from extras, causes marshalling error i.e. Class not found.
+        // The nested bundle has served its purpose; drop it rather than publishing plugin-internal
+        // extras to every InCallService.
         val requestBundle = request.extras.also { it ->
             it.remove(TelecomManager.EXTRA_INCOMING_CALL_EXTRAS)
         }
@@ -803,6 +816,12 @@ class TVConnectionService : ConnectionService() {
     override fun onCreateIncomingConnectionFailed(connectionManagerPhoneAccount: PhoneAccountHandle?, request: ConnectionRequest?) {
         super.onCreateIncomingConnectionFailed(connectionManagerPhoneAccount, request)
         Log.d(TAG, "onCreateIncomingConnectionFailed")
+
+        // No Connection will claim the invite held for this call, so release it here.
+        request?.extras
+            ?.getBundle(TelecomManager.EXTRA_INCOMING_CALL_EXTRAS)
+            ?.getString(EXTRA_INCOMING_CALL_SID)
+            ?.let { pendingCallInvites.remove(it) }
         // The failed connection was never added to activeConnections; only demote the
         // service if no other call is active.
         onConnectionEnded(null)
