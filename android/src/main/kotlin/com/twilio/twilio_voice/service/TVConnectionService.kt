@@ -284,7 +284,7 @@ class TVConnectionService : ConnectionService() {
 
                     // Load CancelledCallInvite class loader
                     // See: https://github.com/twilio/voice-quickstart-android/issues/561#issuecomment-1678613170
-                    it.setExtrasClassLoader(CallInvite::class.java.classLoader)
+                    it.setExtrasClassLoader(CancelledCallInvite::class.java.classLoader)
                     val cancelledCallInvite = it.getParcelableExtraSafe<CancelledCallInvite>(EXTRA_CANCEL_CALL_INVITE) ?: run {
                         Log.e(TAG, "onStartCommand: ACTION_CANCEL_CALL_INVITE is missing parcelable EXTRA_CANCEL_CALL_INVITE")
                                 // Tear down the foreground service we just started if nothing else is running.
