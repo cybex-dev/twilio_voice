@@ -53,6 +53,13 @@ class TVConnectionService : ConnectionService() {
          */
         private val pendingCallInvites = HashMap<String, CallInvite>()
 
+        /**
+         * SIDs of invites cancelled before Telecom got round to creating their Connection.
+         */
+        private val cancelledCallInvites = LinkedHashSet<String>()
+
+        private const val MAX_CANCELLED_CALL_INVITES = 32
+
         val TWI_SCHEME: String = "twi"
 
         /**
@@ -287,8 +294,16 @@ class TVConnectionService : ConnectionService() {
 
                     val callHandle = cancelledCallInvite.callSid
                     val connection = getConnection(callHandle) as? TVCallInviteConnection
+                    pendingCallInvites.remove(callHandle)
+
                     if (connection == null) {
-                        Log.e(TAG, "onStartCommand: [ACTION_CANCEL_CALL_INVITE] could not find incoming connection for callHandle: $callHandle")
+                        Log.w(TAG, "onStartCommand: [ACTION_CANCEL_CALL_INVITE] no connection yet for callHandle: $callHandle, cancelling the pending one")
+                        // The Connection is still in flight; mark it so onCreateIncomingConnection
+                        // does not raise a call the caller has already given up on.
+                        if (cancelledCallInvites.size >= MAX_CANCELLED_CALL_INVITES) {
+                            cancelledCallInvites.iterator().let { i -> i.next(); i.remove() }
+                        }
+                        cancelledCallInvites.add(callHandle)
                     } else {
                         val errorCode = it.getIntExtra(EXTRA_CANCEL_CALL_INVITE_ERROR_CODE, NO_ERROR_CODE)
 
@@ -568,6 +583,20 @@ class TVConnectionService : ConnectionService() {
         val callSid: String = myBundle.getString(EXTRA_INCOMING_CALL_SID) ?: run {
             Log.e(TAG, "onCreateIncomingConnection: request is missing EXTRA_INCOMING_CALL_SID")
             throw Exception("onCreateIncomingConnection: request is missing EXTRA_INCOMING_CALL_SID");
+        }
+
+        // The caller hung up while this Connection was still being created - report it as missed
+        // rather than ringing a call that no longer exists.
+        if (cancelledCallInvites.remove(callSid)) {
+            Log.i(TAG, "onCreateIncomingConnection: invite '$callSid' was cancelled before the connection was created")
+            pendingCallInvites.remove(callSid)
+            onConnectionEnded(null)
+            // MISSED makes the platform log a missed call; CANCELED suppresses it - matching
+            // TVCallInviteConnection.reportMissedCall's handling of the showNotifications setting.
+            val showNotifications: Boolean = StorageImpl(applicationContext).showNotifications
+            return Connection.createFailedConnection(
+                DisconnectCause(if (showNotifications) DisconnectCause.MISSED else DisconnectCause.CANCELED)
+            )
         }
 
         // Claim the invite held for this SID; removing it keeps the map from growing if a call is
