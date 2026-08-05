@@ -290,9 +290,7 @@ See [example](https://github.com/cybex-dev/twilio_voice/blob/master/example/andr
 
 ##### Bluetooth, Telecom App Crash
 
-- Upon accepting an inbound call, at times the Telecom app/ Bluetooth service will crash and restart. This is a known bug, caused by `Class not found when unmarshalling: com.twilio.voice.CallInvite`. This is due to the Telecom service not using the same Classloader as the main Flutter app. See [here](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/telecomm/java/android/telecom/Call.java#2466) for source of error.
 - Callback action on post dialer screen may not work as expected - this is platform and manufacturer specific. PRs are welcome here.
-- Complete integration with showing missed calls. This is a work in progress.
 
 #### Android FAQ:
 1. **Why are calls failing in release mode?**
