@@ -62,6 +62,9 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         callStateEventPrefixes.contains(where: message.hasPrefix)
     }
 
+    /// Custom parameters of the call in progress.
+    private var customParameters: [String: Any]?
+
     var callKitCompletionCallback: ((Bool)->Swift.Void?)? = nil
     var audioDevice: DefaultAudioDevice = DefaultAudioDevice()
     
@@ -736,6 +739,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         self.sendPhoneCallEvents(description: "Ringing|\(from)|\(callInvite.to)|Incoming\(formatCustomParams(params: callInvite.customParameters))", isError: false)
         reportIncomingCall(from: from, uuid: callInvite.uuid)
         self.callInvite = callInvite
+        self.customParameters = callInvite.customParameters
     }
     
     func formatCustomParams(params: [String:Any]?)->String{
@@ -910,6 +914,8 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         if (self.callInvite != nil) {
             self.callInvite = nil
         }
+        self.customParameters = nil
+        self.callArgs = [String: AnyObject]()
 
         self.callOutgoing = false
         self.userInitiatedDisconnect = false
@@ -1024,6 +1030,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             self.sendPhoneCallEvents(description: "LOG|provider:performEndCallAction: rejecting call", isError: false)
             self.callInvite?.reject()
             self.callInvite = nil
+            self.customParameters = nil
         }else if let call = self.call {
             self.sendPhoneCallEvents(description: "LOG|provider:performEndCallAction: disconnecting call", isError: false)
             call.disconnect()
@@ -1177,6 +1184,9 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         }
         let theCall = TwilioVoiceSDK.connect(options: connectOptions, delegate: self)
         self.call = theCall
+        self.customParameters = self.callArgs
+            .filter { $0.key != "accessToken" }
+            .mapValues { $0 as Any }
         self.callKitCompletionCallback = completionHandler
     }
     
@@ -1242,7 +1252,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             let from = (activeCall.from ?? self.identity).replacingOccurrences(of: "client:", with: "")
             let to = activeCall.to ?? self.callTo
             NSLog("Emitting state of active call for the new listener")
-            self.sendPhoneCallEvents(description: "Connected|\(from)|\(to)|\(direction)", isError: false)
+            self.sendPhoneCallEvents(description: "Connected|\(from)|\(to)|\(direction)\(formatCustomParams(params: self.customParameters))", isError: false)
 
             if activeCall.isOnHold {
                 self.sendPhoneCallEvents(description: "Hold", isError: false)
