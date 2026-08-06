@@ -1058,23 +1058,20 @@ class Call extends MethodChannelTwilioCall {
     if (jsCall == null) {
       return;
     }
-    // notify SW to cancel notification
-    final callStatus = getCallStatus(jsCall);
 
     // get call SID before reset
     final callSid = _getSid();
+    final isIncoming = jsCall.direction == "INCOMING";
 
     _detachCallEventListeners(jsCall);
     nativeCall = null;
     logLocalEvent("Call Ended", prefix: "");
 
-    // reject incoming call that is both outbound ringing or inbound pending
-    // TODO(cybex-dev): check call status for call disconnects
     if (callSid == null) {
       return;
     }
 
-    if (callStatus == CallStatus.ringing || callStatus == CallStatus.pending || callStatus == CallStatus.closed) {
+    if (isIncoming) {
       logLocalEvent("Missed Call", prefix: "");
       webCallkit.reportCallDisconnected(callSid, response: CKDisconnectResponse.missed);
     } else {
