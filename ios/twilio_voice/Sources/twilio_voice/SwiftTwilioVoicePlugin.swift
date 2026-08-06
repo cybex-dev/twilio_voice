@@ -47,6 +47,21 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     
     var callInvite:CallInvite?
     var call:Call?
+
+    /// Events raised before the Dart listener attached, held here and flushed in `onListen` rather
+    /// than being dropped. Bounded so a long-running app cannot grow this without limit.
+    private var pendingEvents: [String] = []
+    private let maxPendingEvents = 50
+
+    /// Event prefixes that describe call state, used to tell whether the buffered events already
+    /// told Dart about the call in progress.
+    private let callStateEventPrefixes = ["Incoming|", "Ringing|", "Answer|", "Connected|"]
+
+    /// Whether this event describes the state of a call, as opposed to a log or status flag.
+    private func isCallStateEvent(_ message: String) -> Bool {
+        callStateEventPrefixes.contains(where: message.hasPrefix)
+    }
+
     var callKitCompletionCallback: ((Bool)->Swift.Void?)? = nil
     var audioDevice: DefaultAudioDevice = DefaultAudioDevice()
     
@@ -1190,6 +1205,20 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     public func onListen(withArguments arguments: Any?,
                          eventSink: @escaping FlutterEventSink) -> FlutterError? {
         self.eventSink = eventSink
+
+        // Deliver anything raised before Dart subscribed (see sendEvent).
+        let buffered = pendingEvents
+        if !buffered.isEmpty {
+            NSLog("Flushing \(buffered.count) buffered event(s)")
+            pendingEvents.removeAll()
+            DispatchQueue.main.async {
+                buffered.forEach { eventSink($0) }
+            }
+        }
+
+        if !buffered.contains(where: isCallStateEvent) {
+            emitActiveCallState()
+        }
         
         NotificationCenter.default.addObserver(
             self,
@@ -1204,6 +1233,28 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         NotificationCenter.default.removeObserver(self)
         eventSink = nil
         return nil
+    }
+    
+    /// Emits the current state of the call in progress, if any.
+    private func emitActiveCallState() {
+        if let activeCall = self.call, activeCall.state == .connected || activeCall.state == .reconnecting {
+            let direction = self.callOutgoing ? "Outgoing" : "Incoming"
+            let from = (activeCall.from ?? self.identity).replacingOccurrences(of: "client:", with: "")
+            let to = activeCall.to ?? self.callTo
+            NSLog("Emitting state of active call for the new listener")
+            self.sendPhoneCallEvents(description: "Connected|\(from)|\(to)|\(direction)", isError: false)
+
+            if activeCall.isOnHold {
+                self.sendPhoneCallEvents(description: "Hold", isError: false)
+            }
+            if activeCall.state == .reconnecting {
+                self.sendPhoneCallEvents(description: "Reconnecting", isError: false)
+            }
+        } else if let invite = self.callInvite {
+            let from = (invite.from ?? self.defaultCaller).replacingOccurrences(of: "client:", with: "")
+            NSLog("Emitting state of ringing call for the new listener")
+            self.sendPhoneCallEvents(description: "Incoming|\(from)|\(invite.to)|Incoming\(formatCustomParams(params: invite.customParameters))", isError: false)
+        }
     }
     
     private func sendPhoneCallEvents(description: String, isError: Bool) {
@@ -1222,6 +1273,15 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     
     private func sendEvent(_ event: Any) {
         guard let eventSink = eventSink else {
+            if let message = event as? String {
+                if isCallStateEvent(message) {
+                    pendingEvents.removeAll(where: isCallStateEvent)
+                }
+                if pendingEvents.count >= maxPendingEvents {
+                    pendingEvents.removeFirst()
+                }
+                pendingEvents.append(message)
+            }
             return
         }
         DispatchQueue.main.async {
