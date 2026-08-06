@@ -743,9 +743,9 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     }
     
     func formatCustomParams(params: [String:Any]?)->String{
-        guard let customParameters = params else{return ""}
+        guard let map = params else{return ""}
         do{
-            let jsonData = try JSONSerialization.data(withJSONObject: customParameters)
+            let jsonData = try JSONSerialization.data(withJSONObject: map)
             if let jsonStr = String(data: jsonData, encoding: .utf8){
                 return "|\(jsonStr )"
             }
@@ -1266,7 +1266,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             self.sendPhoneCallEvents(description: "Incoming|\(from)|\(invite.to)|Incoming\(formatCustomParams(params: invite.customParameters))", isError: false)
         }
     }
-    
+
     private func sendPhoneCallEvents(description: String, isError: Bool) {
         NSLog(description)
         
