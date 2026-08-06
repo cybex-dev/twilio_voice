@@ -60,8 +60,6 @@ class TVConnectionService : ConnectionService() {
 
         private const val MAX_CANCELLED_CALL_INVITES = 32
 
-        val TWI_SCHEME: String = "twi"
-
         /**
          * Notification id used for the foreground-service (ongoing call) notification.
          */
