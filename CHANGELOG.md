@@ -1,5 +1,7 @@
 ## Next Release
 
+* fix: [Web] an incoming call not answered left a hanging incoming call notification indefinitely.
+* fix: [Web] an unanswered *outgoing* call ended early cancelled from this device is no longer reported as a missed call
 * fix: [Android, iOS, macOS] `isOnCall` & `activeCall` now sync. Launching app with ongoing call now returns correct `activeCall` object and `isOnCall` true. (see [Issue #179](https://github.com/cybex-dev/twilio_voice/issues/179))
 * chore: [Android] plugin Gradle wrapper raised to 8.11.1, the minimum for the declared AGP 8.9.1
 * fix: [Android] `setActive()` now proactively changes call UI to ongoing call screen when answering incoming call preventing perceived delay while connecting.
