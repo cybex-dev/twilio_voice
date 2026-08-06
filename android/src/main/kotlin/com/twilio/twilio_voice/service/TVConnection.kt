@@ -48,6 +48,7 @@ class TVCallInviteConnection(
     override fun onAnswer() {
         Log.d(TAG, "onAnswer: onAnswer")
         super.onAnswer()
+        setActive()
         twilioCall = callInvite.accept(context, this)
         onAction?.onChange(TVNativeCallActions.ACTION_ANSWERED, Bundle().apply {
             putParcelable(TVBroadcastReceiver.EXTRA_CALL_INVITE, callInvite)
