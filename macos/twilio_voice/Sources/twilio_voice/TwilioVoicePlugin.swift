@@ -25,6 +25,20 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
 //    private var _result: FlutterResult?
     private var eventSink: FlutterEventSink?
 
+    /// Events raised before the Dart listener attached, held here and flushed in `onListen` rather
+    /// than being dropped. Bounded so a long-running app cannot grow this without limit.
+    private var pendingEvents: [String] = []
+    private let maxPendingEvents = 50
+
+    /// Event prefixes that describe call state, used to tell whether the buffered events already
+    /// told Dart about the call in progress.
+    private let callStateEventPrefixes = ["Incoming|", "Ringing|", "Answer|", "Connected|"]
+
+    /// Whether this event describes the state of a call, as opposed to a log or status flag.
+    private func isCallStateEvent(_ message: String) -> Bool {
+        callStateEventPrefixes.contains(where: message.hasPrefix)
+    }
+
     let kCachedDeviceToken = "CachedDeviceToken"
     let kCachedBindingDate = "CachedBindingDate"
     let kClientList = "TwilioContactList"
@@ -1103,6 +1117,18 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     public func onListen(withArguments arguments: Any?, eventSink: @escaping FlutterEventSink) -> FlutterError? {
         self.eventSink = eventSink
 
+        // Deliver anything raised before Dart subscribed (see logEvent).
+        let buffered = pendingEvents
+        if !buffered.isEmpty {
+            NSLog("Flushing \(buffered.count) buffered event(s)")
+            pendingEvents.removeAll()
+            onMain { buffered.forEach { eventSink($0) } }
+        }
+
+        if !buffered.contains(where: isCallStateEvent) {
+            emitActiveCallState()
+        }
+
         // TODO - review
         //        NotificationCenter.default.addObserver(
         //            self,
@@ -1147,6 +1173,16 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     private func logEvent(prefix: String = "LOG", separator: String = "|", description: String, isError: Bool = false) {
         NSLog(description)
         guard let eventSink = eventSink else {
+            if !isError {
+                let message = buildMessage(prefix: prefix, separator: separator, description: description)
+                if isCallStateEvent(message) {
+                    pendingEvents.removeAll(where: isCallStateEvent)
+                }
+                if pendingEvents.count >= maxPendingEvents {
+                    pendingEvents.removeFirst()
+                }
+                pendingEvents.append(message)
+            }
             return
         }
 
@@ -1154,14 +1190,52 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
             let flutterError = FlutterError(code: FlutterErrorCodes.UNAVAILABLE_ERROR, message: description, details: nil)
             onMain { eventSink(flutterError) }
         } else {
-            var message = "";
-            if (prefix.isEmpty) {
-                message = description;
-            } else {
-                message = prefix + separator + description;
-            }
+            onMain { eventSink(self.buildMessage(prefix: prefix, separator: separator, description: description)) }
+        }
+    }
 
-            onMain { eventSink(message) }
+    /// Builds the wire message sent over the event channel: `<prefix><separator><description>`, or
+    /// just the description when there is no prefix (call state events carry no prefix).
+    private func buildMessage(prefix: String, separator: String, description: String) -> String {
+        prefix.isEmpty ? description : prefix + separator + description
+    }
+
+    /// Emits the current state of the call in progress, if any.
+    private func emitActiveCallState() {
+        guard let activeCall = twilioCall else { return }
+
+        activeCall.status { [weak self] status, _ in
+            guard let self = self, let status = status else { return }
+            activeCall.resolveParams { params, _ in
+                activeCall.direction { direction, _ in
+                    let from = params?.from ?? ""
+                    let to = params?.to ?? ""
+                    let customParams = self.formatCustomParams(params: params?.customParameters)
+
+                    switch status {
+                    case .pending, .ringing:
+                        NSLog("Emitting state of ringing call for the new listener")
+                        self.logEvents(prefix: "", descriptions: ["Incoming", from, to, "Incoming", customParams])
+
+                    case .open, .connected, .reconnecting, .reconnected:
+                        NSLog("Emitting state of active call for the new listener")
+                        self.logEvents(prefix: "", descriptions: [
+                            "Connected",
+                            from,
+                            to,
+                            (direction ?? .outgoing).rawValue.capitalized,
+                            customParams,
+                        ])
+
+                        if status == .reconnecting {
+                            self.logEvents(prefix: "", descriptions: ["Reconnecting"])
+                        }
+
+                    default:
+                        NSLog("Nothing to emit for call status '\(status.rawValue)'")
+                    }
+                }
+            }
         }
     }
 
