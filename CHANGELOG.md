@@ -1,5 +1,6 @@
 ## Next Release
 
+* fix: [Android, iOS, macOS] `isOnCall` & `activeCall` now sync. Launching app with ongoing call now returns correct `activeCall` object and `isOnCall` true. (see [Issue #179](https://github.com/cybex-dev/twilio_voice/issues/179))
 * feat: [iOS, macOS] Swift Package Manager support added, enable it with `flutter config --enable-swift-package-manager`. _Note: projects using CocoaPods will continue to use CocoaPods, and SPM is only used for new projects or those that have opted in._
 * feat: added call quality events for all platforms (see `CallQualityEvent` and `TwilioVoicePlatform.instance.call.qualityWarnings`, and [Twilio Call Quality Metrics](https://www.twilio.com/docs/voice/voice-insights/api/call/details-sdk-call-quality-events#error-and-warning-events))
 * fix: [android] fixed crash when `CallInvite` is received due to unmarshalling error with some Telecom/ConnectionService implementations (e.g. Samsung)
