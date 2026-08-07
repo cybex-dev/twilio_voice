@@ -119,18 +119,6 @@ see [[Limitations]](https://github.com/cybex-dev/twilio_voice/blob/master/NOTES.
 
 ### Android Setup:
 
-Firstly, ensure you place this in your app's `proguard-rules.pro` file:
-```proguard
-# Twilio Programmable Voice
--keep class com.twilio.** { *; }
--keep class tvo.webrtc.** { *; }
--dontwarn tvo.webrtc.**
--keep class com.twilio.voice.** { *; }
--keepattributes InnerClasses
-```
-
-next, depends on your implementation requirements.
-
 Since Twilio Voice uses FCM to deliver incoming call notifications, you need to ensure that your app is set up to receive FCM messages. Some plugins subclass `FirebaseMessagingService` to handle FCM messages, which does not play well with `twilio_voice`, see [Android FCM setup](NOTES.md#android-fcm-setup) for more information.
 
 Are you subclassing `FirebaseMessagingService` or using another package that does? e.g. `awesome_notifications_fcm`? (`firebase_messaging` does not apply here). _If you are not sure, read the help here: [am I subclassing FirebaseMessagingService](NOTES.md#android-subclassing-fcm))_
@@ -298,8 +286,7 @@ See [example](https://github.com/cybex-dev/twilio_voice/blob/master/example/andr
    There are certainly a number of factors, but for starting point:
    1. first review [Android Setup](README.md#android-setup) closely. 
    2. Compare the example app's configuration files to your app. 
-   3. Ensure you have the required [Proguard rules](#android-setup) to ensure the Twilio Voice SDK is not being obfuscated. If you are using a custom Proguard file, ensure the Twilio Voice SDK classes are not being obfuscated.
-   4. Check Twilio's Error logs in the dashboard.
+   3. Check Twilio's Error logs in the dashboard.
 
 2. **Why am I not receiving any calls on Android?**
 

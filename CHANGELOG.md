@@ -20,6 +20,7 @@
 * feat: added call quality events for all platforms (see `CallQualityEvent` and `TwilioVoicePlatform.instance.call.qualityWarnings`, and [Twilio Call Quality Metrics](https://www.twilio.com/docs/voice/voice-insights/api/call/details-sdk-call-quality-events#error-and-warning-events))
 * fix: [android] fixed crash when `CallInvite` is received due to unmarshalling error with some Telecom/ConnectionService implementations (e.g. Samsung)
 * fix: [iOS] call events now provide raw `from`/`to` Twilio sent, `client:` prefix included. This is present on other platforms.
+* feat: [Android] `proguard-rules` are now automatically included as `consumerProguardFiles` in the plugin's `build.gradle`, so apps no longer need to manually copy them into their own `proguard-rules.pro` file.
 * Updated Example
 * Updated docs
 
