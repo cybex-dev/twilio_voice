@@ -152,6 +152,13 @@ class MethodChannelTwilioCall extends TwilioCallPlatform {
 
   @override
   void clearQualityWarnings() {
+    final previous = _lastQualityWarnings?.current ?? const <CallQualityWarning>{};
     _lastQualityWarnings = null;
+    if (previous.isEmpty) {
+      return;
+    }
+    // Publish the clear, else listeners of [qualityWarnings] keep reporting the last warnings of a
+    // call that has ended - nulling the field alone is invisible to the stream.
+    qualityWarningsController.add(CallQualityEvent(current: const {}, previous: previous));
   }
 }
