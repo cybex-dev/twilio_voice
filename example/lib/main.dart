@@ -288,7 +288,7 @@ class _AppState extends State<App> {
       switch (event) {
         case CallEvent.incoming:
         // applies to web only
-          if (kIsWeb || Platform.isAndroid) {
+          if (kIsWeb || Platform.isAndroid || Platform.isMacOS) {
             final activeCall = TwilioVoicePlatform.instance.call.activeCall;
             if (activeCall != null && activeCall.callDirection == CallDirection.incoming) {
               _showWebIncomingCallDialog();
@@ -416,8 +416,8 @@ class _AppState extends State<App> {
   }
 
   Future<bool?> showIncomingCallScreen(BuildContext context, ActiveCall activeCall) async {
-    if (!kIsWeb && !Platform.isAndroid) {
-      printDebug("showIncomingCallScreen only for web");
+    if (!(kIsWeb || Platform.isAndroid || Platform.isMacOS)) {
+      printDebug("showIncomingCallScreen only for web, macOS or Android");
       return false;
     }
 

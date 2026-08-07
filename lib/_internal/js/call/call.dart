@@ -26,9 +26,9 @@ enum TwilioCallEvents {
   // "sample"
   // sample,
   // "warning"
-  // warning,
-  // "warningCleared"
-  // warningCleared,
+  warning,
+  // "warning-cleared"
+  warningCleared,
   // "connected", undocumented?
   connected,
 }

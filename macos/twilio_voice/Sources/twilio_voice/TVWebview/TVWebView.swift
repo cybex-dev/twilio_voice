@@ -14,8 +14,7 @@ public class TVWebView: WKWebView, WKUIDelegate {
         overrideLogging()
         injectTwilioVoiceSDK()
 
-        let bundle = Bundle(for: TwilioVoicePlugin.self)
-        if let url = bundle.url(forResource: "Resources/index", withExtension: "html") {
+        if let url = TVWebView.indexPageURL() {
             loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
         } else {
             NSLog("""
@@ -26,6 +25,20 @@ public class TVWebView: WKWebView, WKUIDelegate {
 
                   """)
         }
+    }
+
+    /// Locates `index.html`, the page this webview hosts.
+    ///
+    /// Where it lives depends on how the plugin was integrated. Under Swift Package Manager the
+    /// file is declared as a package resource and lands in the package's generated resource
+    /// bundle, reachable only through `Bundle.module`. Under CocoaPods it is copied into the
+    /// plugin framework's own `Resources` directory instead.
+    private static func indexPageURL() -> URL? {
+        #if SWIFT_PACKAGE
+        return Bundle.module.url(forResource: "index", withExtension: "html")
+        #else
+        return Bundle(for: TwilioVoicePlugin.self).url(forResource: "Resources/index", withExtension: "html")
+        #endif
     }
 
     /// Asset path of the bundled Twilio Voice JS SDK, as declared in the plugin's `pubspec.yaml`.

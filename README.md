@@ -24,6 +24,7 @@ Any and all [Feature Requests](https://github.com/cybex-dev/twilio_voice/issues/
 - Receive and place calls from Web [v2.18.0](https://www.twilio.com/docs/voice/sdks/javascript/changelog#2180-january-5-2026) (FCM push notification integration not yet supported by Twilio Voice Web, see [here](https://github.com/twilio/twilio-voice.js/pull/159#issuecomment-1551553299) for discussion)
 - Receive and place calls from MacOS devices, uses custom UI to receive calls (in future & macOS
   13.0+, we'll be using CallKit) based on [v2.18.0](https://www.twilio.com/docs/voice/sdks/javascript/changelog#2180-january-5-2026)
+- Get live [call quality metrics](https://www.twilio.com/docs/voice/voice-insights/api/call/call-metrics-resource).
 - Interpret TwiML parameters to populate UI, see below [Interpreting Parameters](#interpreting-parameters)
 
 ### Feature addition schedule:
@@ -41,13 +42,9 @@ if you find one, please submit a pull request.~~
 
 Android provides a native UI by way of the `ConnectionService`. Twilio has made an attempt a [ConnectionService](https://github.com/twilio/voice-quickstart-android/tree/master/app/src/connection_service) implementation however it is fully realized in this package.
 
-### macOS Limitations
+Native UI callback feature does not yet work as may not be functional for a while, see [Android Callback](NOTES.md#callback).
 
-1. CallKit support is found in macOS 13.0+ which there is no support for yet. In future, this will
-   be taken into consideration for feature development.
-2. Twilio Voice does not offer a native SDK for macOS, so we're using the Twilio Voice Web SDK (
-   twilio-voice.js, v2.4.1-dev) to provide the functionality. This is a temporary solution until (or
-   even if) Twilio Voice SDK for macOS is released.
+### macOS Limitations
 
 This limits macOS to not support remote push notifications `.voip` and `.apns` as the web SDK does
 not support this. Instead, it uses a web socket connection to listen for incoming calls, arguably
@@ -60,7 +57,7 @@ First, add the package to your `pubspec.yaml` file:
 ```yaml
 dependencies:
   ...
-  twilio_voice: ^0.4.0
+  twilio_voice: ^0.5.0
 ```
 
 Then run `flutter pub get` in your terminal.
@@ -68,6 +65,36 @@ Then run `flutter pub get` in your terminal.
 Please follow Twilio's quickstart setup for each platform, you don't need to write the native code
 but it will help you understand the basic functionality of setting up your server, registering your
 iOS app for VOIP, etc.
+
+### Swift Package Manager (iOS & macOS)
+
+This plugin ships both a Swift package and a podspec, so it works with either integration. If your
+app uses CocoaPods there is nothing to do - it keeps working exactly as before.
+
+To use Swift Package Manager instead, enable it once for your Flutter install:
+
+```bash
+flutter config --enable-swift-package-manager
+```
+
+Flutter then resolves this plugin through SPM, and the iOS Twilio Voice SDK is pulled from
+[twilio/twilio-voice-ios](https://github.com/twilio/twilio-voice-ios) (6.13.6+) instead of the
+`TwilioVoice` pod. `TwilioVoice.framework` is embedded into your app automatically; no manual
+"Frameworks, Libraries and Embedded Content" step is needed.
+
+Two things to be aware of:
+
+- **macOS apps must set their deployment target to 11.0 or later.** CocoaPods tolerates an app
+  target below a pod's minimum, but SwiftPM does not, and the build fails with:
+
+  > error: The package product 'twilio-voice' requires minimum platform version 11.0 for the macOS
+  > platform, but this target supports 10.15
+
+  Set `macOS Deployment Target` to `11.0` on the Runner target in Xcode (Flutter's own template
+  still defaults to 10.15). iOS already requires 13.0, which matches Flutter's template default.
+
+- Enabling SPM is a per-machine Flutter setting, not a per-project one. Plugins that do not yet
+  support SPM continue to be resolved through CocoaPods alongside it, so mixed projects are fine.
 
 ### iOS Setup
 
@@ -87,18 +114,6 @@ Drop in addition.
 see [[Limitations]](https://github.com/cybex-dev/twilio_voice/blob/master/NOTES.md#macos) and [[Notes]](https://github.com/cybex-dev/twilio_voice/blob/master/NOTES.md#ios--macos) for more information.
 
 ### Android Setup:
-
-Firstly, ensure you place this in your app's `proguard-rules.pro` file:
-```proguard
-# Twilio Programmable Voice
--keep class com.twilio.** { *; }
--keep class tvo.webrtc.** { *; }
--dontwarn tvo.webrtc.**
--keep class com.twilio.voice.** { *; }
--keepattributes InnerClasses
-```
-
-next, depends on your implementation requirements.
 
 Since Twilio Voice uses FCM to deliver incoming call notifications, you need to ensure that your app is set up to receive FCM messages. Some plugins subclass `FirebaseMessagingService` to handle FCM messages, which does not play well with `twilio_voice`, see [Android FCM setup](NOTES.md#android-fcm-setup) for more information.
 
@@ -259,9 +274,7 @@ See [example](https://github.com/cybex-dev/twilio_voice/blob/master/example/andr
 
 ##### Bluetooth, Telecom App Crash
 
-- Upon accepting an inbound call, at times the Telecom app/ Bluetooth service will crash and restart. This is a known bug, caused by `Class not found when unmarshalling: com.twilio.voice.CallInvite`. This is due to the Telecom service not using the same Classloader as the main Flutter app. See [here](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/telecomm/java/android/telecom/Call.java#2466) for source of error.
 - Callback action on post dialer screen may not work as expected - this is platform and manufacturer specific. PRs are welcome here.
-- Complete integration with showing missed calls. This is a work in progress.
 
 #### Android FAQ:
 1. **Why are calls failing in release mode?**
@@ -269,8 +282,7 @@ See [example](https://github.com/cybex-dev/twilio_voice/blob/master/example/andr
    There are certainly a number of factors, but for starting point:
    1. first review [Android Setup](README.md#android-setup) closely. 
    2. Compare the example app's configuration files to your app. 
-   3. Ensure you have the required [Proguard rules](#android-setup) to ensure the Twilio Voice SDK is not being obfuscated. If you are using a custom Proguard file, ensure the Twilio Voice SDK classes are not being obfuscated.
-   4. Check Twilio's Error logs in the dashboard.
+   3. Check Twilio's Error logs in the dashboard.
 
 2. **Why am I not receiving any calls on Android?**
 
@@ -468,7 +480,9 @@ These parameters above are interpreted as follows.
 
 #### Name resolution
 
-Caller is usually referred to as `call.from` or `callInvite.from`. This can either be a number of a string (with the format `client:clientName`) or null.
+Caller is usually referred to as `call.from` or `callInvite.from`. This can either be a number of a string (with the format `client:clientName`) or null. 
+
+_Note: All platforms provide the raw `from`/`to` values in call events stream i.e. (`TwilioVoicePlatform.instance.callEventsListener`) allowing the developer to interpret these as needed._
 
 The following rules are applied to determine the caller/recipient name, which is shown in the call screen and heads-up notification:
 
@@ -575,6 +589,27 @@ Receives calls via [ConnectionService](https://developer.android.com/reference/a
  TwilioVoicePlatform.instance.call.sendDigits(String digits);
 
 ```
+
+#### Call Quality Metrics
+
+Retrieve call quality warnings for an active call using:
+
+```dart
+final warnings = [CallQualityWarning.highPacketLoss, CallQualityWarning.highJitter, CallQualityWarning.highRtt];
+Stream<CallQualityEvent> qualityEventStream = TwilioVoicePlatform.instance.call.qualityWarnings;
+qualityEventStream.listen((e) {
+    final isBadCallQuality = e.current.any((e) => warnings.contains(e));
+    print("Call Quality: ${isBadCallQuality ? "Bad" : "Good"}");
+});
+```
+
+or get last call quality metrics using:
+```dart
+final lastCallQuality = TwilioVoicePlatform.instance.call.lastQualityWarnings;
+print("Last Call Quality: ${lastCallQuality.current}");
+```
+
+TwilioVoicePlatform.instance.call.`. This returns a `CallQualityMetrics` object with the following fields:
 
 ### Permissions
 

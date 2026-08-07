@@ -51,7 +51,6 @@ object TelecomManagerExtension {
         val phoneAccount = PhoneAccount.builder(phoneAccountHandle, label)
             .setCapabilities(PhoneAccount.CAPABILITY_CALL_PROVIDER or PhoneAccount.CAPABILITY_CONNECTION_MANAGER or PhoneAccount.CAPABILITY_CALL_SUBJECT)
             .setShortDescription(description)
-//            .addSupportedUriScheme(TVConnectionService.TWI_SCHEME)
             .setIcon(Icon.createWithResource(ctx, ctx.applicationInfo.icon))
             .addSupportedUriScheme(PhoneAccount.SCHEME_TEL)
             .build()

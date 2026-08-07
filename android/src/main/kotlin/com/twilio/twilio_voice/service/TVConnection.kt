@@ -48,6 +48,7 @@ class TVCallInviteConnection(
     override fun onAnswer() {
         Log.d(TAG, "onAnswer: onAnswer")
         super.onAnswer()
+        setActive()
         twilioCall = callInvite.accept(context, this)
         onAction?.onChange(TVNativeCallActions.ACTION_ANSWERED, Bundle().apply {
             putParcelable(TVBroadcastReceiver.EXTRA_CALL_INVITE, callInvite)
@@ -262,6 +263,41 @@ open class TVCallConnection(
             putInt(TVBroadcastReceiver.EXTRA_CALL_DIRECTION, callDirection.id)
             putExtras(callException.toBundle())
         })
+    }
+
+    /**
+     * The Twilio SDK raises this when the set of active call quality warnings changes, i.e. when a
+     * metric (RTT, jitter, packet loss, MOS, audio levels) crosses a threshold or recovers.
+     *
+     * @see https://www.javadoc.io/static/com.twilio/voice-android/6.10.0/com/twilio/voice/Call.Listener.html#onCallQualityWarningsChanged(Call,Set,Set)
+     */
+    override fun onCallQualityWarningsChanged(
+        call: Call,
+        currentWarnings: MutableSet<Call.CallQualityWarning>,
+        previousWarnings: MutableSet<Call.CallQualityWarning>
+    ) {
+        Log.d(TAG, "onCallQualityWarningsChanged: current=$currentWarnings, previous=$previousWarnings")
+        onEvent?.onChange(TVNativeCallEvents.EVENT_QUALITY_WARNINGS_CHANGED, Bundle().apply {
+            putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callParams?.callSid)
+            putString(TVBroadcastReceiver.EXTRA_QUALITY_WARNINGS_CURRENT, currentWarnings.toWireNames())
+            putString(TVBroadcastReceiver.EXTRA_QUALITY_WARNINGS_PREVIOUS, previousWarnings.toWireNames())
+        })
+    }
+
+    /**
+     * Maps Twilio's [Call.CallQualityWarning] values onto the plugin's cross-platform wire names.
+     *
+     * @see https://www.javadoc.io/static/com.twilio/voice-android/6.10.0/com/twilio/voice/Call.CallQualityWarning.html
+     */
+    private fun Set<Call.CallQualityWarning>.toWireNames(): String = joinToString(",") {
+        when (it) {
+            Call.CallQualityWarning.WARN_HIGH_RTT -> "high-rtt"
+            Call.CallQualityWarning.WARN_HIGH_JITTER -> "high-jitter"
+            Call.CallQualityWarning.WARN_HIGH_PACKET_LOSS -> "high-packet-loss"
+            Call.CallQualityWarning.WARN_LOW_MOS -> "low-mos"
+            Call.CallQualityWarning.WARN_CONSTANT_AUDIO_IN_LEVEL -> "constant-audio-input-level"
+            Call.CallQualityWarning.WARN_CONSTANT_AUDIO_OUTPUT_LEVEL -> "constant-audio-output-level"
+        }
     }
 
     /**

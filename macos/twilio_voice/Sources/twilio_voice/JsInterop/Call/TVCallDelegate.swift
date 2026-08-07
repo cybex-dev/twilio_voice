@@ -44,6 +44,15 @@ public protocol TVCallDelegate: AnyObject {
     /// - SeeAlso: Twilio [Call.reject](https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#reject-event)
     func onCallReject() -> Void
 
+    /// A call quality warning was raised or cleared on the [TVCall].
+    ///
+    /// The JS SDK reports warnings one at a time rather than as a set.
+    ///
+    /// - Parameter name: the SDK's warning name, e.g. `high-rtt`
+    /// - Parameter isCleared: true when the warning was cleared, false when raised
+    /// - SeeAlso: Twilio [Call.warning](https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#warning-event)
+    func onCallQualityWarning(_ name: String, isCleared: Bool) -> Void
+
     /// The [TVCall] status has changed.
     ///
     /// - Parameter status: [TVCallStatus] status change

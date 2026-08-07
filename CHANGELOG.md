@@ -1,3 +1,29 @@
+## 0.5.0
+
+* feat: [iOS] incoming calls now lookup a contact:
+  * e.g. `from:+1...` - contact lookup by phone app using [CXHandle.HandleType.phoneNumber](https://developer.apple.com/documentation/callkit/cxhandle/handletype/phonenumber)
+  * e.g. `from:client:id` - the plugin resolves the client's id with [CXHandle.HandleType.generic](https://developer.apple.com/documentation/callkit/cxhandle/handletype/generic)
+    * note: [iOS, macOS] an unregistered client with no name parameter now shows the default caller name
+    ("Unknown Caller") where it previously showed the raw client id, matching Android.
+* feat: [iOS, macOS, Web] added remaining platforms caller name resolution based on documented
+  [Interpreting Parameters](https://github.com/cybex-dev/twilio_voice#interpreting-parameters) rules: 
+  - custom parameters: `__TWI_CALLER_NAME`, or 
+  - resolve(`__TWI_CALLER_ID`), or
+  - phone number / registered client, or fallback
+  - default caller name.
+* fix: [Web] an incoming call not answered left a hanging incoming call notification indefinitely.
+* fix: [Web] an unanswered *outgoing* call ended early cancelled from this device is no longer reported as a missed call
+* fix: [Android, iOS, macOS] `isOnCall` & `activeCall` now sync. Launching app with ongoing call now returns correct `activeCall` object and `isOnCall` true. (see [Issue #179](https://github.com/cybex-dev/twilio_voice/issues/179))
+* chore: [Android] plugin Gradle wrapper raised to 8.11.1, the minimum for the declared AGP 8.9.1
+* fix: [Android] `setActive()` now proactively changes call UI to ongoing call screen when answering incoming call preventing perceived delay while connecting.
+* feat: [iOS, macOS] Swift Package Manager support added, enable it with `flutter config --enable-swift-package-manager`. _Note: projects using CocoaPods will continue to use CocoaPods, and SPM is only used for new projects or those that have opted in._
+* feat: added call quality events for all platforms (see `CallQualityEvent` and `TwilioVoicePlatform.instance.call.qualityWarnings`, and [Twilio Call Quality Metrics](https://www.twilio.com/docs/voice/voice-insights/api/call/details-sdk-call-quality-events#error-and-warning-events))
+* fix: [android] fixed crash when `CallInvite` is received due to unmarshalling error with some Telecom/ConnectionService implementations (e.g. Samsung)
+* fix: [iOS] call events now provide raw `from`/`to` Twilio sent, `client:` prefix included. This is present on other platforms.
+* feat: [Android] `proguard-rules` are now automatically included as `consumerProguardFiles` in the plugin's `build.gradle`, so apps no longer need to manually copy them into their own `proguard-rules.pro` file.
+* Updated Example
+* Updated docs
+
 ## 0.4.1
 
 * feat: add `setAllowIncomingWhileBusy(allow: bool)` to control whether multiple incoming call invites are allowed (i.e. handle 2 or more calls at once). All platforms default to true;

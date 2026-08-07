@@ -25,6 +25,20 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
 //    private var _result: FlutterResult?
     private var eventSink: FlutterEventSink?
 
+    /// Events raised before the Dart listener attached, held here and flushed in `onListen` rather
+    /// than being dropped. Bounded so a long-running app cannot grow this without limit.
+    private var pendingEvents: [String] = []
+    private let maxPendingEvents = 50
+
+    /// Event prefixes that describe call state, used to tell whether the buffered events already
+    /// told Dart about the call in progress.
+    private let callStateEventPrefixes = ["Incoming|", "Ringing|", "Answer|", "Connected|"]
+
+    /// Whether this event describes the state of a call, as opposed to a log or status flag.
+    private func isCallStateEvent(_ message: String) -> Bool {
+        callStateEventPrefixes.contains(where: message.hasPrefix)
+    }
+
     let kCachedDeviceToken = "CachedDeviceToken"
     let kCachedBindingDate = "CachedBindingDate"
     let kClientList = "TwilioContactList"
@@ -61,6 +75,11 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
             }
         }
         didSet {
+            activeCallSid = nil
+            activeQualityWarnings.removeAll()
+            twilioCall?.resolveParams { [weak self] params, _ in
+                self?.activeCallSid = params?.callSid
+            }
             // attach event listeners to new call
             if let call = twilioCall {
                 call.attachEventListeners()
@@ -125,7 +144,6 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
         // CallKit has an odd API contract where the developer must call invalidate or the CXProvider is leaked.
         twilioDevice?.dispose()
         twilioDevice = nil
-        twilioCall?.dispose()
         twilioCall = nil
     }
 
@@ -151,13 +169,33 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
         showNotification(title: from, subtitle: "Incoming Call", action: .incoming, params: customParameters)
     }
 
-    private func resolveCallerName(_ from: String) -> String {
-        if (from).starts(with: "client:") {
-            let clientName = from.replacingOccurrences(of: "client:", with: "")
-            return clients[clientName] ?? clientName
-        } else {
+    /// Resolves the name shown for a call, per the Interpreting Parameters contract:
+    /// `__TWI_CALLER_NAME` -> resolve(`__TWI_CALLER_ID`) -> phone number -> registered client ->
+    /// default caller name.
+    ///
+    /// - Parameter from: the raw handle, e.g. `client:alice` or `+15551234567`.
+    /// - Parameter params: the call's custom parameters.
+    private func resolveCallerName(_ from: String, _ params: [String: Any]? = nil) -> String {
+        if let name = params?["__TWI_CALLER_NAME"] as? String, !name.isEmpty {
+            return name
+        }
+        if let id = params?["__TWI_CALLER_ID"] as? String, !id.isEmpty {
+            return resolveRegisteredClient(id)
+        }
+        if from.isEmpty {
+            return defaultCaller
+        }
+        // A number is shown as-is; only client identities are looked up.
+        if !from.starts(with: "client:") {
             return from
         }
+        return resolveRegisteredClient(from)
+    }
+
+    /// Registered client name for an id, or the default caller name if it is not registered.
+    private func resolveRegisteredClient(_ id: String) -> String {
+        let clientId = id.replacingOccurrences(of: "client:", with: "")
+        return clients[clientId] ?? defaultCaller
     }
 
     /// Register device token with Twilio. If an active TwilioDevice is found, it attempts to update the token instead. Completion handler completes with true if successful
@@ -1098,6 +1136,18 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     public func onListen(withArguments arguments: Any?, eventSink: @escaping FlutterEventSink) -> FlutterError? {
         self.eventSink = eventSink
 
+        // Deliver anything raised before Dart subscribed (see logEvent).
+        let buffered = pendingEvents
+        if !buffered.isEmpty {
+            NSLog("Flushing \(buffered.count) buffered event(s)")
+            pendingEvents.removeAll()
+            onMain { buffered.forEach { eventSink($0) } }
+        }
+
+        if !buffered.contains(where: isCallStateEvent) {
+            emitActiveCallState()
+        }
+
         // TODO - review
         //        NotificationCenter.default.addObserver(
         //            self,
@@ -1142,6 +1192,16 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
     private func logEvent(prefix: String = "LOG", separator: String = "|", description: String, isError: Bool = false) {
         NSLog(description)
         guard let eventSink = eventSink else {
+            if !isError {
+                let message = buildMessage(prefix: prefix, separator: separator, description: description)
+                if isCallStateEvent(message) {
+                    pendingEvents.removeAll(where: isCallStateEvent)
+                }
+                if pendingEvents.count >= maxPendingEvents {
+                    pendingEvents.removeFirst()
+                }
+                pendingEvents.append(message)
+            }
             return
         }
 
@@ -1149,14 +1209,52 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
             let flutterError = FlutterError(code: FlutterErrorCodes.UNAVAILABLE_ERROR, message: description, details: nil)
             onMain { eventSink(flutterError) }
         } else {
-            var message = "";
-            if (prefix.isEmpty) {
-                message = description;
-            } else {
-                message = prefix + separator + description;
-            }
+            onMain { eventSink(self.buildMessage(prefix: prefix, separator: separator, description: description)) }
+        }
+    }
 
-            onMain { eventSink(message) }
+    /// Builds the wire message sent over the event channel: `<prefix><separator><description>`, or
+    /// just the description when there is no prefix (call state events carry no prefix).
+    private func buildMessage(prefix: String, separator: String, description: String) -> String {
+        prefix.isEmpty ? description : prefix + separator + description
+    }
+
+    /// Emits the current state of the call in progress, if any.
+    private func emitActiveCallState() {
+        guard let activeCall = twilioCall else { return }
+
+        activeCall.status { [weak self] status, _ in
+            guard let self = self, let status = status else { return }
+            activeCall.resolveParams { params, _ in
+                activeCall.direction { direction, _ in
+                    let from = params?.from ?? ""
+                    let to = params?.to ?? ""
+                    let customParams = self.formatCustomParams(params: params?.customParameters)
+
+                    switch status {
+                    case .pending, .ringing:
+                        NSLog("Emitting state of ringing call for the new listener")
+                        self.logEvents(prefix: "", descriptions: ["Incoming", from, to, "Incoming", customParams])
+
+                    case .open, .connected, .reconnecting, .reconnected:
+                        NSLog("Emitting state of active call for the new listener")
+                        self.logEvents(prefix: "", descriptions: [
+                            "Connected",
+                            from,
+                            to,
+                            (direction ?? .outgoing).rawValue.capitalized,
+                            customParams,
+                        ])
+
+                        if status == .reconnecting {
+                            self.logEvents(prefix: "", descriptions: ["Reconnecting"])
+                        }
+
+                    default:
+                        NSLog("Nothing to emit for call status '\(status.rawValue)'")
+                    }
+                }
+            }
         }
     }
 
@@ -1306,11 +1404,12 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
                     print("Error: \(error)")
                 }
                 if let params = params {
-                    let from = self.resolveCallerName(params.from ?? "")
+                    let from = params.from ?? ""
                     let to = params.to ?? ""
                     self.logEvents(prefix: "", descriptions: ["Incoming", from, to, "Incoming", self.formatCustomParams(params: params.customParameters)])
                     self.logEvents(prefix: "", descriptions: ["Ringing", from, to, "Incoming", self.formatCustomParams(params: params.customParameters)])
-                    self.showIncomingCallNotification(from, params.customParameters)
+                    // The event carries the raw handle; only the notification shows the resolved name.
+                    self.showIncomingCallNotification(self.resolveCallerName(from, params.customParameters), params.customParameters)
                 }
             }
         }
@@ -1391,7 +1490,6 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
             }
         }
 
-        twilioCall?.dispose()
         twilioCall = nil
         logEvent(prefix: "", description: "Missed Call")
         logEvent(prefix: "", description: "Call Ended")
@@ -1409,7 +1507,6 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
             }
         }
 
-        twilioCall?.dispose()
         twilioCall = nil
     }
 
@@ -1419,6 +1516,22 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
 
     public func onCallReconnecting(_ error: TVError) {
         logEvent(prefix: "", description: "Reconnecting: \(error.code) \(error.message)")
+    }
+    private var activeCallSid: String?
+
+    private var activeQualityWarnings: [String: Set<String>] = [:]
+
+    public func onCallQualityWarning(_ name: String, isCleared: Bool) {
+        let sid = activeCallSid ?? ""
+        let previous = activeQualityWarnings[sid] ?? []
+        var current = previous
+        if isCleared {
+            current.remove(name)
+        } else {
+            current.insert(name)
+        }
+        activeQualityWarnings[sid] = current
+        logEvent(prefix: "", description: "Quality|\(current.joined(separator: ","))|\(previous.joined(separator: ","))")
     }
 
     public func onCallReconnected() {

@@ -12,6 +12,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.telecom.CallAudioState
+import android.telecom.Connection
 import android.telecom.PhoneAccountHandle
 import android.telecom.TelecomManager
 import android.util.Log
@@ -97,6 +98,10 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     /// events are discarded first. Accessed only on the main thread.
     private val pendingEvents = ArrayDeque<String>()
     private val maxPendingEvents = 50
+
+    /// Event prefixes that describe call state, used to tell whether the buffered events already
+    /// told Dart about the call in progress.
+    private val CALL_STATE_EVENT_PREFIXES = arrayOf("Incoming", "Ringing", "Answer", "Connected")
 
     // member instance functions
     private var callListener = callListener()
@@ -340,13 +345,64 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
     override fun onListen(arguments: Any?, events: EventSink?) {
         Log.i(TAG, "Setting event sink")
         this.eventSink = events
+        if (events == null) return
+
         // Flush events buffered before the listener attached (e.g. an incoming call that
         // arrived during a cold start, before Dart subscribed).
-        if (events != null && pendingEvents.isNotEmpty()) {
+        var buffered = emptyList<String>()
+        if (pendingEvents.isNotEmpty()) {
             Log.i(TAG, "Flushing ${pendingEvents.size} buffered event(s)")
-            val buffered = pendingEvents.toList()
+            buffered = pendingEvents.toList()
             pendingEvents.clear()
             buffered.forEach { events.success(it) }
+        }
+
+        if (buffered.none { it.isCallStateEvent() }) {
+            emitActiveCallState()
+        }
+    }
+
+    /// Whether this event describes the state of a call, as opposed to a log or permission event.
+    private fun String.isCallStateEvent(): Boolean =
+        CALL_STATE_EVENT_PREFIXES.any { startsWith("$it|") }
+
+    /**
+     * Emits the current state of the call [TVConnectionService] is holding, if any.
+     */
+    private fun emitActiveCallState() {
+        val handle = TVConnectionService.getActiveCallHandle() ?: return
+        val connection = TVConnectionService.getConnection(handle) ?: return
+        val params = connection.getCallParameters() ?: run {
+            Log.w(TAG, "emitActiveCallState: connection '$handle' has no call parameters yet")
+            return
+        }
+
+        val from = params.fromRaw
+        val to = params.toRaw
+        val direction = connection.callDirection.label
+        val customParams = JSONObject().apply {
+            params.customParameters.forEach { (key, value) -> put(key, value) }
+        }.toString()
+
+        when (connection.state) {
+            Connection.STATE_RINGING -> {
+                Log.i(TAG, "Emitting state of ringing call '$handle' for the new listener")
+                logEvents("", arrayOf("Incoming", from, to, direction, customParams))
+            }
+
+            Connection.STATE_ACTIVE, Connection.STATE_HOLDING -> {
+                Log.i(TAG, "Emitting state of active call '$handle' for the new listener")
+                logEvents("", arrayOf("Connected", from, to, direction, customParams))
+
+                if (connection.state == Connection.STATE_HOLDING) {
+                    logEvents("", arrayOf("Hold"))
+                }
+                if (connection.twilioCall?.state == Call.State.RECONNECTING) {
+                    logEvents("", arrayOf("Reconnecting"))
+                }
+            }
+
+            else -> Log.d(TAG, "emitActiveCallState: nothing to emit for state ${connection.state}")
         }
     }
 
@@ -1473,6 +1529,7 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 addAction(TVNativeCallEvents.EVENT_CONNECT_FAILURE)
                 addAction(TVNativeCallEvents.EVENT_RECONNECTING)
                 addAction(TVNativeCallEvents.EVENT_RECONNECTED)
+                addAction(TVNativeCallEvents.EVENT_QUALITY_WARNINGS_CHANGED)
                 addAction(TVNativeCallEvents.EVENT_DISCONNECTED_LOCAL)
                 addAction(TVNativeCallEvents.EVENT_DISCONNECTED_REMOTE)
                 addAction(TVNativeCallEvents.EVENT_MISSED)
@@ -1556,6 +1613,9 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
         val sink = eventSink
         if (sink == null) {
             // Buffer until the Dart listener attaches (see pendingEvents / onListen).
+            if (message.isCallStateEvent()) {
+                pendingEvents.removeAll { it.isCallStateEvent() }
+            }
             if (pendingEvents.size >= maxPendingEvents) {
                 pendingEvents.removeFirst()
             }
@@ -2012,6 +2072,12 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
 
             TVNativeCallEvents.EVENT_RECONNECTING -> {
                 logEvent("", "Reconnecting");
+            }
+
+            TVNativeCallEvents.EVENT_QUALITY_WARNINGS_CHANGED -> {
+                val current = intent.getStringExtra(TVBroadcastReceiver.EXTRA_QUALITY_WARNINGS_CURRENT) ?: ""
+                val previous = intent.getStringExtra(TVBroadcastReceiver.EXTRA_QUALITY_WARNINGS_PREVIOUS) ?: ""
+                logEvents("", arrayOf("Quality", current, previous))
             }
 
             TVNativeCallEvents.EVENT_RECONNECTED -> {

@@ -13,7 +13,7 @@ Pod::Spec.new do |s|
   s.license          = { :file => '../LICENSE' }
   s.author           = { 'Charles Dyason' => 'charles@earthbase.io' }
   s.source           = { :path => '.' }
-  s.source_files = 'Classes/**/*'
+  s.source_files = 'twilio_voice/Sources/twilio_voice/**/*.swift'
   s.dependency 'Flutter'
   s.dependency 'TwilioVoice','~> 6.13.6'
   s.platform = :ios, '13.0'

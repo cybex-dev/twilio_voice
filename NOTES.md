@@ -182,6 +182,9 @@ Twilio does not reliably provide a way to determine whether a call was answered 
 
 Android `ConnectionService` provides the fundamentals to managing calls, including but not limited to call logging. Using a Managed `ConnectionService` means that call logging is handled by the system's "Phone App", and so there is not access or control over call logging at this time.
 
+#### Callback
+Further, some native UIs provide a callback feature. This callback feature relies on the system telecom app to callback. However, Twilio being one that requires an access token will not be able to provide a callback feature as the system telecom app will not have access to the Twilio access token. Some work has gone into making this more user-friendly but is not yet available.
+
 ### macOS
 
 Clearly, macOS isn't uppermost in mind when looking at a mobile first platform like Flutter. There are some functionality limitations for the platform/interop such as [UIImage](https://docs.flutter.dev/ui/assets-and-images#loading-ios-images-in-flutter) support and Twilio Voice library support as a whole. Hopefully we'll be seeing these implemented in future.

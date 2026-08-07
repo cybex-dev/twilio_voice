@@ -533,14 +533,37 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
     _showIncomingCallNotification(call);
   }
 
+  /// Shown when no name resolves and no default caller name has been configured.
+  static const String _kUnknownCaller = "Unknown Caller";
+
+  /// Resolves the name shown for a call, per the Interpreting Parameters contract:
+  /// `__TWI_CALLER_NAME` -> resolve(`__TWI_CALLER_ID`) -> phone number -> registered client ->
+  /// default caller name. Android is the reference implementation (see TVParametersImpl).
   String _resolveCallerName(Map<String, String> params) {
+    final name = params["__TWI_CALLER_NAME"];
+    if (name != null && name.isNotEmpty) {
+      return name;
+    }
+    final id = params["__TWI_CALLER_ID"];
+    if (id != null && id.isNotEmpty) {
+      return _resolveRegisteredClient(id);
+    }
+
     final from = params["From"] ?? "";
-    if (from.startsWith("client:")) {
-      final clientName = from.substring(7);
-      return _localStorage.getRegisteredClient(clientName) ?? _localStorage.getDefaultCallerName(clientName);
-    } else {
+    if (from.isEmpty) {
+      return _localStorage.getDefaultCallerName(_kUnknownCaller);
+    }
+    // A number is shown as-is; only client identities are looked up.
+    if (!from.startsWith("client:")) {
       return from;
     }
+    return _resolveRegisteredClient(from);
+  }
+
+  /// Registered client name for an id, or the default caller name if it is not registered.
+  String _resolveRegisteredClient(String id) {
+    final clientId = id.startsWith("client:") ? id.substring(7) : id;
+    return _localStorage.getRegisteredClient(clientId) ?? _localStorage.getDefaultCallerName(_kUnknownCaller);
   }
 
   String? _resolveImageUrl(Map<String, String> params) {
@@ -913,6 +936,11 @@ class Call extends MethodChannelTwilioCall {
   late final JSFunction _onCallReconnectingJs = _onCallReconnecting.toJS;
   late final JSFunction _onCallReconnectedJs = _onCallReconnected.toJS;
   late final JSFunction _onLogEventJs = _onLogEvent.toJS;
+  late final JSFunction _onCallWarningJs = _onCallWarning.toJS;
+  late final JSFunction _onCallWarningClearedJs = _onCallWarningCleared.toJS;
+
+  /// Map of last call quality warnings emitted by JS call object per call SID.
+  final Map<String, Set<CallQualityWarning>> _activeQualityWarnings = <String, Set<CallQualityWarning>>{};
 
   /// Attach event listeners to the active call
   /// See [twilio_js.Call.addListener]
@@ -928,6 +956,36 @@ class Call extends MethodChannelTwilioCall {
     call.addListener("reconnecting", _onCallReconnectingJs);
     call.addListener("reconnected", _onCallReconnectedJs);
     call.addListener("log", _onLogEventJs);
+    call.addListener("warning", _onCallWarningJs);
+    call.addListener("warning-cleared", _onCallWarningClearedJs);
+  }
+
+  /// On a call quality warning being raised, via [twilio_js.Call.addListener] and
+  /// [twilio_js.TwilioCallEvents.warning].
+  /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#warning-event
+  void _onCallWarning(String name) {
+    _updateQualityWarnings((set) => set.add(CallQualityWarning.fromName(name)));
+  }
+
+  /// On a call quality warning being cleared, via [twilio_js.Call.addListener] and
+  /// [twilio_js.TwilioCallEvents.warningCleared].
+  /// Documentation: https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#warning-cleared-event
+  void _onCallWarningCleared(String name) {
+    _updateQualityWarnings((set) => set.remove(CallQualityWarning.fromName(name)));
+  }
+
+  /// Applies [mutate] to the active call's warning set and emits the change as
+  /// "Quality|<current csv>|<previous csv>", matching the native platforms. The SID is used only
+  /// to key the tracked set per call; it is not emitted.
+  void _updateQualityWarnings(void Function(Set<CallQualityWarning>) mutate) {
+    final sid = _getSid() ?? "";
+    final previous = Set<CallQualityWarning>.of(_activeQualityWarnings[sid] ?? const {});
+    final current = Set<CallQualityWarning>.of(previous);
+    mutate(current);
+    _activeQualityWarnings[sid] = current;
+
+    String csv(Set<CallQualityWarning> s) => s.map((e) => e.wireName).join(",");
+    logLocalEventEntries(["Quality", csv(current), csv(previous)], prefix: "");
   }
 
   /// Detach event listeners to the active call
@@ -945,6 +1003,9 @@ class Call extends MethodChannelTwilioCall {
     call.removeListener("reconnecting", _onCallReconnectingJs);
     call.removeListener("reconnected", _onCallReconnectedJs);
     call.removeListener("log", _onLogEventJs);
+    call.removeListener("warning", _onCallWarningJs);
+    call.removeListener("warning-cleared", _onCallWarningClearedJs);
+    _activeQualityWarnings.remove(_getSid());
   }
 
   void _onLogEvent(String status) {
@@ -1020,19 +1081,20 @@ class Call extends MethodChannelTwilioCall {
     if (jsCall == null) {
       return;
     }
-    // notify SW to cancel notification
-    final callStatus = getCallStatus(jsCall);
+
+    // get call SID before reset
+    final callSid = _getSid();
+    final isIncoming = jsCall.direction == "INCOMING";
+
     _detachCallEventListeners(jsCall);
     nativeCall = null;
     logLocalEvent("Call Ended", prefix: "");
 
-    // reject incoming call that is both outbound ringing or inbound pending
-    // TODO(cybex-dev): check call status for call disconnects
-    final callSid = _getSid();
-    if(callSid == null) {
+    if (callSid == null) {
       return;
     }
-    if (callStatus == CallStatus.ringing || callStatus == CallStatus.pending || callStatus == CallStatus.closed) {
+
+    if (isIncoming) {
       logLocalEvent("Missed Call", prefix: "");
       webCallkit.reportCallDisconnected(callSid, response: CKDisconnectResponse.missed);
     } else {

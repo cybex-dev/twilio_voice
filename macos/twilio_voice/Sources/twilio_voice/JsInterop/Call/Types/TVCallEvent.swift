@@ -13,6 +13,6 @@ public enum TVCallEvent: String {
     case reject = "reject"
     case ringing = "ringing"
 //    case sample = "sample"
-//    case warning = "warning"
-//    case warningCleared = "warningCleared"
+    case warning = "warning"
+    case warningCleared = "warning-cleared"
 }
