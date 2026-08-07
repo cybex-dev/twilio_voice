@@ -144,7 +144,6 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
         // CallKit has an odd API contract where the developer must call invalidate or the CXProvider is leaked.
         twilioDevice?.dispose()
         twilioDevice = nil
-        twilioCall?.dispose()
         twilioCall = nil
     }
 
@@ -1491,7 +1490,6 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
             }
         }
 
-        twilioCall?.dispose()
         twilioCall = nil
         logEvent(prefix: "", description: "Missed Call")
         logEvent(prefix: "", description: "Call Ended")
@@ -1509,7 +1507,6 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
             }
         }
 
-        twilioCall?.dispose()
         twilioCall = nil
     }
 
