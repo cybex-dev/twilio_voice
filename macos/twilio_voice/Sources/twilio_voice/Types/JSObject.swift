@@ -98,9 +98,16 @@ public class JSObject: NSObject, WKScriptMessageHandler, Disposable {
     /// }
     /// _device.on('ready', _on_event__device_ready);
     /// ```
+    /// JS variable name holding the handler for [event]. Event names may contain characters that
+    /// are invalid in a JS identifier (e.g. `warning-cleared`), so they are replaced with `_`.
+    private func handlerVariableName(_ event: String) -> String {
+        let sanitized = String(event.map { $0.isLetter || $0.isNumber || $0 == "_" ? $0 : "_" })
+        return "_on_event_\(jsObjectName)_\(sanitized)"
+    }
+
     func addEventListener(_ event: String, onTriggeredAction: String? = nil, completionHandler: OnCompletionHandler<Bool>? = nil) {
         print("[\(jsObjectName)] Adding event listener: \(event)")
-        let eventName = "_on_event_\(jsObjectName)_\(event)"
+        let eventName = handlerVariableName(event)
 //        guard !JSObject.activeEventHandlers.contains(where: { key, value in key == jsObjectName && value == event }) else {
 //            completionHandler?(true, "Event listener already exists, skipping.")
 //            return
@@ -143,7 +150,7 @@ public class JSObject: NSObject, WKScriptMessageHandler, Disposable {
     /// ```
     func removeEventListener(_ event: String, completionHandler: OnCompletionHandler<Bool>? = nil) {
         print("[\(jsObjectName)] Removing event listener: \(event)")
-        let eventName = "_on_event_\(jsObjectName)_\(event)"
+        let eventName = handlerVariableName(event)
 //        guard JSObject.activeEventHandlers.contains(where: { key, value in key == jsObjectName && value == event }) else {
 //            completionHandler?(true, "Event listener not found, skipping.")
 //            return
