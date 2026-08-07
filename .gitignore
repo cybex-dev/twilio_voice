@@ -69,3 +69,6 @@ ios/twilio_voice/Package.resolved
 macos/twilio_voice/.build/
 macos/twilio_voice/.swiftpm/
 macos/twilio_voice/Package.resolved
+
+# Ignore ephemeral files
+example/ios/Flutter/ephemeral
