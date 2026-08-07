@@ -1130,9 +1130,18 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         clients["defaultCaller"] ?? defaultCaller
     }
 
+    /// Whether a handle is a dialable number rather than a client identity.
+    private func isPhoneNumber(_ handle: String) -> Bool {
+        if handle.hasPrefix("client:") { return false }
+        let digits = handle.hasPrefix("+") ? String(handle.dropFirst()) : handle
+        return !digits.isEmpty && digits.allSatisfy { $0.isNumber }
+    }
+
     func reportIncomingCall(from: String, uuid: UUID, params: [String: Any]? = nil) {
         // The handle is the raw identity; the display name is resolved separately.
-        let callHandle = CXHandle(type: .generic, value: from.replacingOccurrences(of: "client:", with: ""))
+        let callHandle = isPhoneNumber(from)
+            ? CXHandle(type: .phoneNumber, value: from)
+            : CXHandle(type: .generic, value: from.replacingOccurrences(of: "client:", with: ""))
 
         let callUpdate = CXCallUpdate()
         callUpdate.remoteHandle = callHandle
