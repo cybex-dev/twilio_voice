@@ -572,16 +572,18 @@ class TVConnectionService : ConnectionService() {
         super.onCreateIncomingConnection(connectionManagerPhoneAccount, request)
         Log.d(TAG, "onCreateIncomingConnection")
 
-        val extras = request?.extras
-        val myBundle: Bundle = extras?.getBundle(TelecomManager.EXTRA_INCOMING_CALL_EXTRAS) ?: run {
-            Log.e(TAG, "onCreateIncomingConnection: request is missing Bundle EXTRA_INCOMING_CALL_EXTRAS")
-            throw Exception("onCreateIncomingConnection: request is missing Bundle EXTRA_INCOMING_CALL_EXTRAS");
+        fun failedConnection(reason: String): Connection {
+            Log.e(TAG, "onCreateIncomingConnection: $reason")
+            onConnectionEnded(null)
+            return Connection.createFailedConnection(DisconnectCause(DisconnectCause.ERROR, reason))
         }
 
-        val callSid: String = myBundle.getString(EXTRA_INCOMING_CALL_SID) ?: run {
-            Log.e(TAG, "onCreateIncomingConnection: request is missing EXTRA_INCOMING_CALL_SID")
-            throw Exception("onCreateIncomingConnection: request is missing EXTRA_INCOMING_CALL_SID");
-        }
+        val extras = request?.extras
+        val myBundle: Bundle = extras?.getBundle(TelecomManager.EXTRA_INCOMING_CALL_EXTRAS)
+            ?: return failedConnection("request is missing Bundle EXTRA_INCOMING_CALL_EXTRAS")
+
+        val callSid: String = myBundle.getString(EXTRA_INCOMING_CALL_SID)
+            ?: return failedConnection("request is missing EXTRA_INCOMING_CALL_SID")
 
         // The caller hung up while this Connection was still being created - report it as missed
         // rather than ringing a call that no longer exists.
@@ -599,10 +601,8 @@ class TVConnectionService : ConnectionService() {
 
         // Claim the invite held for this SID; removing it keeps the map from growing if a call is
         // never connected.
-        val ci: CallInvite = pendingCallInvites.remove(callSid) ?: run {
-            Log.e(TAG, "onCreateIncomingConnection: no pending CallInvite for SID '$callSid'")
-            throw Exception("onCreateIncomingConnection: no pending CallInvite for SID '$callSid'");
-        }
+        val ci: CallInvite = pendingCallInvites.remove(callSid)
+            ?: return failedConnection("no pending CallInvite for SID '$callSid'")
 
         // Create storage instance for call parameters
         val storage: Storage = StorageImpl(applicationContext)
