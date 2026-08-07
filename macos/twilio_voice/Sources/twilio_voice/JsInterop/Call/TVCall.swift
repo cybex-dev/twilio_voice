@@ -164,8 +164,6 @@ public class TVCall: JSObject, TVCallDelegate, JSMessageHandlerDelegate {
 
     /// Detach event listeners from JS [TVCall] events. Apply when [TVCall] is ended, or incoming call rejected/ignored or destroyed
     ///
-    /// NOTE(cybex-dev): JS .off() function not defined, so we cannot detach event listeners [Error] TypeError: _call.off is not a function. (In '_call.off('reconnected', _on_event__call_reconnected)', '_call.off' is undefined)
-    ///
     /// - SeeAlso Twilio [Call.Events](https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#events)
     func detachEventListeners() {
         print("Detaching event listeners from [TVCall]")

@@ -144,7 +144,7 @@ public class JSObject: NSObject, WKScriptMessageHandler, Disposable {
     /// - Example:
     /// ```
     /// if (typeof _on_event__device_ready !== 'undefined') {
-    ///    device.off('ready', _on_event__device_ready);
+    ///    device.removeListener('ready', _on_event__device_ready);
     /// }
     /// delete _on_event__device_ready;
     /// ```
@@ -159,7 +159,7 @@ public class JSObject: NSObject, WKScriptMessageHandler, Disposable {
         let JS = """
                     log("🔹", 'removeEventListener: \(event)');
                     if (typeof \(eventName) !== 'undefined') {
-                        \(jsObjectName).off('\(event)', \(eventName));
+                        \(jsObjectName).removeListener('\(event)', \(eventName));
                         delete \(eventName); true;
                     }
                  """
