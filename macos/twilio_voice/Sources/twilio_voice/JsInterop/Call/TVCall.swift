@@ -59,14 +59,25 @@ public class TVCall: JSObject, TVCallDelegate, JSMessageHandlerDelegate {
     /// - Parameter completionHandler: completion handler
     /// - SeeAlso Twilio [Call.customParameters](https://www.twilio.com/docs/voice/sdks/javascript/twiliocall#callcustomparameters)
     func customParameters(completionHandler: @escaping OnCompletionHandler<[String: Any]>) {
-        property(ofType: Dictionary<String, Any>.self, name: "customParameters") { (result, error) in
+        // Twilio exposes this as a JS Map, which WKWebView cannot marshal - reading the property
+        // directly always yields nothing. Convert it to a plain object first. For outgoing calls
+        // this is also where From/To live, as Call.parameters only carries them for incoming.
+        let JS = """
+                 if (\(jsObjectName) && \(jsObjectName).customParameters instanceof Map) {
+                    Object.fromEntries(\(jsObjectName).customParameters);
+                 } else if (\(jsObjectName) && \(jsObjectName).customParameters) {
+                    \(jsObjectName).customParameters;
+                 } else {
+                    ({});
+                 }
+                 """
+        webView.evaluateJavaScript(javascript: JS, sourceURL: "\(jsObjectName)_customParameters") { result, error in
             if let error = error {
                 print(error)
                 completionHandler(nil, error)
+                return
             }
-            if let result = result {
-                completionHandler(result, nil)
-            }
+            completionHandler(result as? [String: Any] ?? [:], nil)
         }
     }
 
@@ -223,7 +234,11 @@ public class TVCall: JSObject, TVCallDelegate, JSMessageHandlerDelegate {
             self.customParameters { dictionary, s in
                 if let dictionary = dictionary {
                     dictionary.forEach({ (key, value) in
-                        params[key] = value
+                        // Twilio's own parameters are authoritative; custom params only fill gaps,
+                        // which is what supplies From/To on an outgoing call.
+                        if params[key] == nil {
+                            params[key] = value
+                        }
                     })
                 }
 
