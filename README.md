@@ -42,13 +42,9 @@ if you find one, please submit a pull request.~~
 
 Android provides a native UI by way of the `ConnectionService`. Twilio has made an attempt a [ConnectionService](https://github.com/twilio/voice-quickstart-android/tree/master/app/src/connection_service) implementation however it is fully realized in this package.
 
-### macOS Limitations
+Native UI callback feature does not yet work as may not be functional for a while, see [Android Callback](NOTES.md#callback).
 
-1. CallKit support is found in macOS 13.0+ which there is no support for yet. In future, this will
-   be taken into consideration for feature development.
-2. Twilio Voice does not offer a native SDK for macOS, so we're using the Twilio Voice Web SDK (
-   twilio-voice.js, v2.4.1-dev) to provide the functionality. This is a temporary solution until (or
-   even if) Twilio Voice SDK for macOS is released.
+### macOS Limitations
 
 This limits macOS to not support remote push notifications `.voip` and `.apns` as the web SDK does
 not support this. Instead, it uses a web socket connection to listen for incoming calls, arguably
