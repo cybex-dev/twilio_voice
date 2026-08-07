@@ -737,7 +737,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
 
         self.sendPhoneCallEvents(description: "Incoming|\(from)|\(callInvite.to)|Incoming\(formatCustomParams(params: callInvite.customParameters))", isError: false)
         self.sendPhoneCallEvents(description: "Ringing|\(from)|\(callInvite.to)|Incoming\(formatCustomParams(params: callInvite.customParameters))", isError: false)
-        reportIncomingCall(from: from, uuid: callInvite.uuid)
+        reportIncomingCall(from: callInvite.from ?? "", uuid: callInvite.uuid, params: callInvite.customParameters)
         self.callInvite = callInvite
         self.customParameters = callInvite.customParameters
     }
@@ -1096,20 +1096,56 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         }
     }
 
-    func reportIncomingCall(from: String, uuid: UUID) {
-        let callHandle = CXHandle(type: .generic, value: from)
-
-        var callerName: String?;
-        if(from.contains("client:")) {
-            var clientName = from.replacingOccurrences(of: "client:", with: "")
-            callerName = self.clients[clientName];
-        } else {
-            callerName = from
+    /// Resolves the name shown on the call screen, per the Interpreting Parameters contract:
+    /// `__TWI_CALLER_NAME` -> resolve(`__TWI_CALLER_ID`) -> phone number -> registered client ->
+    /// default caller name.
+    ///
+    /// - Parameter handle: the raw `from`, e.g. `client:alice` or `+15551234567`.
+    /// - Parameter params: the call's custom parameters.
+    func resolveCallerName(handle: String, params: [String: Any]? = nil) -> String {
+        if let name = params?["__TWI_CALLER_NAME"] as? String, !name.isEmpty {
+            return name
         }
+        if let id = params?["__TWI_CALLER_ID"] as? String, !id.isEmpty {
+            return resolveRegisteredClient(id)
+        }
+        if handle.isEmpty {
+            return defaultCallerName
+        }
+        // A number is shown as-is; only client identities are looked up.
+        if !handle.hasPrefix("client:") {
+            return handle
+        }
+        return resolveRegisteredClient(handle)
+    }
+
+    /// Registered client name for an id, or the default caller name if it is not registered.
+    private func resolveRegisteredClient(_ id: String) -> String {
+        let clientId = id.replacingOccurrences(of: "client:", with: "")
+        return clients[clientId] ?? defaultCallerName
+    }
+
+    /// The configured default caller name, falling back to the built-in "Unknown Caller".
+    private var defaultCallerName: String {
+        clients["defaultCaller"] ?? defaultCaller
+    }
+
+    /// Whether a handle is a dialable number rather than a client identity.
+    private func isPhoneNumber(_ handle: String) -> Bool {
+        if handle.hasPrefix("client:") { return false }
+        let digits = handle.hasPrefix("+") ? String(handle.dropFirst()) : handle
+        return !digits.isEmpty && digits.allSatisfy { $0.isNumber }
+    }
+
+    func reportIncomingCall(from: String, uuid: UUID, params: [String: Any]? = nil) {
+        // The handle is the raw identity; the display name is resolved separately.
+        let callHandle = isPhoneNumber(from)
+            ? CXHandle(type: .phoneNumber, value: from)
+            : CXHandle(type: .generic, value: from.replacingOccurrences(of: "client:", with: ""))
 
         let callUpdate = CXCallUpdate()
         callUpdate.remoteHandle = callHandle
-        callUpdate.localizedCallerName = callerName ?? self.clients["defaultCaller"] ?? defaultCaller
+        callUpdate.localizedCallerName = resolveCallerName(handle: from, params: params)
         callUpdate.supportsDTMF = true
         callUpdate.supportsHolding = true
         callUpdate.supportsGrouping = false

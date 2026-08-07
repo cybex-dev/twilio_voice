@@ -170,13 +170,33 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
         showNotification(title: from, subtitle: "Incoming Call", action: .incoming, params: customParameters)
     }
 
-    private func resolveCallerName(_ from: String) -> String {
-        if (from).starts(with: "client:") {
-            let clientName = from.replacingOccurrences(of: "client:", with: "")
-            return clients[clientName] ?? clientName
-        } else {
+    /// Resolves the name shown for a call, per the Interpreting Parameters contract:
+    /// `__TWI_CALLER_NAME` -> resolve(`__TWI_CALLER_ID`) -> phone number -> registered client ->
+    /// default caller name.
+    ///
+    /// - Parameter from: the raw handle, e.g. `client:alice` or `+15551234567`.
+    /// - Parameter params: the call's custom parameters.
+    private func resolveCallerName(_ from: String, _ params: [String: Any]? = nil) -> String {
+        if let name = params?["__TWI_CALLER_NAME"] as? String, !name.isEmpty {
+            return name
+        }
+        if let id = params?["__TWI_CALLER_ID"] as? String, !id.isEmpty {
+            return resolveRegisteredClient(id)
+        }
+        if from.isEmpty {
+            return defaultCaller
+        }
+        // A number is shown as-is; only client identities are looked up.
+        if !from.starts(with: "client:") {
             return from
         }
+        return resolveRegisteredClient(from)
+    }
+
+    /// Registered client name for an id, or the default caller name if it is not registered.
+    private func resolveRegisteredClient(_ id: String) -> String {
+        let clientId = id.replacingOccurrences(of: "client:", with: "")
+        return clients[clientId] ?? defaultCaller
     }
 
     /// Register device token with Twilio. If an active TwilioDevice is found, it attempts to update the token instead. Completion handler completes with true if successful
@@ -1385,11 +1405,12 @@ public class TwilioVoicePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, T
                     print("Error: \(error)")
                 }
                 if let params = params {
-                    let from = self.resolveCallerName(params.from ?? "")
+                    let from = params.from ?? ""
                     let to = params.to ?? ""
                     self.logEvents(prefix: "", descriptions: ["Incoming", from, to, "Incoming", self.formatCustomParams(params: params.customParameters)])
                     self.logEvents(prefix: "", descriptions: ["Ringing", from, to, "Incoming", self.formatCustomParams(params: params.customParameters)])
-                    self.showIncomingCallNotification(from, params.customParameters)
+                    // The event carries the raw handle; only the notification shows the resolved name.
+                    self.showIncomingCallNotification(self.resolveCallerName(from, params.customParameters), params.customParameters)
                 }
             }
         }

@@ -1,5 +1,16 @@
 ## Next Release
 
+* feat: [iOS] incoming calls now lookup a contact:
+  * e.g. `from:+1...` - contact lookup by phone app using [CXHandle.HandleType.phoneNumber](https://developer.apple.com/documentation/callkit/cxhandle/handletype/phonenumber)
+  * e.g. `from:client:id` - the plugin resolves the client's id with [CXHandle.HandleType.generic](https://developer.apple.com/documentation/callkit/cxhandle/handletype/generic)
+    * note: [iOS, macOS] an unregistered client with no name parameter now shows the default caller name
+    ("Unknown Caller") where it previously showed the raw client id, matching Android.
+* feat: [iOS, macOS, Web] added remaining platforms caller name resolution based on documented
+  [Interpreting Parameters](https://github.com/cybex-dev/twilio_voice#interpreting-parameters) rules: 
+  - custom parameters: `__TWI_CALLER_NAME`, or 
+  - resolve(`__TWI_CALLER_ID`), or
+  - phone number / registered client, or fallback
+  - default caller name.
 * fix: [Web] an incoming call not answered left a hanging incoming call notification indefinitely.
 * fix: [Web] an unanswered *outgoing* call ended early cancelled from this device is no longer reported as a missed call
 * fix: [Android, iOS, macOS] `isOnCall` & `activeCall` now sync. Launching app with ongoing call now returns correct `activeCall` object and `isOnCall` true. (see [Issue #179](https://github.com/cybex-dev/twilio_voice/issues/179))
