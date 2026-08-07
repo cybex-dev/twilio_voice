@@ -1,4 +1,4 @@
-## Next Release
+## 0.5.0
 
 * feat: [iOS] incoming calls now lookup a contact:
   * e.g. `from:+1...` - contact lookup by phone app using [CXHandle.HandleType.phoneNumber](https://developer.apple.com/documentation/callkit/cxhandle/handletype/phonenumber)
