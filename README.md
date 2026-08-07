@@ -497,7 +497,9 @@ These parameters above are interpreted as follows.
 
 #### Name resolution
 
-Caller is usually referred to as `call.from` or `callInvite.from`. This can either be a number of a string (with the format `client:clientName`) or null.
+Caller is usually referred to as `call.from` or `callInvite.from`. This can either be a number of a string (with the format `client:clientName`) or null. 
+
+_Note: All platforms provide the raw `from`/`to` values in call events stream i.e. (`TwilioVoicePlatform.instance.callEventsListener`) allowing the developer to interpret these as needed._
 
 The following rules are applied to determine the caller/recipient name, which is shown in the call screen and heads-up notification:
 
