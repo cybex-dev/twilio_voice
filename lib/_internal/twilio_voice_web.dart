@@ -533,14 +533,37 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
     _showIncomingCallNotification(call);
   }
 
+  /// Shown when no name resolves and no default caller name has been configured.
+  static const String _kUnknownCaller = "Unknown Caller";
+
+  /// Resolves the name shown for a call, per the Interpreting Parameters contract:
+  /// `__TWI_CALLER_NAME` -> resolve(`__TWI_CALLER_ID`) -> phone number -> registered client ->
+  /// default caller name. Android is the reference implementation (see TVParametersImpl).
   String _resolveCallerName(Map<String, String> params) {
+    final name = params["__TWI_CALLER_NAME"];
+    if (name != null && name.isNotEmpty) {
+      return name;
+    }
+    final id = params["__TWI_CALLER_ID"];
+    if (id != null && id.isNotEmpty) {
+      return _resolveRegisteredClient(id);
+    }
+
     final from = params["From"] ?? "";
-    if (from.startsWith("client:")) {
-      final clientName = from.substring(7);
-      return _localStorage.getRegisteredClient(clientName) ?? _localStorage.getDefaultCallerName(clientName);
-    } else {
+    if (from.isEmpty) {
+      return _localStorage.getDefaultCallerName(_kUnknownCaller);
+    }
+    // A number is shown as-is; only client identities are looked up.
+    if (!from.startsWith("client:")) {
       return from;
     }
+    return _resolveRegisteredClient(from);
+  }
+
+  /// Registered client name for an id, or the default caller name if it is not registered.
+  String _resolveRegisteredClient(String id) {
+    final clientId = id.startsWith("client:") ? id.substring(7) : id;
+    return _localStorage.getRegisteredClient(clientId) ?? _localStorage.getDefaultCallerName(_kUnknownCaller);
   }
 
   String? _resolveImageUrl(Map<String, String> params) {
