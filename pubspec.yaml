@@ -1,20 +1,36 @@
 name: twilio_voice
-description: A new flutter plugin project.
-version: 0.0.1
-author:
-homepage:
+description: Provides an interface to Twilio's Programmable Voice SDK to allow adding voice-over-IP (VoIP) calling into your Flutter applications.
+version: 0.5.0
+homepage: https://twilio-voice-web.web.app/
+repository: https://github.com/cybex-dev/twilio_voice
+issue_tracker: https://github.com/cybex-dev/twilio_voice/issues
+topics:
+  - twilio
+  - voice
+  - voip
+  - call
+  - phone
 
 environment:
-  sdk: ">=2.12.0 <3.0.0"
-  flutter: ">=1.20.0"
+  # Dart 3.3+ required for extension types (dart:js_interop) used by the web implementation.
+  sdk: ">=3.3.0 <4.0.0"
+  # Flutter 3.22+ ships Dart 3.4 and is the minimum required by web_callkit 1.0.0.
+  flutter: ">=3.22.0"
 
 dependencies:
   flutter:
     sdk: flutter
+  flutter_web_plugins:
+    sdk: flutter
+  plugin_platform_interface: ^2.1.4
+  web: ^1.1.0
+  web_callkit: ^1.0.1
 
 dev_dependencies:
+  flutter_lints: ^2.0.2
   flutter_test:
     sdk: flutter
+#  matcher: ^0.12.17
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -32,6 +48,21 @@ flutter:
         pluginClass: TwilioVoicePlugin
       ios:
         pluginClass: TwilioVoicePlugin
+      web:
+        # As a temporary measure, the web implementation of a plugin is defined in
+        # `twilio_voice_web`, but this will change soon with the migration to a federated
+        # plugin structure.
+        pluginClass: TwilioVoiceWeb
+        fileName: _internal/twilio_voice_web.dart
+      macos:
+        pluginClass: TwilioVoicePlugin
+
+  # The Twilio Voice JS SDK is bundled with the plugin and loaded automatically by the web
+  # implementation (see TwilioVoiceWeb.ensureSdkLoaded). Apps no longer need to add a <script>
+  # tag to their web/index.html. Served at:
+  #   assets/packages/twilio_voice/assets/twilio.min.js
+  assets:
+    - assets/twilio.min.js
 
   # To add assets to your plugin package, add an assets section, like this:
   # assets:

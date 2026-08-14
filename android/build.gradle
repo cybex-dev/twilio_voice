@@ -2,35 +2,54 @@ group 'com.twilio.twilio_voice'
 version '1.0'
 
 buildscript {
+    ext {
+        kotlinVersion           = "2.1.0"
+        agpVersion              = "8.9.1"
+        twilioVoiceVersion      = "6.10.0"
+    }
     repositories {
         google()
-        jcenter()
+        mavenCentral()
     }
 
     dependencies {
-        classpath 'com.android.tools.build:gradle:4.1.0'
+        classpath "com.android.tools.build:gradle:${agpVersion}"
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:${kotlinVersion}"
     }
 }
 
-rootProject.allprojects {
+allprojects {
     repositories {
         google()
-        jcenter()
+        mavenCentral()
     }
 }
 
 apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+apply plugin: 'org.jetbrains.kotlin.android'
 
 android {
-    compileSdkVersion 30
-
+    namespace 'com.twilio.twilio_voice'
+    compileSdk 36
     compileOptions {
-        sourceCompatibility 1.8
-        targetCompatibility 1.8
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
     }
+
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+
+    sourceSets {
+        main.java.srcDirs += 'src/main/kotlin'
+    }
+
     defaultConfig {
-        minSdkVersion 16
+        minSdkVersion 26
+        consumerProguardFiles 'proguard-rules.pro'
     }
+
     buildTypes {
         release {
             minifyEnabled true
@@ -40,19 +59,15 @@ android {
 }
 
 dependencies {
-    implementation platform('com.google.firebase:firebase-bom:26.0.0')
-    implementation 'com.twilio:voice-android:5.6.1'
-    implementation 'com.google.firebase:firebase-messaging'
-    // implementation 'androidx.legacy:legacy-support-v4:1.0.0'
-    implementation 'androidx.lifecycle:lifecycle-extensions:2.1.0'
-    // implementation 'com.google.android.material:material:1.0.0'
-    // implementation 'androidx.vectordrawable:vectordrawable-animated:1.0.0'
-    // implementation 'androidx.media:media:1.0.0'
-    // androidTestImplementation 'androidx.test.ext:junit:1.1.1'
-    // androidTestImplementation 'androidx.test.espresso:espresso-core:3.1.0'
-    // implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
-    // implementation 'tw.geothings.rekotlin:rekotlin:0.1.0-SNAPSHOT'
-    // implementation 'io.reactivex.rxjava2:rxkotlin:2.4.0'
-    implementation 'androidx.constraintlayout:constraintlayout:2.0.1'
+    implementation(platform("org.jetbrains.kotlin:kotlin-bom:${kotlinVersion}"))
+    implementation(platform("com.google.firebase:firebase-bom:33.10.0"))
+    implementation("com.twilio:voice-android:${twilioVoiceVersion}")
+    implementation("com.google.firebase:firebase-messaging-ktx:24.1.0")
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.lifecycle:lifecycle-process:2.8.7'
+    implementation 'androidx.core:core-ktx:1.15.0'
+    implementation 'androidx.localbroadcastmanager:localbroadcastmanager:1.1.0'
+    runtimeOnly("androidx.lifecycle:lifecycle-extensions:2.2.0")
+    runtimeOnly("androidx.constraintlayout:constraintlayout:2.2.1")
 }
 

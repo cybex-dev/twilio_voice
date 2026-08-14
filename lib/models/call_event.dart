@@ -1,8 +1,9 @@
-part of twilio_voice;
-
 enum CallEvent {
+  incoming,
   ringing,
   connected,
+  reconnected,
+  reconnecting,
   callEnded,
   unhold,
   hold,
@@ -10,6 +11,12 @@ enum CallEvent {
   mute,
   speakerOn,
   speakerOff,
+  bluetoothOn,
+  bluetoothOff,
   log,
-  answer
+  permission,
+  declined,
+  answer,
+  missedCall,
+  returningCall,
 }

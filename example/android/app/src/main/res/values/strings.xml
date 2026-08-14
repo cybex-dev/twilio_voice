@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="connection_service_name" translatable="false">Twilio Voice Example Connection Service</string>
+    <string name="phone_account_name" translatable="false">Example App</string>
+    <string name="phone_account_desc" translatable="false">Example app voice calls calling account</string>
+</resources>

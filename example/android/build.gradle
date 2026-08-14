@@ -1,19 +1,27 @@
 buildscript {
+    ext {
+        kotlinVersion           = "2.1.0"
+        agpVersion              = "8.9.1"
+        compileSdkVersion       = 36
+        targetSdkVersion        = 35
+        minSdkVersion           = 26
+        googlesServicesVersion  = "4.4.2"
+    }
     repositories {
         google()
-        jcenter()
+        mavenCentral()
     }
 
     dependencies {
-        classpath 'com.android.tools.build:gradle:4.1.0'
-        classpath 'com.google.gms:google-services:4.3.3'
+        classpath "com.android.tools.build:gradle:${agpVersion}"
+        classpath "com.google.gms:google-services:${googlesServicesVersion}"
     }
 }
 
 allprojects {
     repositories {
         google()
-        jcenter()
+        mavenCentral()
     }
 }
 
@@ -25,6 +33,6 @@ subprojects {
     project.evaluationDependsOn(':app')
 }
 
-task clean(type: Delete) {
+tasks.register("clean", Delete) {
     delete rootProject.buildDir
 }
